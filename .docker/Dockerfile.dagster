@@ -1,0 +1,38 @@
+FROM python:3.13-slim
+
+# Install uv
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+
+# Set Dagster home directory
+ENV DAGSTER_HOME=/opt/dagster/dagster_home/
+
+# Set working directory
+WORKDIR /opt/dagster/app
+
+# Enable bytecode compilation for better performance
+ENV UV_COMPILE_BYTECODE=1
+
+# Copy dependency files first for better caching
+COPY pyproject.toml uv.lock* README.md ./
+
+# Install dependencies using uv (with cache mount for faster builds)
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-install-project --no-dev || \
+    uv sync --no-install-project --no-dev
+
+# Copy Dagster configuration
+COPY .docker/dagster.yaml .docker/workspace.yaml $DAGSTER_HOME
+
+# Copy application code
+COPY src/ ./src/
+
+# Install the project itself
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-dev || \
+    uv sync --no-dev
+
+# Expose port for code server
+EXPOSE 4000
+
+# Run dagster code server
+CMD ["uv", "run", "dagster", "code-server", "start", "-h", "0.0.0.0", "-p", "4000", "-m", "src.mlforge"]
