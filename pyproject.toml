@@ -1,5 +1,5 @@
 [project]
-name = "mlforge"
+name = "mlforge-sdk"
 version = "0.1.0"
 description = "ML Platform for your local machine using cheap cloud services for scalable resources."
 readme = "README.md"
@@ -13,14 +13,29 @@ dependencies = [
     "pyarrow>=22.0.0",
     "pydantic>=2.12.4",
     "loguru>=0.7.3",
+    "hatchling>=1.28.0",
+    "setuptools>=80.9.0",
 ]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.13",
+]
+keywords = ["feature-store", "mlops", "machine-learning", "polars"]
+
+[project.urls]
+Homepage = "https://github.com/chonalchendo/mlforge"
+Documentation = "https://chonalchendo.github.io/mlforge"
+Repository = "https://github.com/chonalchendo/mlforge"
+
 
 [project.scripts]
 mlforge = "mlforge.cli:app"
 
 [build-system]
-requires = ["uv_build>=0.8.8,<0.9.0"]
-build-backend = "uv_build"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [dependency-groups]
 dev = [
@@ -38,6 +53,11 @@ check = [
     "pytest-xdist>=3.8.0",
     "ruff>=0.14.4",
     "ty>=0.0.1a25",
+]
+docs = [
+    "mkdocs>=1.6.1",
+    "mkdocs-material>=9.7.0",
+    "mkdocstrings[python]>=1.0.0",
 ]
 
 [tool.uv]
