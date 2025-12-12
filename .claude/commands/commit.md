@@ -2,6 +2,8 @@
 
 This command helps you create well-formatted commits with conventional commit messages and emoji for Python projects using uv package management.
 
+IMPORTANT: PLEASE FOLLOW THE SECTION OF **BEST PRACTICES FOR PYTHON COMMITS**. It is important that all commits follow this strategy. 
+
 ## Usage
 
 To create a commit, just type:
@@ -17,8 +19,8 @@ Or with options:
 ## What This Command Does
 
 1. Unless specified with `--no-verify`, automatically runs pre-commit checks:
-   - `pre-commit run --all-files` to run all configured hooks (ruff, bandit, etc.)
-   - `uv run pytest` to run tests (if pytest is configured)
+   - `just commit-prek` to run all configured hooks (ruff, bandit, etc.) using `prek`
+   - `just check-test` to run tests (if `pytest` is configured)
    - `uv build` to verify the package builds correctly (if applicable)
 2. Checks which files are staged with `git status`
 3. If 0 files are staged, automatically adds all modified and new files with `git add`
@@ -35,6 +37,9 @@ Your project uses the following pre-commit hooks that will be automatically run:
 - **Ruff**: Linting and code formatting
 - **Bandit**: Security vulnerability scanning
 - **Basic file checks**: Large files, merge conflicts, TOML/YAML validation
+
+- To check code you should use the following command: `just check-code`
+- To format code you should use the following command: `just format` 
 
 ### Git Workflow
 - **Commitizen**: Ensures commit messages follow conventional format
@@ -147,7 +152,7 @@ Example of splitting Python commits:
 ## Important Notes
 
 - By default, pre-commit hooks will run to ensure code quality and security
-- If `uv run pytest` is configured, tests will be executed automatically
+- If `just check-test` is configured, tests will be executed automatically
 - If pre-commit checks fail, you'll be asked if you want to proceed or fix issues first
 - Bandit security scanning will flag potential vulnerabilities
 - Ruff will handle both linting and formatting automatically
