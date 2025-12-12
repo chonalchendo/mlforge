@@ -13,6 +13,5 @@ default:
 
 import "tasks/check.just"
 import "tasks/commit.just"
-import "tasks/docker.just"
 import "tasks/format.just"
 import "tasks/install.just"
