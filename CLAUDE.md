@@ -116,7 +116,7 @@ All commands run via `just`:
 - **ty** — type checking
 - **pytest** — testing
 - **bandit** — security scanning
-- **pre-commit** — git hooks
+- **prek** — git hooks
 - **commitizen** — conventional commits, changelog, version bumping
 
 ### Dependency Management
