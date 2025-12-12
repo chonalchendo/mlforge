@@ -1,0 +1,27 @@
+[project]
+name = "transactions"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "chonalchendo", email = "110059232+chonalchendo@users.noreply.github.com" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "mlforge",
+]
+
+[tool.uv.sources]
+mlforge = { workspace = true }
+
+[project.scripts]
+transactions = "transactions:main"
+
+[build-system]
+requires = ["uv_build>=0.9.16,<0.10.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+check = [
+    "ruff>=0.14.4",
+]
