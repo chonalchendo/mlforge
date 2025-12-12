@@ -54,9 +54,7 @@ class Feature:
         """
         Execute the feature transformation function.
 
-        Args:
-            *args: Positional arguments passed to the feature function
-            **kwargs: Keyword arguments passed to the feature function
+        All arguments are passed through to the underlying feature function.
 
         Returns:
             DataFrame with computed feature columns
