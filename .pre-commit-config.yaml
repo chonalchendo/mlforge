@@ -15,8 +15,7 @@ repos:
       - id: end-of-file-fixer
       - id: mixed-line-ending
       - id: trailing-whitespace
-
-  # Replace tool-specific hooks with your just commands
+  # tool pre commit hooks configured with justfile commands
   - repo: local
     hooks:
       - id: ruff-check
@@ -42,12 +41,14 @@ repos:
         entry: uv run just check-type
         language: system
         pass_filenames: false
-        # stages: [pre-push]
-
-  # Keep commitizen as-is - it's not duplicated in your just file
-  - repo: https://github.com/commitizen-tools/commitizen
-    rev: 'v4.4.1'
-    hooks:
       - id: commitizen
+        name: commitizen check
+        entry: uv run cz check --commit-msg-file
+        language: system
+        stages: [commit-msg]
       - id: commitizen-branch
+        name: commitizen branch check
+        entry: uv run cz check --rev-range origin/main..HEAD
+        language: system
         stages: [pre-push]
+        pass_filenames: false
