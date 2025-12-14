@@ -1,9 +1,8 @@
 # https://pre-commit.com
-# https://pre-commit.com/hooks.html
-
 default_language_version:
   python: python3.13
 repos:
+  # Keep these - they're lightweight file checks that don't overlap with your just commands
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: 'v5.0.0'
     hooks:
@@ -16,22 +15,36 @@ repos:
       - id: end-of-file-fixer
       - id: mixed-line-ending
       - id: trailing-whitespace
-  - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: 'v0.9.9'
-    hooks:
-      - id: ruff
-      - id: ruff-format
+
+  # Replace tool-specific hooks with your just commands
   - repo: local
     hooks:
+      - id: ruff-check
+        name: ruff check
+        entry: uv run just check-code
+        language: system
+        pass_filenames: false
+        types: [python]
+      - id: ruff-format
+        name: ruff format
+        entry: uv run just check-format
+        language: system
+        pass_filenames: false
+        types: [python]
+      - id: bandit
+        name: bandit security check
+        entry: uv run just check-security
+        language: system
+        pass_filenames: false
+        types: [python]
       - id: ty-check
         name: ty check
-        entry: uvx ty check 
+        entry: uv run just check-type
         language: system
+        pass_filenames: false
         stages: [pre-push]
-  - repo: https://github.com/PyCQA/bandit
-    rev: '1.8.3'
-    hooks:
-    - id: bandit
+
+  # Keep commitizen as-is - it's not duplicated in your just file
   - repo: https://github.com/commitizen-tools/commitizen
     rev: 'v4.4.1'
     hooks:
