@@ -1,10 +1,9 @@
 import tempfile
 from pathlib import Path
 
-import polars as pl
 import pytest
 
-from mlforge import Definitions, LocalStore, feature
+from mlforge import Definitions
 from mlforge.errors import DefinitionsLoadError
 from mlforge.loader import load_definitions
 

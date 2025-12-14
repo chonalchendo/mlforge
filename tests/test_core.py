@@ -134,7 +134,9 @@ def test_definitions_register_rejects_duplicate_names():
     with tempfile.TemporaryDirectory() as tmpdir:
         with pytest.raises(ValueError, match="Duplicate feature name: duplicate"):
             Definitions(
-                name="test", features=[duplicate, duplicate], offline_store=LocalStore(tmpdir)
+                name="test",
+                features=[duplicate, duplicate],
+                offline_store=LocalStore(tmpdir),
             )
 
 
@@ -146,7 +148,9 @@ def test_definitions_register_rejects_invalid_type():
     with tempfile.TemporaryDirectory() as tmpdir:
         with pytest.raises(TypeError, match="Expected Feature or module"):
             Definitions(
-                name="test", features=[invalid_obj], offline_store=LocalStore(tmpdir)  # type: ignore[list-item]
+                name="test",
+                features=[invalid_obj],
+                offline_store=LocalStore(tmpdir),  # type: ignore[list-item]
             )
 
 
@@ -162,7 +166,9 @@ def test_definitions_list_features_returns_all():
 
     with tempfile.TemporaryDirectory() as tmpdir:
         defs = Definitions(
-            name="test", features=[feature_a, feature_b], offline_store=LocalStore(tmpdir)
+            name="test",
+            features=[feature_a, feature_b],
+            offline_store=LocalStore(tmpdir),
         )
 
         # When listing features

@@ -66,8 +66,6 @@ def test_definitions_load_error_with_all_fields():
 def test_definitions_load_error_filters_traceback():
     # Given an error with traceback containing library code
     try:
-        import tempfile
-
         exec("import nonexistent")  # noqa: S102
     except Exception as e:
         error = DefinitionsLoadError("Import failed", cause=e)
@@ -183,9 +181,7 @@ def test_definitions_load_error_can_be_raised_and_caught():
 def test_feature_materialization_error_can_be_raised_and_caught():
     # Given a function that raises FeatureMaterializationError
     def failing_function():
-        raise FeatureMaterializationError(
-            feature_name="test", message="Test error"
-        )
+        raise FeatureMaterializationError(feature_name="test", message="Test error")
 
     # When/Then it should be catchable
     with pytest.raises(FeatureMaterializationError, match="Test error"):

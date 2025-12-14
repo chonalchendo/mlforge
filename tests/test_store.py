@@ -13,7 +13,7 @@ def test_local_store_creates_directory():
         store_path = Path(tmpdir) / "new_store"
 
         # When creating LocalStore
-        store = LocalStore(store_path)
+        LocalStore(store_path)
 
         # Then the directory should be created
         assert store_path.exists()
@@ -133,7 +133,7 @@ def test_local_store_handles_nested_directory_path():
         nested_path = Path(tmpdir) / "level1" / "level2" / "store"
 
         # When creating LocalStore
-        store = LocalStore(nested_path)
+        LocalStore(nested_path)
 
         # Then all parent directories should be created
         assert nested_path.exists()
@@ -164,7 +164,9 @@ def test_local_store_preserves_dataframe_schema():
 
 def test_local_store_handles_empty_dataframe():
     # Given an empty DataFrame
-    df = pl.DataFrame({"id": [], "value": []}, schema={"id": pl.Int64, "value": pl.Int64})
+    df = pl.DataFrame(
+        {"id": [], "value": []}, schema={"id": pl.Int64, "value": pl.Int64}
+    )
 
     with tempfile.TemporaryDirectory() as tmpdir:
         store = LocalStore(tmpdir)
