@@ -46,9 +46,9 @@ repos:
         entry: uv run cz check --commit-msg-file
         language: system
         stages: [commit-msg]
-      - id: commitizen-branch
-        name: commitizen branch check
-        entry: uv run cz check --rev-range origin/main..HEAD
-        language: system
-        stages: [pre-push]
-        pass_filenames: false
+      # - id: commitizen-branch
+      #   name: commitizen branch check
+      #   entry: uv run cz check --rev-range origin/main..HEAD
+      #   language: system
+      #   stages: [pre-push]
+      #   pass_filenames: false
