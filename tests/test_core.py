@@ -149,8 +149,8 @@ def test_definitions_register_rejects_invalid_type():
         with pytest.raises(TypeError, match="Expected Feature or module"):
             Definitions(
                 name="test",
-                features=[invalid_obj],
-                offline_store=LocalStore(tmpdir),  # type: ignore[list-item]
+                features=[invalid_obj],  # type: ignore[list-item]
+                offline_store=LocalStore(tmpdir),
             )
 
 

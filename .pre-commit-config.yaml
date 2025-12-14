@@ -42,7 +42,7 @@ repos:
         entry: uv run just check-type
         language: system
         pass_filenames: false
-        stages: [pre-push]
+        # stages: [pre-push]
 
   # Keep commitizen as-is - it's not duplicated in your just file
   - repo: https://github.com/commitizen-tools/commitizen
