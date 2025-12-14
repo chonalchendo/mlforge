@@ -8,11 +8,11 @@ authors = [
 ]
 requires-python = ">=3.13"
 dependencies = [
-    "mlforge",
+    "mlforge-sdk",
 ]
 
 [tool.uv.sources]
-mlforge = { workspace = true }
+mlforge-sdk = { workspace = true }
 
 [project.scripts]
 transactions = "transactions:main"
