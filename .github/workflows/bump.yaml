@@ -13,7 +13,8 @@ jobs:
         with:
           token: ${{ secrets.GK_TOKEN }}
           fetch-depth: 0
-          
+      - uses: ./.github/actions/setup
+      - run: uv sync --group=commit
       - name: Create bump and changelog
         uses: commitizen-tools/commitizen-action@master
         with:
