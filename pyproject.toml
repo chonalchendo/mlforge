@@ -33,9 +33,13 @@ Repository = "https://github.com/chonalchendo/mlforge"
 [project.scripts]
 mlforge = "mlforge.cli:app"
 
+# BUILD SYSTEM
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+# DEPENDENCY GROUPS
 
 [dependency-groups]
 dev = [
@@ -43,6 +47,7 @@ dev = [
 ]
 commit = [
     "commitizen>=4.9.1",
+    "cz-conventional-gitmoji>=0.7.0",
     "prek>=0.2.13",
 ]
 check = [
@@ -60,6 +65,11 @@ docs = [
     "mkdocstrings[python]>=1.0.0",
 ]
 
+# TOOLS
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mlforge"]
+
 [tool.uv]
 default-groups = ["check", "commit", "dev"]
 
@@ -70,7 +80,7 @@ members = [
 
 
 [tool.commitizen]
-name = "cz_conventional_commits"
+name = "cz_gitmoji"
 tag_format = "$version"
 version_scheme = "pep440"
 version_provider = "uv"
