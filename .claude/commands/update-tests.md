@@ -72,10 +72,10 @@ Create tests following the existing patterns:
 def test_<function>_<scenario>_<expected_result>():
     # Given <setup description>
     ...
-    
+
     # When <action description>
     ...
-    
+
     # Then <expected outcome>
     assert ...
 ```
