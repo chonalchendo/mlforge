@@ -2,7 +2,7 @@
 [group('docs')]
 docs-serve:
     uv run mkdocs serve
-    
+
 # build docs
 [group('docs')]
 docs-build:
@@ -11,4 +11,4 @@ docs-build:
 # deploy docs
 [group('docs')]
 docs-deploy:
-    uv run mkdocs gh-deploy
+    uv run mkdocs gh-deploy --force
