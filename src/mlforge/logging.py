@@ -2,9 +2,9 @@ import sys
 from typing import TYPE_CHECKING
 
 import polars as pl
+import rich.console as console_
+import rich.table as table_
 from loguru import logger
-from rich.console import Console
-from rich.table import Table
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -12,7 +12,7 @@ if TYPE_CHECKING:
     from mlforge.core import Feature
 
 
-console = Console()
+console = console_.Console()
 
 
 def setup_logging(verbose: bool = False) -> None:
@@ -44,7 +44,7 @@ def print_features_table(features: dict[str, "Feature"]) -> None:
     Args:
         features: Dictionary mapping feature names to Feature objects
     """
-    table = Table(title="Features")
+    table = table_.Table(title="Features")
     table.add_column("Name", style="cyan")
     table.add_column("Keys", style="green")
     table.add_column("Source", style="dim")
@@ -70,7 +70,7 @@ def print_build_results(results: dict[str, "Path"]) -> None:
     Args:
         results: Dictionary mapping feature names to their storage paths
     """
-    table = Table(title="Materialized Features")
+    table = table_.Table(title="Materialized Features")
     table.add_column("Feature", style="cyan")
     table.add_column("Path", style="green")
 
@@ -113,7 +113,7 @@ def print_feature_preview(
         df: Feature DataFrame to preview
         max_rows: Number of rows to display. Defaults to 5.
     """
-    table = Table(title=f"Preview: {feature_name}", title_style="cyan")
+    table = table_.Table(title=f"Preview: {feature_name}", title_style="cyan")
 
     # Add columns
     for col_name in df.columns:

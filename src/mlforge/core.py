@@ -8,9 +8,9 @@ from typing import Callable, Protocol
 import polars as pl
 from loguru import logger
 
-from mlforge.errors import FeatureMaterializationError
-from mlforge.logging import print_feature_preview
-from mlforge.store import OfflineStoreKind
+import mlforge.errors as errors
+import mlforge.logging as log
+import mlforge.store as store
 
 
 class FeatureFunction(Protocol):
@@ -143,7 +143,7 @@ class Definitions:
         self,
         name: str,
         features: list[Feature | ModuleType],
-        offline_store: OfflineStoreKind,
+        offline_store: store.OfflineStoreKind,
     ) -> None:
         """
         Initialize a feature store registry.
@@ -317,14 +317,14 @@ class Definitions:
             result_df = feature(source_df)
 
             if result_df is None:
-                raise FeatureMaterializationError(
+                raise errors.FeatureMaterializationError(
                     feature_name=feature.name,
                     message="Feature function returned None",
                     hint="Make sure your feature function returns a DataFrame.",
                 )
 
             if not isinstance(result_df, pl.DataFrame):
-                raise FeatureMaterializationError(
+                raise errors.FeatureMaterializationError(
                     feature_name=feature.name,
                     message=f"Expected DataFrame, got {type(result_df).__name__}",
                 )
@@ -333,7 +333,9 @@ class Definitions:
             results[feature.name] = Path(str(output_path))
 
             if preview:
-                print_feature_preview(feature.name, result_df, max_rows=preview_rows)
+                log.print_feature_preview(
+                    feature.name, result_df, max_rows=preview_rows
+                )
 
         return results
 

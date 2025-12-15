@@ -1,18 +1,10 @@
 from typing import Annotated
 
 import cyclopts
-from loguru import logger
 
-from mlforge.discovery import find_definitions_file
-from mlforge.errors import DefinitionsLoadError, FeatureMaterializationError
-from mlforge.loader import load_definitions
-from mlforge.logging import (
-    print_build_results,
-    print_error,
-    print_features_table,
-    print_success,
-    setup_logging,
-)
+import mlforge.errors as errors
+import mlforge.loader as loader
+import mlforge.logging as log
 
 app = cyclopts.App(name="mlforge", help="A simple feature store SDK")
 
@@ -31,7 +23,7 @@ def launcher(
         *tokens: Command tokens to execute
         verbose: Enable debug logging. Defaults to False.
     """
-    setup_logging(verbose=verbose)
+    log.setup_logging(verbose=verbose)
     app(tokens)
 
 
@@ -89,16 +81,8 @@ def build(
             "Tags and features cannot be specified at the same time. Choose one or the other."
         )
 
-    if target is None:
-        discovered = find_definitions_file()
-        if discovered is None:
-            print_error("Could not find definitions.py. Specify --target explicitly.")
-            raise SystemExit(1)
-        target = str(discovered)
-        logger.debug(f"Auto-discovered definitions file: {target}")
-
     try:
-        defs = load_definitions(target)
+        defs = loader.load_definitions(target)
         feature_names = [f.strip() for f in features.split(",")] if features else None
         tag_names = [t.strip() for t in tags.split(",")] if tags else None
 
@@ -110,11 +94,11 @@ def build(
             preview_rows=preview_rows,
         )
 
-        print_build_results(results)
-        print_success(f"Built {len(results)} features")
+        log.print_build_results(results)
+        log.print_success(f"Built {len(results)} features")
 
-    except (DefinitionsLoadError, FeatureMaterializationError) as e:
-        print_error(str(e))
+    except (errors.DefinitionsLoadError, errors.FeatureMaterializationError) as e:
+        log.print_error(str(e))
         raise SystemExit(1)
 
 
@@ -134,15 +118,8 @@ def list_(
     Loads feature definitions and prints their metadata including
     names, keys, sources, and descriptions.
     """
-    if target is None:
-        discovered = find_definitions_file()
-        if discovered is None:
-            print_error("Could not find definitions.py. Specify --target explicitly.")
-            raise SystemExit(1)
-        target = str(discovered)
-        logger.debug(f"Auto-discovered definitions file: {target}")
 
-    defs = load_definitions(target)
+    defs = loader.load_definitions(target)
     features = defs.features
 
     if tags:
@@ -156,4 +133,4 @@ def list_(
         if not features:
             raise ValueError(f"Unknown tags: {tags}")
 
-    print_features_table(features)
+    log.print_features_table(features)
