@@ -11,4 +11,4 @@ docs-build:
 # deploy docs
 [group('docs')]
 docs-deploy:
-    uv run mkdocs gh-deploy
+    uv run mkdocs gh-deploy --force
