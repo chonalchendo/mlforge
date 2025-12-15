@@ -22,11 +22,12 @@ mlforge build [TARGET] [OPTIONS]
 
 #### Arguments
 
-- `TARGET` (optional): Path to definitions file. Defaults to `definitions.py`.
+- `TARGET` (optional): Path to definitions file. Auto-discovers `definitions.py` if not specified.
 
 #### Options
 
 - `--features NAMES`: Comma-separated list of feature names to build. Defaults to all features.
+- `--tags TAGS`: Comma-separated list of feature tags to build. Mutually exclusive with `--features`.
 - `--force`, `-f`: Overwrite existing features. Defaults to `False`.
 - `--no-preview`: Disable feature preview output. Defaults to `False` (preview enabled).
 - `--preview-rows N`: Number of preview rows to display. Defaults to `5`.
@@ -40,10 +41,22 @@ Build all features:
 mlforge build definitions.py
 ```
 
+Build all features (auto-discovers definitions.py):
+
+```bash
+mlforge build
+```
+
 Build specific features:
 
 ```bash
 mlforge build definitions.py --features user_age,user_tenure
+```
+
+Build features by tag:
+
+```bash
+mlforge build --tags user_metrics,demographics
 ```
 
 Force rebuild all features:
@@ -129,12 +142,16 @@ Hint: Make sure your feature function returns a DataFrame.
 Display all registered features in a table.
 
 ```bash
-mlforge list [TARGET]
+mlforge list [TARGET] [OPTIONS]
 ```
 
 #### Arguments
 
-- `TARGET` (optional): Path to definitions file. Defaults to `definitions.py`.
+- `TARGET` (optional): Path to definitions file. Auto-discovers `definitions.py` if not specified.
+
+#### Options
+
+- `--tags TAGS`: Comma-separated list of tags to filter features by. Defaults to showing all features.
 
 #### Examples
 
@@ -144,10 +161,16 @@ List all features:
 mlforge list definitions.py
 ```
 
-List from current directory:
+List from current directory (auto-discovers definitions.py):
 
 ```bash
 mlforge list
+```
+
+List features by tag:
+
+```bash
+mlforge list --tags user_metrics
 ```
 
 #### Output
@@ -155,13 +178,13 @@ mlforge list
 Displays a formatted table with feature metadata:
 
 ```
-┌──────────────────────┬──────────────────┬──────────────────────────┬───────────────────────────┐
-│ Name                 │ Keys             │ Source                   │ Description               │
-├──────────────────────┼──────────────────┼──────────────────────────┼───────────────────────────┤
-│ user_total_spend     │ [user_id]        │ data/transactions.parquet│ Total spend by user       │
-│ user_spend_mean_30d  │ [user_id]        │ data/transactions.parquet│ 30d rolling avg spend     │
-│ merchant_total_spend │ [merchant_id]    │ data/transactions.parquet│ Total spend by merchant   │
-└──────────────────────┴──────────────────┴──────────────────────────┴───────────────────────────┘
+┌──────────────────────┬──────────────────┬──────────────────────────┬──────────────┬───────────────────────────┐
+│ Name                 │ Keys             │ Source                   │ Tags         │ Description               │
+├──────────────────────┼──────────────────┼──────────────────────────┼──────────────┼───────────────────────────┤
+│ user_total_spend     │ [user_id]        │ data/transactions.parquet│ user_metrics │ Total spend by user       │
+│ user_spend_mean_30d  │ [user_id]        │ data/transactions.parquet│ user_metrics │ 30d rolling avg spend     │
+│ merchant_total_spend │ [merchant_id]    │ data/transactions.parquet│ -            │ Total spend by merchant   │
+└──────────────────────┴──────────────────┴──────────────────────────┴──────────────┴───────────────────────────┘
 ```
 
 ## Global Options
@@ -197,7 +220,19 @@ DEBUG: Writing to: feature_store/user_total_spend.parquet
 
 ## Definitions File
 
-The `TARGET` parameter specifies a Python file containing a `Definitions` object named `defs`.
+The `TARGET` parameter specifies a Python file containing a `Definitions` object. If not provided, mlforge will automatically search for `definitions.py` in your project directory.
+
+### Auto-Discovery
+
+When `TARGET` is omitted, mlforge searches for `definitions.py`:
+
+```bash
+# Automatically finds definitions.py in current directory or subdirectories
+mlforge build
+mlforge list
+```
+
+The search starts from the project root (identified by `pyproject.toml`, `.git`, etc.) and looks recursively, skipping common directories like `.venv` and `node_modules`.
 
 ### Structure
 

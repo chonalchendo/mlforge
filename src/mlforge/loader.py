@@ -4,11 +4,12 @@ from pathlib import Path
 
 from loguru import logger
 
-from mlforge.core import Definitions
-from mlforge.errors import DefinitionsLoadError
+import mlforge.core as core
+import mlforge.errors as errors
+import mlforge.logging as log
 
 
-def load_definitions(target: str | None = None) -> Definitions:
+def load_definitions(target: str | None = None) -> core.Definitions:
     """
     Load Definitions from a Python file.
 
@@ -31,7 +32,15 @@ def load_definitions(target: str | None = None) -> Definitions:
         defs.materialize()
     """
     if target is None:
-        target = "definitions.py"
+        discovered = _find_definitions_file()
+        if discovered is None:
+            log.print_error(
+                "Could not find definitions.py. Specify --target explicitly or make sure you have a definitions.py file."
+            )
+            raise SystemExit(1)
+        # automatically discovered definitions.py path
+        target = str(discovered)
+        logger.debug(f"Auto-discovered definitions file: {target}")
 
     path = Path(target)
 
@@ -51,30 +60,32 @@ def load_definitions(target: str | None = None) -> Definitions:
     # Load module from file path
     spec = importlib.util.spec_from_file_location(path.stem, path)
     if spec is None or spec.loader is None:
-        raise DefinitionsLoadError(f"Failed to create module spec for {path}")
+        raise errors.DefinitionsLoadError(f"Failed to create module spec for {path}")
 
     module = importlib.util.module_from_spec(spec)
 
     try:
         spec.loader.exec_module(module)
     except Exception as e:
-        raise DefinitionsLoadError(
+        raise errors.DefinitionsLoadError(
             f"Failed to load {path}",
             cause=e,
         ) from e
 
     # Find all Definitions instances in module
-    definitions = [obj for obj in vars(module).values() if isinstance(obj, Definitions)]
+    definitions = [
+        obj for obj in vars(module).values() if isinstance(obj, core.Definitions)
+    ]
 
     if not definitions:
-        raise DefinitionsLoadError(
+        raise errors.DefinitionsLoadError(
             f"No Definitions instance found in {path}",
             hint="Make sure you have something like:\n\n"
             "  defs = Definitions(name='my-project', features=[...])",
         )
 
     if len(definitions) > 1:
-        raise DefinitionsLoadError(
+        raise errors.DefinitionsLoadError(
             f"Multiple Definitions found in {path}",
             hint="Expected exactly one Definitions instance per file.",
         )
@@ -83,3 +94,43 @@ def load_definitions(target: str | None = None) -> Definitions:
     logger.debug(f"Loaded '{defs.name}' with {len(defs.features)} features")
 
     return defs
+
+
+def _find_project_root(start_path: Path | None = None) -> Path:
+    """Find project root by looking for common project markers."""
+    if start_path is None:
+        start_path = Path.cwd()
+
+    markers = ["pyproject.toml", "setup.py", "setup.cfg", ".git"]
+
+    current = start_path.resolve()
+    for parent in [current, *current.parents]:
+        if any((parent / marker).exists() for marker in markers):
+            return parent
+
+    return start_path.resolve()
+
+
+def _find_definitions_file(
+    filename: str = "definitions.py", root: Path | None = None
+) -> Path | None:
+    """Recursively search for definitions file starting from project root."""
+    if root is None:
+        root = _find_project_root()
+
+    skip_dirs = {
+        ".git",
+        "__pycache__",
+        ".venv",
+        "venv",
+        "node_modules",
+        ".tox",
+        "dist",
+        "build",
+    }
+
+    for path in root.rglob(filename):
+        if not any(part in skip_dirs for part in path.parts):
+            return path.resolve()
+
+    return None

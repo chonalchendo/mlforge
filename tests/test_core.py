@@ -50,6 +50,33 @@ def test_feature_decorator_stores_metadata():
     assert interactions.description == "User-product interactions"
 
 
+def test_feature_decorator_stores_tags():
+    # Given a feature with tags
+    @feature(
+        keys=["user_id"],
+        source="data/users.parquet",
+        tags=["user", "profile"],
+        description="User profile features",
+    )
+    def user_profile(df):
+        return df
+
+    # When checking the tags
+    # Then tags should be stored
+    assert user_profile.tags == ["user", "profile"]
+
+
+def test_feature_decorator_defaults_tags_to_none():
+    # Given a feature without tags
+    @feature(keys=["id"], source="data.parquet")
+    def no_tags_feature(df):
+        return df
+
+    # When checking the tags
+    # Then tags should be None
+    assert no_tags_feature.tags is None
+
+
 def test_feature_is_callable():
     # Given a feature that transforms data
     @feature(keys=["id"], source="data.parquet")
@@ -180,6 +207,67 @@ def test_definitions_list_features_returns_all():
         assert feature_b in features
 
 
+def test_definitions_list_features_filters_by_tags():
+    # Given features with different tags
+    @feature(keys=["id"], source="data.parquet", tags=["user", "profile"])
+    def user_feature(df):
+        return df
+
+    @feature(keys=["id"], source="data.parquet", tags=["transaction"])
+    def transaction_feature(df):
+        return df
+
+    @feature(keys=["id"], source="data.parquet", tags=["user", "activity"])
+    def activity_feature(df):
+        return df
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        defs = Definitions(
+            name="test",
+            features=[user_feature, transaction_feature, activity_feature],
+            offline_store=LocalStore(tmpdir),
+        )
+
+        # When listing features with specific tags
+        features = defs.list_features(tags=["user"])
+
+        # Then only features with matching tags should be returned
+        assert len(features) == 2
+        assert user_feature in features
+        assert activity_feature in features
+        assert transaction_feature not in features
+
+
+def test_definitions_list_tags_returns_all_unique_tags():
+    # Given features with various tags
+    @feature(keys=["id"], source="data.parquet", tags=["user", "profile"])
+    def feature_a(df):
+        return df
+
+    @feature(keys=["id"], source="data.parquet", tags=["user", "activity"])
+    def feature_b(df):
+        return df
+
+    @feature(keys=["id"], source="data.parquet")
+    def feature_c(df):
+        return df
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        defs = Definitions(
+            name="test",
+            features=[feature_a, feature_b, feature_c],
+            offline_store=LocalStore(tmpdir),
+        )
+
+        # When listing tags
+        tags = defs.list_tags()
+
+        # Then all unique tags should be returned
+        assert "user" in tags
+        assert "profile" in tags
+        assert "activity" in tags
+
+
 def test_materialize_executes_feature_function():
     # Given a feature that adds a column
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -288,6 +376,53 @@ def test_materialize_raises_on_unknown_feature():
         # When/Then requesting unknown feature should raise
         with pytest.raises(ValueError, match="Unknown feature: unknown"):
             defs.materialize(feature_names=["unknown"], preview=False)
+
+
+def test_materialize_raises_on_unknown_tag():
+    # Given definitions with features having specific tags
+    @feature(keys=["id"], source="data.parquet", tags=["user"])
+    def tagged_feature(df):
+        return df
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        defs = Definitions(
+            name="test", features=[tagged_feature], offline_store=LocalStore(tmpdir)
+        )
+
+        # When/Then requesting unknown tag should raise
+        with pytest.raises(ValueError, match="Unknown tag: unknown"):
+            defs.materialize(tag_names=["unknown"], preview=False)
+
+
+def test_materialize_filters_by_tag_names():
+    # Given features with different tags
+    with tempfile.TemporaryDirectory() as tmpdir:
+        source_path = Path(tmpdir) / "data.parquet"
+        pl.DataFrame({"id": [1, 2]}).write_parquet(source_path)
+
+        @feature(keys=["id"], source=str(source_path), tags=["user"])
+        def user_feature(df):
+            return df.with_columns(pl.lit("user").alias("type"))
+
+        @feature(keys=["id"], source=str(source_path), tags=["transaction"])
+        def transaction_feature(df):
+            return df.with_columns(pl.lit("transaction").alias("type"))
+
+        store = LocalStore(tmpdir)
+        defs = Definitions(
+            name="test",
+            features=[user_feature, transaction_feature],
+            offline_store=store,
+        )
+
+        # When materializing by tag
+        results = defs.materialize(tag_names=["user"], preview=False)
+
+        # Then only features with that tag should be materialized
+        assert "user_feature" in results
+        assert "transaction_feature" not in results
+        assert store.exists("user_feature")
+        assert not store.exists("transaction_feature")
 
 
 def test_materialize_raises_on_none_return():

@@ -53,6 +53,7 @@ import polars as pl
 @feature(
     keys=["user_id"],
     source="data/transactions.parquet",
+    tags=["spending"],
     description="Total spend per user"
 )
 def user_total_spend(df: pl.DataFrame) -> pl.DataFrame:
@@ -63,6 +64,7 @@ def user_total_spend(df: pl.DataFrame) -> pl.DataFrame:
 @feature(
     keys=["user_id"],
     source="data/transactions.parquet",
+    tags=["spending"],
     description="Average transaction amount per user"
 )
 def user_avg_transaction(df: pl.DataFrame) -> pl.DataFrame:

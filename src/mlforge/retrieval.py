@@ -3,15 +3,15 @@ from pathlib import Path
 
 import polars as pl
 
-from mlforge.store import LocalStore, Store
-from mlforge.utils import EntityKeyTransform
+import mlforge.store as store_
+import mlforge.utils as utils
 
 
 def get_training_data(
     features: list[str],
     entity_df: pl.DataFrame,
-    store: str | Path | Store = "./feature_store",
-    entities: list[EntityKeyTransform] | None = None,
+    store: str | Path | store_.Store = "./feature_store",
+    entities: list[utils.EntityKeyTransform] | None = None,
     timestamp: str | None = None,
 ) -> pl.DataFrame:
     """
@@ -43,7 +43,7 @@ def get_training_data(
         )
     """
     if isinstance(store, (str, Path)):
-        store = LocalStore(path=store)
+        store = store_.LocalStore(path=store)
 
     result = entity_df
 

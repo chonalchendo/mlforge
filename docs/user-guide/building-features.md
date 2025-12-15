@@ -21,11 +21,20 @@ This will:
 
 ### Build Specific Features
 
-Build only selected features:
+Build only selected features by name:
 
 ```bash
 mlforge build definitions.py --features user_total_spend,user_avg_spend
 ```
+
+Or build features by tag:
+
+```bash
+mlforge build --tags user_metrics,demographics
+```
+
+!!! note "Mutually exclusive filters"
+    The `--features` and `--tags` options cannot be used together. Choose one filtering approach per build command.
 
 ### Force Rebuild
 
@@ -79,9 +88,20 @@ defs.materialize()
 
 ### Materialize Specific Features
 
+By feature name:
+
 ```python
 defs.materialize(feature_names=["user_total_spend", "user_avg_spend"])
 ```
+
+By tag:
+
+```python
+defs.materialize(tag_names=["user_metrics", "demographics"])
+```
+
+!!! note "Mutually exclusive parameters"
+    The `feature_names` and `tag_names` parameters cannot be used together.
 
 ### Force Rebuild
 
@@ -150,24 +170,34 @@ View all registered features:
 mlforge list definitions.py
 ```
 
+Filter by tags:
+
+```bash
+mlforge list --tags user_metrics
+```
+
 Output:
 
 ```
-┌──────────────────┬──────────────┬──────────────────────────┬─────────────────────┐
-│ Name             │ Keys         │ Source                   │ Description         │
-├──────────────────┼──────────────┼──────────────────────────┼─────────────────────┤
-│ user_total_spend │ [user_id]    │ data/transactions.parquet│ Total spend by user │
-│ user_avg_spend   │ [user_id]    │ data/transactions.parquet│ Avg spend by user   │
-└──────────────────┴──────────────┴──────────────────────────┴─────────────────────┘
+┌──────────────────┬──────────────┬──────────────────────────┬──────────────┬─────────────────────┐
+│ Name             │ Keys         │ Source                   │ Tags         │ Description         │
+├──────────────────┼──────────────┼──────────────────────────┼──────────────┼─────────────────────┤
+│ user_total_spend │ [user_id]    │ data/transactions.parquet│ user_metrics │ Total spend by user │
+│ user_avg_spend   │ [user_id]    │ data/transactions.parquet│ user_metrics │ Avg spend by user   │
+└──────────────────┴──────────────┴──────────────────────────┴──────────────┴─────────────────────┘
 ```
 
 Or in Python:
 
 ```python
+# List all features
 features = defs.list_features()
 
 for feature in features:
     print(f"{feature.name}: {feature.description}")
+
+# List features by tag
+user_features = defs.list_features(tags=["user_metrics"])
 ```
 
 ## Error Handling

@@ -1,17 +1,10 @@
 from typing import Annotated
 
 import cyclopts
-from loguru import logger
 
-from mlforge.errors import DefinitionsLoadError, FeatureMaterializationError
-from mlforge.loader import load_definitions
-from mlforge.logging import (
-    print_build_results,
-    print_error,
-    print_features_table,
-    print_success,
-    setup_logging,
-)
+import mlforge.errors as errors
+import mlforge.loader as loader
+import mlforge.logging as log
 
 app = cyclopts.App(name="mlforge", help="A simple feature store SDK")
 
@@ -30,22 +23,41 @@ def launcher(
         *tokens: Command tokens to execute
         verbose: Enable debug logging. Defaults to False.
     """
-    setup_logging(verbose=verbose)
+    log.setup_logging(verbose=verbose)
     app(tokens)
 
 
 @app.command
 def build(
     target: Annotated[
-        str | None, cyclopts.Parameter(name="--target", help="Path to definitions file")
+        str | None,
+        cyclopts.Parameter(
+            name="--target", help="Path to definitions.py file. Automatically handled."
+        ),
     ] = None,
     features: Annotated[
         str | None,
         cyclopts.Parameter(name="--features", help="Comma-separated feature names"),
     ] = None,
-    force: Annotated[bool, cyclopts.Parameter(["--force", "-f"])] = False,
-    no_preview: Annotated[bool, cyclopts.Parameter("--no-preview")] = False,
-    preview_rows: Annotated[int, cyclopts.Parameter("--preview-rows")] = 5,
+    tags: Annotated[
+        str | None,
+        cyclopts.Parameter(name="--tags", help="Comma-separated feature tags"),
+    ] = None,
+    force: Annotated[
+        bool,
+        cyclopts.Parameter(name=["--force", "-f"], help="Overwrite existing features."),
+    ] = False,
+    no_preview: Annotated[
+        bool,
+        cyclopts.Parameter(name="--no-preview", help="Disable feature preview output"),
+    ] = False,
+    preview_rows: Annotated[
+        int,
+        cyclopts.Parameter(
+            name="--preview-rows",
+            help="Number of preview rows to display. Defaults to 5.",
+        ),
+    ] = 5,
 ):
     """
     Materialize features to offline storage.
@@ -56,6 +68,7 @@ def build(
     Args:
         target: Path to definitions file. Defaults to "definitions.py".
         features: Comma-separated list of feature names. Defaults to None (all).
+        tags: Comma-separated list of feature tags. Defualts to None.
         force: Overwrite existing features. Defaults to False.
         no_preview: Disable feature preview output. Defaults to False.
         preview_rows: Number of preview rows to display. Defaults to 5.
@@ -63,29 +76,40 @@ def build(
     Raises:
         SystemExit: If loading definitions or materialization fails
     """
+    if tags and features:
+        raise ValueError(
+            "Tags and features cannot be specified at the same time. Choose one or the other."
+        )
+
     try:
-        defs = load_definitions(target)
-        feature_names = features.split(",") if features else None
+        defs = loader.load_definitions(target)
+        feature_names = [f.strip() for f in features.split(",")] if features else None
+        tag_names = [t.strip() for t in tags.split(",")] if tags else None
 
         results = defs.materialize(
             feature_names=feature_names,
+            tag_names=tag_names,
             force=force,
             preview=not no_preview,
             preview_rows=preview_rows,
         )
 
-        print_build_results(results)
-        print_success(f"Built {len(results)} features")
+        log.print_build_results(results)
+        log.print_success(f"Built {len(results)} features")
 
-    except (DefinitionsLoadError, FeatureMaterializationError) as e:
-        print_error(str(e))
+    except (errors.DefinitionsLoadError, errors.FeatureMaterializationError) as e:
+        log.print_error(str(e))
         raise SystemExit(1)
 
 
 @app.command
 def list_(
     target: Annotated[
-        str | None, cyclopts.Parameter(help="definitions module:object")
+        str | None,
+        cyclopts.Parameter(help="Path to definitions.py file - automatically handled."),
+    ] = None,
+    tags: Annotated[
+        str | None, cyclopts.Parameter(help="Comma-separated list of feature tags.")
     ] = None,
 ):
     """
@@ -93,10 +117,20 @@ def list_(
 
     Loads feature definitions and prints their metadata including
     names, keys, sources, and descriptions.
-
-    Args:
-        target: Path to definitions file. Defaults to "definitions.py".
     """
-    logger.debug(f"Loading definitions from {target or 'default'}")
-    defs = load_definitions(target)
-    print_features_table(defs.features)
+
+    defs = loader.load_definitions(target)
+    features = defs.features
+
+    if tags:
+        tag_set = {t.strip() for t in tags.split(",")}
+        features = {
+            name: feature
+            for name, feature in features.items()
+            if feature.tags and tag_set.intersection(feature.tags)
+        }
+
+        if not features:
+            raise ValueError(f"Unknown tags: {tags}")
+
+    log.print_features_table(features)

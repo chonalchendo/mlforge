@@ -16,7 +16,12 @@ with_user_id = entity_key("first", "last", "dob", alias=USER_KEY)
 ### MERCHANT FEATURES
 
 
-@feature(source=SOURCE, keys=[MERCHANT_KEY], description="Total spend by merchant ID")
+@feature(
+    source=SOURCE,
+    keys=[MERCHANT_KEY],
+    tags=["merchants"],
+    description="Total spend by merchant ID",
+)
 def merchant_total_spend(df: pl.DataFrame) -> pl.DataFrame:
     return (
         df.pipe(with_merchant_id)
@@ -28,7 +33,12 @@ def merchant_total_spend(df: pl.DataFrame) -> pl.DataFrame:
 ### ACCOUNT FEATURES
 
 
-@feature(source=SOURCE, keys=[ACCOUNT_KEY], description="Total spend by account ID")
+@feature(
+    source=SOURCE,
+    keys=[ACCOUNT_KEY],
+    tags=["accounts"],
+    description="Total spend by account ID",
+)
 def account_total_spend(df: pl.DataFrame) -> pl.DataFrame:
     return (
         df.pipe(with_account_id)
@@ -40,7 +50,9 @@ def account_total_spend(df: pl.DataFrame) -> pl.DataFrame:
 ### USER FEATURES
 
 
-@feature(keys=[USER_KEY], source=SOURCE, description="Total spend by user ID")
+@feature(
+    keys=[USER_KEY], source=SOURCE, tags=["users"], description="Total spend by user ID"
+)
 def user_total_spend(df: pl.DataFrame) -> pl.DataFrame:
     return (
         df.pipe(with_user_id)
@@ -52,6 +64,7 @@ def user_total_spend(df: pl.DataFrame) -> pl.DataFrame:
 @feature(
     keys=[USER_KEY],
     source=SOURCE,
+    tags=["users"],
     timestamp="feature_timestamp",
     description="User mean spend over 30d rolling window",
 )

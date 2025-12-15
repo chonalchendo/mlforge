@@ -4,7 +4,7 @@ Features in mlforge are defined using the `@feature` decorator, which transforms
 
 ## The @feature Decorator
 
-The decorator requires two parameters and accepts two optional ones:
+The decorator requires two parameters and accepts three optional ones:
 
 ```python
 from mlforge import feature
@@ -13,6 +13,7 @@ import polars as pl
 @feature(
     keys=["user_id"],                    # Required: entity keys
     source="data/transactions.parquet",  # Required: source data path
+    tags=["user_metrics"],               # Optional: feature grouping tags
     timestamp="event_time",              # Optional: for temporal features
     description="User statistics"        # Optional: human-readable description
 )
@@ -63,6 +64,42 @@ def customer_features(df): ...
 The path can be relative or absolute. Relative paths are resolved from your working directory.
 
 ### Optional Parameters
+
+#### tags
+
+List of tags to group related features together. Tags enable selective building and listing of features.
+
+```python
+@feature(
+    keys=["user_id"],
+    source="data/transactions.parquet",
+    tags=["user_metrics", "revenue"]
+)
+def user_lifetime_value(df): ...
+
+@feature(
+    keys=["user_id"],
+    source="data/demographics.parquet",
+    tags=["demographics"]
+)
+def user_age_group(df): ...
+```
+
+Build only features with specific tags:
+
+```bash
+mlforge build --tags user_metrics
+mlforge build --tags user_metrics,demographics
+```
+
+List features by tag:
+
+```bash
+mlforge list --tags revenue
+```
+
+!!! tip "Organizing features"
+    Use tags to organize features by domain (e.g., "user", "product"), category (e.g., "demographics", "behavior"), or team ownership (e.g., "data-science", "ml-ops").
 
 #### timestamp
 
@@ -176,11 +213,19 @@ import polars as pl
 
 SOURCE = "data/users.parquet"
 
-@feature(keys=["user_id"], source=SOURCE)
+@feature(
+    keys=["user_id"],
+    source=SOURCE,
+    tags=["demographics"]
+)
 def user_age(df: pl.DataFrame) -> pl.DataFrame:
     return df.select(["user_id", "age"])
 
-@feature(keys=["user_id"], source=SOURCE)
+@feature(
+    keys=["user_id"],
+    source=SOURCE,
+    tags=["demographics"]
+)
 def user_tenure_days(df: pl.DataFrame) -> pl.DataFrame:
     return df.with_columns(
         (pl.col("created_at").dt.date() - pl.lit("2020-01-01").str.to_date())
@@ -188,7 +233,11 @@ def user_tenure_days(df: pl.DataFrame) -> pl.DataFrame:
         .alias("tenure_days")
     ).select(["user_id", "tenure_days"])
 
-@feature(keys=["user_id"], source=SOURCE)
+@feature(
+    keys=["user_id"],
+    source=SOURCE,
+    tags=["subscription"]
+)
 def user_is_premium(df: pl.DataFrame) -> pl.DataFrame:
     return df.select(["user_id", "is_premium"])
 ```
