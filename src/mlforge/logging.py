@@ -48,6 +48,7 @@ def print_features_table(features: dict[str, "Feature"]) -> None:
     table.add_column("Name", style="cyan")
     table.add_column("Keys", style="green")
     table.add_column("Source", style="dim")
+    table.add_column(header="Tags", style="magenta")
     table.add_column("Description")
 
     for name, feature in features.items():
@@ -55,6 +56,7 @@ def print_features_table(features: dict[str, "Feature"]) -> None:
             name,
             ", ".join(feature.keys),
             str(feature.source),
+            ", ".join(feature.tags) if feature.tags else "-",
             feature.description or "-",
         )
 
