@@ -90,6 +90,57 @@ defs = Definitions(name="default", features=[], offline_store=LocalStore("{store
             os.chdir(original_cwd)
 
 
+def test_load_definitions_auto_discovers_nested_definitions():
+    # Given a definitions.py in a nested directory
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Create project root marker
+        (Path(tmpdir) / "pyproject.toml").write_text("")
+
+        # Create nested definitions file
+        nested_dir = Path(tmpdir) / "src" / "features"
+        nested_dir.mkdir(parents=True)
+        definitions_file = nested_dir / "definitions.py"
+        store_path = Path(tmpdir) / "store"
+        definitions_file.write_text(
+            f"""
+from mlforge import Definitions, LocalStore
+
+defs = Definitions(name="nested", features=[], offline_store=LocalStore("{store_path}"))
+"""
+        )
+
+        # When loading without specifying target from root
+        import os
+
+        original_cwd = os.getcwd()
+        try:
+            os.chdir(tmpdir)
+            result = load_definitions()
+
+            # Then it should auto-discover the nested definitions.py
+            assert result.name == "nested"
+        finally:
+            os.chdir(original_cwd)
+
+
+def test_load_definitions_raises_system_exit_when_not_found():
+    # Given no definitions.py file exists
+    with tempfile.TemporaryDirectory() as tmpdir:
+        import os
+
+        original_cwd = os.getcwd()
+        try:
+            os.chdir(tmpdir)
+
+            # When/Then loading should raise SystemExit
+            with pytest.raises(SystemExit) as exc_info:
+                load_definitions()
+
+            assert exc_info.value.code == 1
+        finally:
+            os.chdir(original_cwd)
+
+
 def test_load_definitions_raises_on_missing_file():
     # Given a non-existent file path
     # When/Then loading should raise FileNotFoundError
