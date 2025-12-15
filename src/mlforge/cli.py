@@ -38,7 +38,10 @@ def launcher(
 @app.command
 def build(
     target: Annotated[
-        str | None, cyclopts.Parameter(name="--target", help="Path to definitions file")
+        str | None,
+        cyclopts.Parameter(
+            name="--target", help="Path to definitions.py file. Automatically handled."
+        ),
     ] = None,
     features: Annotated[
         str | None,
@@ -118,7 +121,8 @@ def build(
 @app.command
 def list_(
     target: Annotated[
-        str | None, cyclopts.Parameter(help="definitions module:object")
+        str | None,
+        cyclopts.Parameter(help="Path to definitions.py file - automatically handled."),
     ] = None,
     tags: Annotated[
         str | None, cyclopts.Parameter(help="Comma-separated list of feature tags.")
@@ -130,9 +134,15 @@ def list_(
     Loads feature definitions and prints their metadata including
     names, keys, sources, and descriptions.
     """
-    logger.debug(f"Loading definitions from {target or 'default'}")
-    defs = load_definitions(target)
+    if target is None:
+        discovered = find_definitions_file()
+        if discovered is None:
+            print_error("Could not find definitions.py. Specify --target explicitly.")
+            raise SystemExit(1)
+        target = str(discovered)
+        logger.debug(f"Auto-discovered definitions file: {target}")
 
+    defs = load_definitions(target)
     features = defs.features
 
     if tags:
