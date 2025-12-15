@@ -2,7 +2,7 @@
 [group('docs')]
 docs-serve:
     uv run mkdocs serve
-    
+
 # build docs
 [group('docs')]
 docs-build:
