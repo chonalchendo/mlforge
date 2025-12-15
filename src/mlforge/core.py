@@ -33,6 +33,7 @@ class Feature:
         name: Feature name derived from the decorated function
         source: Path to the data source file (parquet/csv)
         keys: Column names that uniquely identify entities
+        tags: Feature tags to group features together
         timestamp: Column name for temporal features, enables point-in-time joins
         description: Human-readable feature description
         fn: The transformation function that computes the feature
@@ -46,6 +47,7 @@ class Feature:
     name: str
     source: str
     keys: list[str]
+    tags: list[str] | None
     timestamp: str | None
     description: str | None
     fn: Callable[..., pl.DataFrame]
@@ -65,6 +67,7 @@ class Feature:
 def feature(
     keys: list[str],
     source: str,
+    tags: list[str] | None = None,
     timestamp: str | None = None,
     description: str | None = None,
 ) -> Callable[[FeatureFunction], Feature]:
@@ -77,6 +80,7 @@ def feature(
     Args:
         keys: Column names that uniquely identify entities
         source: Path to source data file (parquet or csv)
+        tags: Tags to group feature with our features. Defaults to None.
         timestamp: Column name for temporal features. Defaults to None.
         description: Human-readable feature description. Defaults to None.
 
@@ -87,6 +91,7 @@ def feature(
         @feature(
             keys=["user_id"],
             source="data/transactions.parquet",
+            tags=['users'],
             timestamp="transaction_time",
             description="User spending statistics"
         )
@@ -101,6 +106,7 @@ def feature(
             name=fn.__name__,
             keys=keys,
             source=source,
+            tags=tags,
             timestamp=timestamp,
             description=description,
             fn=fn,
@@ -211,18 +217,35 @@ class Definitions:
         if features_found == 0:
             logger.warning(f"No features found in module: {module.__name__}")
 
-    def list_features(self) -> list[Feature]:
+    def list_features(self, tags: list[str] | None = None) -> list[Feature]:
         """
         Return all registered features.
+
+        Args:
+            tags: Pass a list of tags to return the features for. Defaults to None.
 
         Returns:
             List of all Feature objects in the registry
         """
-        return list(self.features.values())
+        features = list(self.features.values())
+
+        if not tags:
+            return features
+
+        return [
+            feat
+            for feat in features
+            if feat.tags and any(tag in tags for tag in feat.tags)
+        ]
+
+    def list_tags(self) -> list[str]:
+        features = self.list_features()
+        return [tag for feat in features if feat.tags for tag in feat.tags]
 
     def materialize(
         self,
         feature_names: list[str] | None = None,
+        tag_names: list[str] | None = None,
         force: bool = False,
         preview: bool = True,
         preview_rows: int = 5,
@@ -235,6 +258,7 @@ class Definitions:
 
         Args:
             feature_names: Specific features to materialize. Defaults to None (all).
+            tag_names: Specific features to materialize by tag. Defaults to None (all).
             force: Overwrite existing features. Defaults to False.
             preview: Display preview of materialized data. Defaults to True.
             preview_rows: Number of preview rows to show. Defaults to 5.
@@ -252,14 +276,31 @@ class Definitions:
                 force=True
             )
         """
-        if feature_names is None:
+
+        if not feature_names or not tag_names:
+            # build all defined in definitions if none are specified
             to_build = self.list_features()
-        else:
+
+        if feature_names:
+            # build features specified by --features parameter
             to_build = []
             for name in feature_names:
                 if name not in self.features:
                     raise ValueError(f"Unknown feature: {name}")
                 to_build.append(self.features[name])
+
+        if tag_names:
+            # build features specificed by --tags parameter
+            to_build = []
+            # validate tags exist
+            for tag in tag_names:
+                print(tag)
+                if tag not in self.list_tags():
+                    print(self.list_tags())
+                    raise ValueError(f"Unknown tag: {tag}")
+            features = self.list_features(tags=tag_names)
+            for feature in features:
+                to_build.append(feature)
 
         results = {}
 
