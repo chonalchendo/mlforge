@@ -1,6 +1,6 @@
 [project]
 name = "mlforge-sdk"
-version = "0.2.2"
+version = "0.3.0"
 description = "ML Platform for your local machine using cheap cloud services for scalable resources."
 readme = "README.md"
 authors = [

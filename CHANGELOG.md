@@ -1,3 +1,13 @@
+## v0.3.0 (2025-12-16)
+
+### ✨ Features
+
+- add trusted publishing to PyPI in publish workflow
+
+### 💄🚸 UI & UIX
+
+- clean up changelog formatting
+
 ## v0.2.2 (2025-12-16)
 ### 📝💡 Documentation
 - refactor commit command documentation
