@@ -86,3 +86,5 @@ version_scheme = "pep440"
 version_provider = "uv"
 update_changelog_on_bump = true
 major_version_zero = true
+bump_map = { "feat" = "MINOR", "fix" = "PATCH", "refactor" = "PATCH", "perf" = "PATCH" }
+bump_pattern = "^(feat|fix|refactor|perf)(\\(.+\\))?(!)?:"
