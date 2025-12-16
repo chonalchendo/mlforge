@@ -28,6 +28,16 @@
 - add usage examples
 - add project documentation and Claude Code configuration
 
+## v0.2.2 (2025-12-16)
+
+### 📝💡 Documentation
+
+- refactor commit command documentation
+
+### 🚀 Deployments
+
+- add force flag to docs deployment
+
 ## v0.2.1 (2025-12-16)
 
 ### fix
