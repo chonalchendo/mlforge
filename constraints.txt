@@ -11,7 +11,7 @@ attrs==25.4.0 \
 cyclopts==4.3.0 \
     --hash=sha256:91a30b69faf128ada7cfeaefd7d9649dc222e8b2a8697f1fc99e4ee7b7ca44f3 \
     --hash=sha256:e95179cd0a959ce250ecfb2f0262a5996a92c1f9467bccad2f3d829e6833cef5
-    # via mlforge (pyproject.toml)
+    # via mlforge-sdk (pyproject.toml)
 docstring-parser==0.17.0 \
     --hash=sha256:583de4a309722b3315439bb31d64ba3eebada841f2e2cee23b99df001434c912 \
     --hash=sha256:cf2569abd23dce8099b300f9b4fa8191e9582dda731fd533daf54c4551658708
@@ -23,11 +23,11 @@ docutils==0.22.3 \
 hatchling==1.28.0 \
     --hash=sha256:4d50b02aece6892b8cd0b3ce6c82cb218594d3ec5836dbde75bf41a21ab004c8 \
     --hash=sha256:dc48722b68b3f4bbfa3ff618ca07cdea6750e7d03481289ffa8be1521d18a961
-    # via mlforge (pyproject.toml)
+    # via mlforge-sdk (pyproject.toml)
 loguru==0.7.3 \
     --hash=sha256:19480589e77d47b8d85b2c827ad95d49bf31b0dcde16593892eb51dd18706eb6 \
     --hash=sha256:31a33c10c8e1e10422bfd431aeb5d351c7cf7fa671e3c4df004162264b28220c
-    # via mlforge (pyproject.toml)
+    # via mlforge-sdk (pyproject.toml)
 markdown-it-py==4.0.0 \
     --hash=sha256:87327c59b172c5011896038353a81343b6754500a08cd7a4973bb48c6d578147 \
     --hash=sha256:cb0a2b4aa34f932c007117b194e945bd74e0ec24133ceb5bac59009cda1cb9f3
@@ -51,7 +51,7 @@ pluggy==1.6.0 \
 polars==1.36.1 \
     --hash=sha256:12c7616a2305559144711ab73eaa18814f7aa898c522e7645014b68f1432d54c \
     --hash=sha256:853c1bbb237add6a5f6d133c15094a9b727d66dd6a4eb91dbb07cdb056b2b8ef
-    # via mlforge (pyproject.toml)
+    # via mlforge-sdk (pyproject.toml)
 polars-runtime-32==1.36.1 \
     --hash=sha256:201c2cfd80ceb5d5cd7b63085b5fd08d6ae6554f922bcb941035e39638528a09 \
     --hash=sha256:327b621ca82594f277751f7e23d4b939ebd1be18d54b4cdf7a2f8406cecc18b2 \
@@ -112,11 +112,11 @@ pyarrow==22.0.0 \
     --hash=sha256:f633074f36dbc33d5c05b5dc75371e5660f1dbf9c8b1d95669def05e5425989c \
     --hash=sha256:f7fe3dbe871294ba70d789be16b6e7e52b418311e166e0e3cba9522f0f437fb1 \
     --hash=sha256:f963ba8c3b0199f9d6b794c90ec77545e05eadc83973897a4523c9e8d84e9340
-    # via mlforge (pyproject.toml)
+    # via mlforge-sdk (pyproject.toml)
 pydantic==2.12.5 \
     --hash=sha256:4d351024c75c0f085a9febbb665ce8c0c6ec5d30e903bdb6394b7ede26aebb49 \
     --hash=sha256:e561593fccf61e8a20fc46dfc2dfe075b8be7d0188df33f221ad1f0139180f9d
-    # via mlforge (pyproject.toml)
+    # via mlforge-sdk (pyproject.toml)
 pydantic-core==2.41.5 \
     --hash=sha256:0177272f88ab8312479336e1d777f6b124537d47f2123f89cb37e0accea97f90 \
     --hash=sha256:01a3d0ab748ee531f4ea6c3e48ad9dac84ddba4b0d82291f87248f2f9de8d740 \
@@ -257,7 +257,7 @@ rich-rst==1.3.2 \
 setuptools==80.9.0 \
     --hash=sha256:062d34222ad13e0cc312a4c02d73f059e86a4acbfbdea8f8f76b28c99f306922 \
     --hash=sha256:f36b47402ecde768dbfafc46e8e4207b4360c654f1f3bb84475f0a28628fb19c
-    # via mlforge (pyproject.toml)
+    # via mlforge-sdk (pyproject.toml)
 trove-classifiers==2025.12.1.14 \
     --hash=sha256:a74f0400524fc83620a9be74a07074b5cbe7594fd4d97fd4c2bfde625fdc1633 \
     --hash=sha256:a8206978ede95937b9959c3aff3eb258bbf7b07dff391ddd4ea7e61f316635ab
