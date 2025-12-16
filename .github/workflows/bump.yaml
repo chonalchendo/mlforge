@@ -18,6 +18,18 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
       - name: Bump version and create changelog
-        run: uv run cz bump --yes --changelog --changelog-to-stdout > body.md
+        run: |
+          uv run cz bump --yes --changelog --changelog-to-stdout > body.md || exit_code=$?
+          if [ "${exit_code:-0}" -eq 21 ]; then
+            echo "No commits to bump - skipping"
+            exit 0
+          elif [ "${exit_code:-0}" -ne 0 ]; then
+            exit $exit_code
+          fi
       - name: Push changes
-        run: git push --follow-tags
+        run: |
+          if [ -n "$(git status --porcelain)" ] || [ -n "$(git tag --points-at HEAD)" ]; then
+            git push --follow-tags
+          else
+            echo "Nothing to push"
+          fi
