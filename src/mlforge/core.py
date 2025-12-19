@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 from types import ModuleType
-from typing import Callable, Protocol
+from typing import Any, Callable, Protocol
 
 import polars as pl
 from loguru import logger
@@ -239,8 +239,146 @@ class Definitions:
         ]
 
     def list_tags(self) -> list[str]:
+        """
+        Return all tags from registered features.
+
+        Returns:
+            Flat list of tag strings. May contain duplicates if the same
+            tag is used by multiple features.
+
+        Example:
+            tags = defs.list_tags()  # ["users", "transactions", "users"]
+            unique_tags = set(defs.list_tags())  # {"users", "transactions"}
+        """
         features = self.list_features()
         return [tag for feat in features if feat.tags for tag in feat.tags]
+
+    def _get_feature(self, name: str) -> Feature:
+        """
+        Get a feature by name.
+
+        Args:
+            name: Feature name to retrieve
+
+        Returns:
+            Feature object
+
+        Raises:
+            ValueError: If feature name is not registered
+        """
+        if name not in self.features:
+            raise ValueError(f"Unknown feature: {name}")
+        return self.features[name]
+
+    def _validate_tags(self, tag_names: list[str]) -> None:
+        """
+        Validate that all tag names exist in registered features.
+
+        Args:
+            tag_names: List of tag names to validate
+
+        Raises:
+            ValueError: If any tag is not found in registered features
+        """
+        available_tags = set(self.list_tags())
+        invalid_tags = [t for t in tag_names if t not in available_tags]
+        if invalid_tags:
+            logger.debug(f"Invalid tags: {invalid_tags}. Available: {available_tags}")
+            raise ValueError(
+                f"Unknown tags: {invalid_tags}. Available: {sorted(available_tags)}"
+            )
+
+    def _resolve_features_to_build(
+        self,
+        feature_names: list[str] | None,
+        tag_names: list[str] | None,
+    ) -> list[Feature]:
+        """
+        Resolve which features to build based on parameters.
+
+        Args:
+            feature_names: Specific feature names to build, or None for all
+            tag_names: Feature tags to filter by, or None
+
+        Returns:
+            List of Feature objects to materialize
+
+        Raises:
+            ValueError: If both feature_names and tag_names are specified,
+                       or if any feature/tag name is invalid
+        """
+        if feature_names and tag_names:
+            raise ValueError(
+                "Cannot specify both --features and --tags. Choose one or the other."
+            )
+
+        if feature_names:
+            return [self._get_feature(name) for name in feature_names]
+
+        if tag_names:
+            self._validate_tags(tag_names)
+            return self.list_features(tags=tag_names)
+
+        return self.list_features()
+
+    def _validate_result(self, feature_name: str, result_df: Any) -> None:
+        """
+        Validate that a feature function returned a valid DataFrame.
+
+        Args:
+            feature_name: Name of the feature being validated
+            result_df: Result from feature function
+
+        Raises:
+            FeatureMaterializationError: If result is None or not a DataFrame
+        """
+        if result_df is None:
+            raise errors.FeatureMaterializationError(
+                feature_name=feature_name,
+                message="Feature function returned None",
+                hint="Make sure your feature function returns a DataFrame.",
+            )
+
+        if not isinstance(result_df, pl.DataFrame):
+            raise errors.FeatureMaterializationError(
+                feature_name=feature_name,
+                message=f"Expected DataFrame, got {type(result_df).__name__}",
+            )
+
+    def _materialize_single_feature(
+        self,
+        feature: Feature,
+        preview: bool,
+        preview_rows: int,
+    ) -> Path:
+        """
+        Materialize a single feature to offline storage.
+
+        Args:
+            feature: Feature to materialize
+            preview: Whether to display preview of materialized data
+            preview_rows: Number of preview rows to show
+
+        Returns:
+            Path where the feature was stored
+
+        Raises:
+            FeatureMaterializationError: If feature function fails or returns invalid data
+        """
+        logger.info(f"Materializing {feature.name}")
+
+        source_df = self._load_source(feature.source)
+        result_df = feature(source_df)
+
+        self._validate_result(feature.name, result_df)
+        self.offline_store.write(feature.name, result_df)
+
+        output_path = self.offline_store.path_for(feature.name)
+
+        if preview:
+            log.print_feature_preview(feature.name, result_df, max_rows=preview_rows)
+
+        return Path(str(output_path))
 
     def materialize(
         self,
@@ -276,66 +414,18 @@ class Definitions:
                 force=True
             )
         """
-
-        if not feature_names or not tag_names:
-            # build all defined in definitions if none are specified
-            to_build = self.list_features()
-
-        if feature_names:
-            # build features specified by --features parameter
-            to_build = []
-            for name in feature_names:
-                if name not in self.features:
-                    raise ValueError(f"Unknown feature: {name}")
-                to_build.append(self.features[name])
-
-        if tag_names:
-            # build features specificed by --tags parameter
-            to_build = []
-            # validate tags exist
-            for tag in tag_names:
-                print(tag)
-                if tag not in self.list_tags():
-                    print(self.list_tags())
-                    raise ValueError(f"Unknown tag: {tag}")
-            features = self.list_features(tags=tag_names)
-            for feature in features:
-                to_build.append(feature)
-
+        selected_features = self._resolve_features_to_build(feature_names, tag_names)
         results = {}
 
-        for feature in to_build:
-            output_path = self.offline_store.path_for(feature.name)
-
+        for feature in selected_features:
             if not force and self.offline_store.exists(feature.name):
                 logger.debug(f"Skipping {feature.name} (already exists)")
                 continue
 
-            logger.info(f"Materializing {feature.name}")
-
-            source_df = self._load_source(feature.source)
-            result_df = feature(source_df)
-
-            if result_df is None:
-                raise errors.FeatureMaterializationError(
-                    feature_name=feature.name,
-                    message="Feature function returned None",
-                    hint="Make sure your feature function returns a DataFrame.",
-                )
-
-            if not isinstance(result_df, pl.DataFrame):
-                raise errors.FeatureMaterializationError(
-                    feature_name=feature.name,
-                    message=f"Expected DataFrame, got {type(result_df).__name__}",
-                )
-
-            self.offline_store.write(feature.name, result_df)
-            results[feature.name] = Path(str(output_path))
-
-            if preview:
-                log.print_feature_preview(
-                    feature.name, result_df, max_rows=preview_rows
-                )
+            result_path = self._materialize_single_feature(
+                feature, preview, preview_rows
+            )
+            results[feature.name] = result_path
 
         return results
 
