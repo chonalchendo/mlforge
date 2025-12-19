@@ -1,3 +1,39 @@
+## v0.4.0 (2025-12-19)
+
+### ✨ Features
+
+- update transactions example to use S3Store
+- add comprehensive design principles and red flags analysis documentation
+
+### 🐛🚑️ Fixes
+
+- standardize code formatting and remove trailing whitespace in design analysis documentation
+
+### ♻️ Refactorings
+
+- extract helper methods from materialize to reduce complexity
+
+### 🎨🏗️ Style & Architecture
+
+- remove trailing whitespace from gitignore comments
+
+### 💚👷 CI & Build
+
+- handle no-commits case in bump workflow
+
+### 📌➕⬇️➖⬆️ Dependencies
+
+- add s3fs for S3 storage support
+
+### 📝💡 Documentation
+
+- simplify commit command documentation
+
+### 🔧🔨📦️ Configuration, Scripts, Packages
+
+- gitignore reports directory for analysis artifacts
+- add commitizen bump mappings to pyproject.toml
+
 ## v0.3.0 (2025-12-16)
 
 ### ✨ Features
