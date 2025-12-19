@@ -15,6 +15,7 @@ dependencies = [
     "loguru>=0.7.3",
     "hatchling>=1.28.0",
     "setuptools>=80.9.0",
+    "s3fs>=2025.12.0",
 ]
 classifiers = [
     "Development Status :: 3 - Alpha",
