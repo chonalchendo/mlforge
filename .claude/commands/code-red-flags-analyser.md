@@ -306,7 +306,7 @@ def connect_with_options(host: str, port: int, options: ConnectionOptions) -> Co
 class UserController:
     def get_user(self, user_id: str) -> User:
         return self.user_service.get_user(user_id)
-    
+
     def update_user(self, user_id: str, data: dict) -> User:
         return self.user_service.update_user(user_id, data)
 
@@ -396,7 +396,7 @@ class JsonParser:
 
 class AcmeApiClient:
     def __init__(self, parser: JsonParser): ...
-    
+
     def parse_response(self, text: str) -> dict:
         data = self.parser.parse(text)
         payload = data["api_v1_response"]["payload"]
@@ -423,7 +423,7 @@ class Processor:
             if self._should_include(item):  # Uses _pending from process()
                 self._temp_buffer.append(item)
                 self._index_map[item.id] = i
-    
+
     def process(self):
         self._pending = set()
         for item in self._temp_buffer:  # Uses _temp_buffer from prepare()
@@ -435,7 +435,7 @@ class Processor:
     def prepare(self, data: list[Item]) -> PreparedBatch:
         items = [item for item in data if self._should_include(item)]
         return PreparedBatch(items)
-    
+
     def process(self, batch: PreparedBatch) -> list[Result]:
         return [self._transform(item) for item in batch.items]
 ```
@@ -487,7 +487,7 @@ class Cache:
     def get(self, key: str) -> Any:
         """
         Retrieve value from cache.
-        
+
         Uses an LRU eviction policy with a doubly-linked list for O(1) access.
         The internal _hash_map stores node references. When accessed, nodes
         are moved to the head via _move_to_front(). If _size exceeds _capacity,
@@ -500,7 +500,7 @@ class Cache:
     def get(self, key: str) -> Any:
         """
         Retrieve a value from the cache.
-        
+
         Returns None if key is not present or has been evicted.
         Accessing a key refreshes its position (least-recently-used keys
         are evicted first when capacity is reached).
@@ -581,7 +581,7 @@ class NotificationService:
 def process(data, mode, flags):
     """
     Process data according to mode and flags.
-    
+
     If mode is 'strict' and flags contains 'validate', performs full validation
     then processes. If mode is 'lenient' and flags contains 'validate', performs
     partial validation. If mode is 'strict' without 'validate', skips validation

@@ -233,7 +233,7 @@ response = http.get(url, timeout=60, headers=custom_headers)  # When needed
 
 ```python
 # ❌ Simple implementation, complex interface
-def save_user(user, validate=True, hash_pw=True, notify=True, 
+def save_user(user, validate=True, hash_pw=True, notify=True,
               retry=True, log=True, transaction=None):
     if validate: ...
     if hash_pw: ...
@@ -395,7 +395,7 @@ class OrderProcessor:
 # Approach B: Pipeline-based
 class OrderPipeline:
     def __init__(self, steps: list[Step]): ...
-    def process(self, order): 
+    def process(self, order):
         return reduce(lambda o, step: step(o), self.steps, order)
 
 # Compare: Which is easier to test? Extend? Debug? Monitor?
