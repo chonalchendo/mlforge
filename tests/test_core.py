@@ -390,7 +390,7 @@ def test_materialize_raises_on_unknown_tag():
         )
 
         # When/Then requesting unknown tag should raise
-        with pytest.raises(ValueError, match="Unknown tag: unknown"):
+        with pytest.raises(ValueError, match="Unknown tags: \\['unknown'\\]"):
             defs.materialize(tag_names=["unknown"], preview=False)
 
 
