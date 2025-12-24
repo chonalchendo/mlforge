@@ -11,5 +11,5 @@ clean-constraints:
 
 # clean example feature store
 [group('clean')]
-clean-example-fs
+clean-example-fs:
     cd examples/transactions && rm -rf feature_store
