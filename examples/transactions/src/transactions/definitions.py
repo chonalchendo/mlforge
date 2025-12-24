@@ -1,6 +1,5 @@
-from transactions import features
-
 from mlforge import Definitions, LocalStore, S3Store
+from transactions import features
 
 defs = Definitions(
     name="Transactions features.",
