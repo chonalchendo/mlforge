@@ -1,0 +1,90 @@
+{
+  "name": "account_spend_7d_interval",
+  "path": "feature_store/account_spend_7d_interval.parquet",
+  "entity": "account_id",
+  "keys": [
+    "account_id"
+  ],
+  "source": "data/transactions.parquet",
+  "row_count": 96211,
+  "last_updated": "2025-12-24T16:52:33.594260Z",
+  "timestamp": "transaction_date",
+  "interval": "7d",
+  "columns": [
+    {
+      "name": "account_id",
+      "dtype": "String"
+    },
+    {
+      "name": "transaction_date",
+      "dtype": "Datetime(time_unit='us', time_zone=None)"
+    },
+    {
+      "name": "accounts__amt__count__7d__7d",
+      "dtype": "UInt32",
+      "input": "amt",
+      "agg": "count",
+      "window": "7d"
+    },
+    {
+      "name": "accounts__amt__mean__7d__7d",
+      "dtype": "Float64",
+      "input": "amt",
+      "agg": "mean",
+      "window": "7d"
+    },
+    {
+      "name": "accounts__amt__sum__7d__7d",
+      "dtype": "Float64",
+      "input": "amt",
+      "agg": "sum",
+      "window": "7d"
+    },
+    {
+      "name": "accounts__amt__count__7d__30d",
+      "dtype": "UInt32",
+      "input": "amt",
+      "agg": "count",
+      "window": "30d"
+    },
+    {
+      "name": "accounts__amt__mean__7d__30d",
+      "dtype": "Float64",
+      "input": "amt",
+      "agg": "mean",
+      "window": "30d"
+    },
+    {
+      "name": "accounts__amt__sum__7d__30d",
+      "dtype": "Float64",
+      "input": "amt",
+      "agg": "sum",
+      "window": "30d"
+    },
+    {
+      "name": "accounts__amt__count__7d__90d",
+      "dtype": "UInt32",
+      "input": "amt",
+      "agg": "count",
+      "window": "90d"
+    },
+    {
+      "name": "accounts__amt__mean__7d__90d",
+      "dtype": "Float64",
+      "input": "amt",
+      "agg": "mean",
+      "window": "90d"
+    },
+    {
+      "name": "accounts__amt__sum__7d__90d",
+      "dtype": "Float64",
+      "input": "amt",
+      "agg": "sum",
+      "window": "90d"
+    }
+  ],
+  "tags": [
+    "accounts"
+  ],
+  "description": "Total spend by account ID"
+}

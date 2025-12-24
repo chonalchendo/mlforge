@@ -1,0 +1,90 @@
+{
+  "name": "merchant_spend_1d_interval",
+  "path": "feature_store/merchant_spend_1d_interval.parquet",
+  "entity": "merchant_id",
+  "keys": [
+    "merchant_id"
+  ],
+  "source": "data/transactions.parquet",
+  "row_count": 506525,
+  "last_updated": "2025-12-24T16:52:32.626677Z",
+  "timestamp": "transaction_date",
+  "interval": "1d",
+  "columns": [
+    {
+      "name": "merchant_id",
+      "dtype": "String"
+    },
+    {
+      "name": "transaction_date",
+      "dtype": "Datetime(time_unit='us', time_zone=None)"
+    },
+    {
+      "name": "merchants__amt__count__1d__7d",
+      "dtype": "UInt32",
+      "input": "amt",
+      "agg": "count",
+      "window": "7d"
+    },
+    {
+      "name": "merchants__amt__mean__1d__7d",
+      "dtype": "Float64",
+      "input": "amt",
+      "agg": "mean",
+      "window": "7d"
+    },
+    {
+      "name": "merchants__amt__sum__1d__7d",
+      "dtype": "Float64",
+      "input": "amt",
+      "agg": "sum",
+      "window": "7d"
+    },
+    {
+      "name": "merchants__amt__count__1d__30d",
+      "dtype": "UInt32",
+      "input": "amt",
+      "agg": "count",
+      "window": "30d"
+    },
+    {
+      "name": "merchants__amt__mean__1d__30d",
+      "dtype": "Float64",
+      "input": "amt",
+      "agg": "mean",
+      "window": "30d"
+    },
+    {
+      "name": "merchants__amt__sum__1d__30d",
+      "dtype": "Float64",
+      "input": "amt",
+      "agg": "sum",
+      "window": "30d"
+    },
+    {
+      "name": "merchants__amt__count__1d__90d",
+      "dtype": "UInt32",
+      "input": "amt",
+      "agg": "count",
+      "window": "90d"
+    },
+    {
+      "name": "merchants__amt__mean__1d__90d",
+      "dtype": "Float64",
+      "input": "amt",
+      "agg": "mean",
+      "window": "90d"
+    },
+    {
+      "name": "merchants__amt__sum__1d__90d",
+      "dtype": "Float64",
+      "input": "amt",
+      "agg": "sum",
+      "window": "90d"
+    }
+  ],
+  "tags": [
+    "merchants"
+  ],
+  "description": "Total spend by merchant ID"
+}
