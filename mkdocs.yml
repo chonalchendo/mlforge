@@ -63,6 +63,7 @@ nav:
   - User Guide:
       - Defining Features: user-guide/defining-features.md
       - Building Features: user-guide/building-features.md
+      - Storage Backends: user-guide/storage-backends.md
       - Retrieving Features: user-guide/retrieving-features.md
       - Entity Keys: user-guide/entity-keys.md
       - Point-in-Time Correctness: user-guide/point-in-time.md

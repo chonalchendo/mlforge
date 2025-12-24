@@ -8,7 +8,13 @@ The store module defines interfaces and implementations for offline feature stor
 
 ## Implementations
 
+### Local Storage
+
 ::: mlforge.store.LocalStore
+
+### Cloud Storage
+
+::: mlforge.store.S3Store
 
 ## Type Aliases
 

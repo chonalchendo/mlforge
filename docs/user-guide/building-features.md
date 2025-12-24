@@ -1,6 +1,6 @@
 # Building Features
 
-Once you've defined features, the next step is to materialize them to storage. This guide covers building features using both the CLI and the Python API.
+Once you've defined features, the next step is to build them and persist to storage. This guide covers building features using both the CLI and the Python API.
 
 ## Using the CLI
 
@@ -70,7 +70,7 @@ mlforge build definitions.py --verbose
 
 ## Using the Python API
 
-You can also materialize features programmatically:
+You can also build features programmatically:
 
 ```python
 from mlforge import Definitions, LocalStore
@@ -82,22 +82,22 @@ defs = Definitions(
     offline_store=LocalStore("./feature_store")
 )
 
-# Materialize all features
-defs.materialize()
+# Build all features
+defs.build()
 ```
 
-### Materialize Specific Features
+### Build Specific Features
 
 By feature name:
 
 ```python
-defs.materialize(feature_names=["user_total_spend", "user_avg_spend"])
+defs.build(feature_names=["user_total_spend", "user_avg_spend"])
 ```
 
 By tag:
 
 ```python
-defs.materialize(tag_names=["user_metrics", "demographics"])
+defs.build(tag_names=["user_metrics", "demographics"])
 ```
 
 !!! note "Mutually exclusive parameters"
@@ -106,29 +106,29 @@ defs.materialize(tag_names=["user_metrics", "demographics"])
 ### Force Rebuild
 
 ```python
-defs.materialize(force=True)
+defs.build(force=True)
 ```
 
 ### Disable Preview
 
 ```python
-defs.materialize(preview=False)
+defs.build(preview=False)
 ```
 
 ### Custom Preview Size
 
 ```python
-defs.materialize(preview_rows=10)
+defs.build(preview_rows=10)
 ```
 
 ### Get Output Paths
 
-The `materialize()` method returns a dictionary mapping feature names to their file paths:
+The `build()` method returns a dictionary mapping feature names to their file paths:
 
 ```python
 from pathlib import Path
 
-paths = defs.materialize()
+paths = defs.build()
 
 for feature_name, path in paths.items():
     print(f"{feature_name}: {path}")
@@ -140,11 +140,11 @@ for feature_name, path in paths.items():
 
 ## Storage Backend
 
-Features are stored in the configured offline store. Currently, mlforge supports local Parquet storage via `LocalStore`.
+Features are stored in the configured offline store. mlforge supports both local and cloud storage backends.
 
 ### LocalStore
 
-Stores features as individual Parquet files:
+Stores features as individual Parquet files on the local filesystem:
 
 ```python
 from mlforge import LocalStore
@@ -154,13 +154,25 @@ store = LocalStore(path="./feature_store")
 
 Each feature is saved as `feature_store/<feature_name>.parquet`.
 
-### Custom Storage Path
+### S3Store
+
+Stores features in Amazon S3 for production deployments:
 
 ```python
-from pathlib import Path
+from mlforge import S3Store
 
-store = LocalStore(path=Path.home() / "ml_projects" / "features")
+store = S3Store(
+    bucket="mlforge-features",
+    prefix="prod/features"
+)
 ```
+
+Features are stored at `s3://mlforge-features/prod/features/<feature_name>.parquet`.
+
+!!! tip "AWS Credentials"
+    S3Store uses standard AWS credential resolution (environment variables, `~/.aws/credentials`, or IAM roles).
+
+See the [Storage Backends](storage-backends.md) guide for detailed configuration and IAM policy examples.
 
 ## Listing Features
 
@@ -210,7 +222,7 @@ Raised when a feature function fails or returns invalid data:
 from mlforge.errors import FeatureMaterializationError
 
 try:
-    defs.materialize()
+    defs.build()
 except FeatureMaterializationError as e:
     print(f"Failed to materialize feature: {e}")
 ```
@@ -248,7 +260,7 @@ If the source file doesn't exist or has an unsupported format:
 def my_feature(df): ...
 
 # Raises: FileNotFoundError
-defs.materialize()
+defs.build()
 ```
 
 Supported formats: `.parquet`, `.csv`

@@ -1,10 +1,10 @@
 # Defining Features
 
-Features in mlforge are defined using the `@feature` decorator, which transforms a Python function into a feature that can be materialized and retrieved.
+Features in mlforge are defined using the `@feature` decorator, which transforms a Python function into a feature that can be built and retrieved.
 
 ## The @feature Decorator
 
-The decorator requires two parameters and accepts three optional ones:
+The decorator requires two parameters and accepts several optional ones:
 
 ```python
 from mlforge import feature
@@ -15,7 +15,9 @@ import polars as pl
     source="data/transactions.parquet",  # Required: source data path
     tags=["user_metrics"],               # Optional: feature grouping tags
     timestamp="event_time",              # Optional: for temporal features
-    description="User statistics"        # Optional: human-readable description
+    description="User statistics",       # Optional: human-readable description
+    interval="1d",                       # Optional: for rolling aggregations
+    metrics=[]                           # Optional: metric specifications
 )
 def user_stats(df: pl.DataFrame) -> pl.DataFrame:
     return df.group_by("user_id").agg(
@@ -132,6 +134,80 @@ Human-readable description displayed by `mlforge list`.
 )
 def user_lifetime_spend(df): ...
 ```
+
+#### interval
+
+Time interval for rolling aggregations. Accepts either a string (e.g., `"1d"`, `"6h"`) or a Python `timedelta` object.
+
+```python
+from datetime import timedelta
+
+@feature(
+    keys=["user_id"],
+    source="data/transactions.parquet",
+    timestamp="transaction_time",
+    interval="1d"  # String format
+)
+def daily_features(df): ...
+
+@feature(
+    keys=["user_id"],
+    source="data/transactions.parquet",
+    timestamp="transaction_time",
+    interval=timedelta(hours=6)  # timedelta object
+)
+def hourly_features(df): ...
+```
+
+Supported string formats: `"Ns"` (seconds), `"Nm"` (minutes), `"Nh"` (hours), `"Nd"` (days), `"Nw"` (weeks).
+
+!!! tip "Using timedelta"
+    Using Python's `timedelta` can make intervals more readable and easier to compute:
+    ```python
+    interval=timedelta(days=7)  # More explicit than "7d"
+    interval=timedelta(hours=6)  # Clearer than "6h"
+    interval=timedelta(weeks=4)  # Converts to "28d" automatically
+    ```
+
+#### metrics
+
+List of metric specifications for computing features. Currently supports `Rolling` for time-windowed aggregations.
+
+```python
+from mlforge import Rolling
+from datetime import timedelta
+
+@feature(
+    keys=["user_id"],
+    source="data/transactions.parquet",
+    timestamp="transaction_time",
+    interval="1d",
+    metrics=[
+        Rolling(
+            windows=["7d", "30d"],  # Can use strings
+            aggregations={"amount": ["sum", "mean", "count"]}
+        )
+    ]
+)
+def user_transaction_metrics(df): ...
+
+# Or with timedelta for better readability
+@feature(
+    keys=["user_id"],
+    source="data/transactions.parquet",
+    timestamp="transaction_time",
+    interval=timedelta(days=1),
+    metrics=[
+        Rolling(
+            windows=[timedelta(days=7), timedelta(days=30)],  # timedelta objects
+            aggregations={"amount": ["sum", "mean", "count"]}
+        )
+    ]
+)
+def user_transaction_metrics(df): ...
+```
+
+The `Rolling` metric computes aggregations over sliding time windows. Output column names follow the pattern: `{tag}__{column}__{aggregation}__{window}__{interval}`.
 
 ## Feature Functions
 

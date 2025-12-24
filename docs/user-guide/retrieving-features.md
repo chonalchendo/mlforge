@@ -1,6 +1,6 @@
 # Retrieving Features
 
-Once features are materialized, use `get_training_data()` to join them to your entity DataFrame.
+Once features are built, use `get_training_data()` to join them to your entity DataFrame.
 
 ## Basic Usage
 
@@ -34,7 +34,7 @@ def get_training_data(
 
 #### features (required)
 
-List of feature names to retrieve. Must match the names of materialized features.
+List of feature names to retrieve. Must match the names of built features.
 
 ```python
 training_data = get_training_data(
@@ -213,7 +213,7 @@ model.fit(X.to_pandas(), y.to_pandas())
 
 ### Missing Features
 
-If a requested feature hasn't been materialized:
+If a requested feature hasn't been built:
 
 ```python
 from mlforge import get_training_data
@@ -356,7 +356,7 @@ training_data: pl.DataFrame = get_training_data(
 
 ### 3. Verify Features Exist
 
-Check materialized features before retrieval:
+Check built features before retrieval:
 
 ```bash
 mlforge list definitions.py

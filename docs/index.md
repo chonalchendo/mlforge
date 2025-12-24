@@ -2,11 +2,11 @@
 
 A simple feature store SDK for machine learning workflows.
 
-mlforge provides a lightweight, Python-first approach to feature engineering and management. It focuses on simplicity while delivering the essential capabilities you need: feature definition, materialization, and point-in-time correct retrieval.
+mlforge provides a lightweight, Python-first approach to feature engineering and management. It focuses on simplicity while delivering the essential capabilities you need: feature definition, building, and point-in-time correct retrieval.
 
 ## Key Features
 
-- **Simple API** - Define features with a decorator, materialize with one command
+- **Simple API** - Define features with a decorator, build with one command
 - **Point-in-time correctness** - Automatic temporal joins prevent data leakage
 - **Local-first** - Run entirely on your machine with Parquet storage
 - **Type-safe** - Built on Polars for fast, type-checked transformations
@@ -31,14 +31,14 @@ def user_spend_stats(df: pl.DataFrame) -> pl.DataFrame:
         pl.col("amount").count().alias("transaction_count")
     )
 
-# Register and materialize
+# Register and build
 defs = Definitions(
     name="my-project",
     features=[user_spend_stats],
     offline_store=LocalStore("./feature_store")
 )
 
-defs.materialize()
+defs.build()
 ```
 
 Retrieve features with point-in-time correctness:
