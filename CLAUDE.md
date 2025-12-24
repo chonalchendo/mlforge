@@ -38,7 +38,7 @@ Automatically use context7 for code generation and library documentation.
 
 ## Coding Standards
 
-### Standards 
+### Standards
 
 - Python ≥ 3.13 with full type annotations
 - Follow existing patterns and maintain consistency
@@ -129,20 +129,20 @@ Think about these red flag causes when writing new code and reviewing current co
 def function_name(param1: str, param2: int | None = None) -> bool:
     """
     Short one-line summary of function purpose.
-    
+
     Longer description if needed, explaining behavior,
     edge cases, or important details.
-    
+
     Args:
         param1: Description of param1
         param2: Description of param2. Defaults to None.
-    
+
     Returns:
         Description of return value
-    
+
     Raises:
         ValueError: When param1 is empty
-    
+
     Example:
         result = function_name("test", 42)
     """
@@ -153,13 +153,13 @@ def function_name(param1: str, param2: int | None = None) -> bool:
 class ClassName:
     """
     Short one-line summary of class purpose.
-    
+
     Longer description if needed.
-    
+
     Attributes:
         attr1: Description of attr1
         attr2: Description of attr2
-    
+
     Example:
         obj = ClassName(attr1="value")
         obj.method()
@@ -238,4 +238,3 @@ Use conventional commits (commitizen):
 - `refactor:` — code change that neither fixes a bug nor adds a feature
 - `test:` — adding or updating tests
 - `chore:` — maintenance tasks
-
