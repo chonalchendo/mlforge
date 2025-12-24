@@ -137,6 +137,154 @@ Error: Feature 'user_age' failed: Feature function returned None
 Hint: Make sure your feature function returns a DataFrame.
 ```
 
+### inspect
+
+Display detailed metadata for a specific feature.
+
+```bash
+mlforge inspect FEATURE_NAME [TARGET]
+```
+
+#### Arguments
+
+- `FEATURE_NAME` (required): Name of the feature to inspect
+- `TARGET` (optional): Path to definitions file. Auto-discovers `definitions.py` if not specified.
+
+#### Examples
+
+Inspect a specific feature:
+
+```bash
+mlforge inspect user_spend
+```
+
+Inspect with custom definitions file:
+
+```bash
+mlforge inspect user_spend definitions.py
+```
+
+#### Output
+
+Displays detailed feature metadata including:
+
+- Feature configuration (entity, keys, timestamp, interval)
+- Storage details (path, source, row count)
+- Column information with types and aggregations
+- Tags and description
+- Last build timestamp
+
+Example output:
+
+```
+┌─ Feature: user_spend ──────────────────────────────────────┐
+│ Total spend features for users                              │
+│                                                              │
+│ Path: ./feature_store/user_spend.parquet                   │
+│ Source: data/transactions.parquet                           │
+│ Entity: user_id                                              │
+│ Keys: user_id                                                │
+│ Timestamp: transaction_date                                  │
+│ Interval: 1d                                                 │
+│ Tags: users, spending                                        │
+│ Row Count: 50,000                                            │
+│ Last Updated: 2024-01-16T08:30:00Z                          │
+└──────────────────────────────────────────────────────────────┘
+
+Columns
+┌──────────────────────────┬────────┬────────┬─────────────┬────────┐
+│ Name                     │ Type   │ Input  │ Aggregation │ Window │
+├──────────────────────────┼────────┼────────┼─────────────┼────────┤
+│ user_id                  │ Utf8   │ -      │ -           │ -      │
+│ transaction_date         │ Date   │ -      │ -           │ -      │
+│ amt__sum__7d             │ Float64│ amt    │ sum         │ 7d     │
+│ amt__count__7d           │ UInt32 │ amt    │ count       │ 7d     │
+│ amt__mean__30d           │ Float64│ amt    │ mean        │ 30d    │
+└──────────────────────────┴────────┴────────┴─────────────┴────────┘
+```
+
+#### Error Handling
+
+**No metadata found**: If the feature hasn't been built yet:
+
+```bash
+$ mlforge inspect user_spend
+Error: No metadata found for feature 'user_spend'.
+Run 'mlforge build' to generate metadata.
+```
+
+### manifest
+
+Display or regenerate the feature store manifest.
+
+```bash
+mlforge manifest [TARGET] [OPTIONS]
+```
+
+#### Arguments
+
+- `TARGET` (optional): Path to definitions file. Auto-discovers `definitions.py` if not specified.
+
+#### Options
+
+- `--regenerate`: Rebuild manifest.json from individual .meta.json files. Defaults to `False`.
+
+#### Examples
+
+Display manifest summary:
+
+```bash
+mlforge manifest
+```
+
+Regenerate consolidated manifest file:
+
+```bash
+mlforge manifest --regenerate
+```
+
+With custom definitions file:
+
+```bash
+mlforge manifest definitions.py --regenerate
+```
+
+#### Output
+
+**Without `--regenerate`** - Displays a summary table:
+
+```
+Feature Store Manifest
+┌──────────────────┬──────────┬────────┬─────────┬─────────────────────┐
+│ Feature          │ Entity   │ Rows   │ Columns │ Last Updated        │
+├──────────────────┼──────────┼────────┼─────────┼─────────────────────┤
+│ merchant_spend   │ merchant │ 15,482 │ 8       │ 2024-01-16T08:30:00│
+│ user_spend       │ user_id  │ 50,000 │ 12      │ 2024-01-16T08:25:00│
+│ account_spend    │ account  │ 8,234  │ 10      │ 2024-01-16T08:28:00│
+└──────────────────┴──────────┴────────┴─────────┴─────────────────────┘
+```
+
+**With `--regenerate`** - Creates `manifest.json` and displays confirmation:
+
+```bash
+$ mlforge manifest --regenerate
+Regenerated manifest.json with 3 features
+```
+
+The consolidated manifest is written to:
+
+- **LocalStore**: `<store_path>/manifest.json`
+- **S3Store**: `s3://<bucket>/<prefix>/manifest.json`
+
+#### Error Handling
+
+**No features found**: If no features have been built:
+
+```bash
+$ mlforge manifest
+Warning: No feature metadata found. Run 'mlforge build' first.
+```
+
 ### list
 
 Display all registered features in a table.

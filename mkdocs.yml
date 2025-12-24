@@ -64,6 +64,7 @@ nav:
       - Defining Features: user-guide/defining-features.md
       - Building Features: user-guide/building-features.md
       - Storage Backends: user-guide/storage-backends.md
+      - Feature Metadata: user-guide/feature-metadata.md
       - Retrieving Features: user-guide/retrieving-features.md
       - Entity Keys: user-guide/entity-keys.md
       - Point-in-Time Correctness: user-guide/point-in-time.md
@@ -71,5 +72,6 @@ nav:
   - API Reference:
       - Core: api/core.md
       - Store: api/store.md
+      - Manifest: api/manifest.md
       - Retrieval: api/retrieval.md
       - Utils: api/utils.md
