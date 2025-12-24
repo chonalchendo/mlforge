@@ -134,3 +134,116 @@ def list_(
             raise ValueError(f"Unknown tags: {tags}")
 
     log.print_features_table(features)
+
+
+@app.command
+def inspect(
+    feature_name: Annotated[
+        str,
+        cyclopts.Parameter(help="Name of the feature to inspect"),
+    ],
+    target: Annotated[
+        str | None,
+        cyclopts.Parameter(name="--target", help="Path to definitions.py file"),
+    ] = None,
+):
+    """
+    Display detailed metadata for a specific feature.
+
+    Shows feature configuration, storage details, column information,
+    and last build timestamp from the feature's metadata file.
+
+    Args:
+        feature_name: Name of the feature to inspect
+        target: Path to definitions file. Defaults to "definitions.py".
+
+    Raises:
+        SystemExit: If feature metadata is not found
+    """
+    try:
+        defs = loader.load_definitions(target)
+        metadata = defs.offline_store.read_metadata(feature_name)
+
+        if not metadata:
+            log.print_error(
+                f"No metadata found for feature '{feature_name}'. "
+                "Run 'mlforge build' to generate metadata."
+            )
+            raise SystemExit(1)
+
+        log.print_feature_metadata(feature_name, metadata)
+
+    except errors.DefinitionsLoadError as e:
+        log.print_error(str(e))
+        raise SystemExit(1)
+
+
+@app.command
+def manifest(
+    target: Annotated[
+        str | None,
+        cyclopts.Parameter(help="Path to definitions.py file"),
+    ] = None,
+    regenerate: Annotated[
+        bool,
+        cyclopts.Parameter(
+            name="--regenerate",
+            help="Regenerate consolidated manifest.json from .meta.json files",
+        ),
+    ] = False,
+):
+    """
+    Display or regenerate the feature manifest.
+
+    Without --regenerate, shows a summary of all feature metadata.
+    With --regenerate, rebuilds manifest.json from individual .meta.json files.
+
+    Args:
+        target: Path to definitions file. Defaults to "definitions.py".
+        regenerate: Rebuild manifest from metadata files. Defaults to False.
+
+    Raises:
+        SystemExit: If loading definitions fails
+    """
+    try:
+        defs = loader.load_definitions(target)
+        metadata_list = defs.offline_store.list_metadata()
+
+        if not metadata_list:
+            log.print_warning("No feature metadata found. Run 'mlforge build' first.")
+            return
+
+        if regenerate:
+            from datetime import datetime, timezone
+            from pathlib import Path
+
+            from mlforge.manifest import Manifest, write_manifest_file
+
+            manifest_obj = Manifest(
+                generated_at=datetime.now(timezone.utc)
+                .isoformat()
+                .replace("+00:00", "Z")
+            )
+            for meta in metadata_list:
+                manifest_obj.add_feature(meta)
+
+            # Write to store root
+            if hasattr(defs.offline_store, "path"):
+                path = defs.offline_store.path
+                if isinstance(path, str):
+                    manifest_path = f"{path}/manifest.json"
+                elif isinstance(path, Path):
+                    manifest_path = path / "manifest.json"
+            else:
+                manifest_path = Path("manifest.json")
+
+            write_manifest_file(manifest_path, manifest_obj)
+            log.print_success(
+                f"Regenerated manifest.json with {len(metadata_list)} features"
+            )
+        else:
+            log.print_manifest_summary(metadata_list)
+
+    except errors.DefinitionsLoadError as e:
+        log.print_error(str(e))
+        raise SystemExit(1)

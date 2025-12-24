@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import sys
 from typing import TYPE_CHECKING
 
@@ -10,6 +12,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from mlforge.core import Feature
+    from mlforge.manifest import FeatureMetadata
 
 
 console = console_.Console()
@@ -63,7 +66,7 @@ def print_features_table(features: dict[str, "Feature"]) -> None:
     console.print(table)
 
 
-def print_build_results(results: dict[str, "Path"]) -> None:
+def print_build_results(results: dict[str, Path | str]) -> None:
     """
     Display materialization results in a formatted table.
 
@@ -126,3 +129,96 @@ def print_feature_preview(
     # Add row count footer
     console.print(table)
     console.print(f"[dim]{len(df):,} rows total[/dim]\n")
+
+
+def print_warning(message: str) -> None:
+    """
+    Print a warning message with warning symbol.
+
+    Args:
+        message: Warning message to display
+    """
+    console.print(f"[yellow]![/yellow] {message}")
+
+
+def print_feature_metadata(feature_name: str, metadata: "FeatureMetadata") -> None:
+    """
+    Display detailed feature metadata in a formatted layout.
+
+    Shows feature configuration, storage details, and column information.
+
+    Args:
+        feature_name: Name of the feature
+        metadata: FeatureMetadata object with all details
+    """
+    from rich.panel import Panel
+
+    # Build info lines
+    info_lines = []
+    if metadata.description:
+        info_lines.append(f"[italic]{metadata.description}[/italic]\n")
+
+    info_lines.extend(
+        [
+            f"[bold]Path:[/bold] {metadata.path}",
+            f"[bold]Source:[/bold] {metadata.source}",
+            f"[bold]Entity:[/bold] {metadata.entity}",
+            f"[bold]Keys:[/bold] {', '.join(metadata.keys)}",
+            f"[bold]Timestamp:[/bold] {metadata.timestamp or '-'}",
+            f"[bold]Interval:[/bold] {metadata.interval or '-'}",
+            f"[bold]Tags:[/bold] {', '.join(metadata.tags) if metadata.tags else '-'}",
+            f"[bold]Row Count:[/bold] {metadata.row_count:,}",
+            f"[bold]Last Updated:[/bold] {metadata.last_updated}",
+        ]
+    )
+
+    console.print(Panel("\n".join(info_lines), title=f"Feature: {feature_name}"))
+
+    # Display columns table if available
+    if metadata.columns:
+        table = table_.Table(title="Columns")
+        table.add_column("Name", style="cyan")
+        table.add_column("Type", style="dim")
+        table.add_column("Input", style="green")
+        table.add_column("Aggregation")
+        table.add_column("Window")
+
+        for col in metadata.columns:
+            table.add_row(
+                col.name,
+                col.dtype or "-",
+                col.input or "-",
+                col.agg or "-",
+                col.window or "-",
+            )
+
+        console.print(table)
+
+
+def print_manifest_summary(metadata_list: list["FeatureMetadata"]) -> None:
+    """
+    Display a summary of all feature metadata.
+
+    Shows a table with key information about each feature in the store.
+
+    Args:
+        metadata_list: List of FeatureMetadata objects
+    """
+    table = table_.Table(title="Feature Store Manifest")
+    table.add_column("Feature", style="cyan")
+    table.add_column("Entity", style="green")
+    table.add_column("Rows", justify="right")
+    table.add_column("Columns", justify="right")
+    table.add_column("Last Updated", style="dim")
+
+    for meta in sorted(metadata_list, key=lambda m: m.name):
+        table.add_row(
+            meta.name,
+            meta.entity,
+            f"{meta.row_count:,}",
+            str(len(meta.columns)),
+            meta.last_updated[:19] if meta.last_updated else "-",
+        )
+
+    console.print(table)
+    console.print(f"\n[dim]{len(metadata_list)} features total[/dim]")
