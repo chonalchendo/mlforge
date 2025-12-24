@@ -172,7 +172,7 @@ def test_build_command_handles_materialization_error(definitions_file):
         pytest.raises(SystemExit) as exc_info,
     ):
         mock_defs = Mock()
-        mock_defs.materialize.side_effect = FeatureMaterializationError(
+        mock_defs.build.side_effect = FeatureMaterializationError(
             feature_name="test_feature", message="Materialization failed"
         )
         mock_load.return_value = mock_defs

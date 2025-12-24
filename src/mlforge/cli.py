@@ -86,7 +86,7 @@ def build(
         feature_names = [f.strip() for f in features.split(",")] if features else None
         tag_names = [t.strip() for t in tags.split(",")] if tags else None
 
-        results = defs.materialize(
+        results = defs.build(
             feature_names=feature_names,
             tag_names=tag_names,
             force=force,

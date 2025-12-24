@@ -1,10 +1,12 @@
 import tempfile
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import polars as pl
 import pytest
 
-from mlforge import LocalStore
+from mlforge import LocalStore, S3Store
+from mlforge.results import PolarsResult
 
 
 def test_local_store_creates_directory():
@@ -51,7 +53,7 @@ def test_local_store_write_creates_parquet_file():
         store = LocalStore(tmpdir)
 
         # When writing the feature
-        store.write("test_feature", df)
+        store.write("test_feature", PolarsResult(df))
 
         # Then the parquet file should exist
         expected_path = Path(tmpdir) / "test_feature.parquet"
@@ -64,7 +66,7 @@ def test_local_store_read_returns_dataframe():
 
     with tempfile.TemporaryDirectory() as tmpdir:
         store = LocalStore(tmpdir)
-        store.write("stored_feature", df)
+        store.write("stored_feature", PolarsResult(df))
 
         # When reading the feature
         result = store.read("stored_feature")
@@ -89,7 +91,7 @@ def test_local_store_exists_returns_true_for_existing():
 
     with tempfile.TemporaryDirectory() as tmpdir:
         store = LocalStore(tmpdir)
-        store.write("existing_feature", df)
+        store.write("existing_feature", PolarsResult(df))
 
         # When checking existence
         exists = store.exists("existing_feature")
@@ -119,8 +121,8 @@ def test_local_store_write_overwrites_existing():
         store = LocalStore(tmpdir)
 
         # When writing twice to the same feature
-        store.write("versioned", df_v1)
-        store.write("versioned", df_v2)
+        store.write("versioned", PolarsResult(df_v1))
+        store.write("versioned", PolarsResult(df_v2))
 
         # Then it should overwrite with latest version
         result = store.read("versioned")
@@ -155,7 +157,7 @@ def test_local_store_preserves_dataframe_schema():
         store = LocalStore(tmpdir)
 
         # When writing and reading
-        store.write("schema_test", df)
+        store.write("schema_test", PolarsResult(df))
         result = store.read("schema_test")
 
         # Then schema should be preserved
@@ -172,7 +174,7 @@ def test_local_store_handles_empty_dataframe():
         store = LocalStore(tmpdir)
 
         # When writing and reading
-        store.write("empty", df)
+        store.write("empty", PolarsResult(df))
         result = store.read("empty")
 
         # Then it should preserve the empty DataFrame
@@ -200,3 +202,179 @@ def test_local_store_accepts_path_object():
 
         # Then it should work correctly
         assert store.path == path_obj
+
+
+# S3Store Tests
+
+
+def test_s3_store_initialization_success(mocker):
+    # Given a mock S3FileSystem that confirms bucket exists
+    mock_s3 = MagicMock()
+    mock_s3.exists.return_value = True
+    mocker.patch("mlforge.store.s3fs.S3FileSystem", return_value=mock_s3)
+
+    # When creating S3Store
+    store = S3Store(bucket="test-bucket", prefix="features")
+
+    # Then it should initialize successfully
+    assert store.bucket == "test-bucket"
+    assert store.prefix == "features"
+    mock_s3.exists.assert_called_once_with("test-bucket")
+
+
+def test_s3_store_initialization_strips_prefix_slashes(mocker):
+    # Given a mock S3FileSystem
+    mock_s3 = MagicMock()
+    mock_s3.exists.return_value = True
+    mocker.patch("mlforge.store.s3fs.S3FileSystem", return_value=mock_s3)
+
+    # When creating S3Store with slashes in prefix
+    store = S3Store(bucket="test-bucket", prefix="/features/")
+
+    # Then slashes should be stripped
+    assert store.prefix == "features"
+
+
+def test_s3_store_initialization_raises_on_missing_bucket(mocker):
+    # Given a mock S3FileSystem that reports bucket doesn't exist
+    mock_s3 = MagicMock()
+    mock_s3.exists.return_value = False
+    mocker.patch("mlforge.store.s3fs.S3FileSystem", return_value=mock_s3)
+
+    # When/Then creating S3Store should raise ValueError
+    with pytest.raises(
+        ValueError,
+        match="Bucket 'nonexistent-bucket' does not exist or is not accessible",
+    ):
+        S3Store(bucket="nonexistent-bucket")
+
+
+def test_s3_store_initialization_with_empty_prefix(mocker):
+    # Given a mock S3FileSystem
+    mock_s3 = MagicMock()
+    mock_s3.exists.return_value = True
+    mocker.patch("mlforge.store.s3fs.S3FileSystem", return_value=mock_s3)
+
+    # When creating S3Store with empty prefix
+    store = S3Store(bucket="test-bucket", prefix="")
+
+    # Then prefix should be empty string
+    assert store.prefix == ""
+
+
+def test_s3_store_path_for_returns_s3_uri(mocker):
+    # Given an S3Store
+    mock_s3 = MagicMock()
+    mock_s3.exists.return_value = True
+    mocker.patch("mlforge.store.s3fs.S3FileSystem", return_value=mock_s3)
+    store = S3Store(bucket="my-bucket", prefix="prod/features")
+
+    # When getting path for a feature
+    path = store.path_for("user_age")
+
+    # Then it should return S3 URI as Path (Path normalizes // to /)
+    assert str(path) == "s3:/my-bucket/prod/features/user_age.parquet"
+    assert isinstance(path, Path)
+
+
+def test_s3_store_path_for_with_empty_prefix(mocker):
+    # Given an S3Store with empty prefix
+    mock_s3 = MagicMock()
+    mock_s3.exists.return_value = True
+    mocker.patch("mlforge.store.s3fs.S3FileSystem", return_value=mock_s3)
+    store = S3Store(bucket="my-bucket", prefix="")
+
+    # When getting path for a feature
+    path = store.path_for("user_age")
+
+    # Then it should return S3 URI (Path normalizes // to /)
+    assert str(path) == "s3:/my-bucket/user_age.parquet"
+
+
+def test_s3_store_write_calls_polars_write_parquet(mocker, sample_dataframe):
+    # Given an S3Store and mock write_parquet
+    mock_s3 = MagicMock()
+    mock_s3.exists.return_value = True
+    mocker.patch("mlforge.store.s3fs.S3FileSystem", return_value=mock_s3)
+    mock_write = mocker.patch.object(pl.DataFrame, "write_parquet")
+    store = S3Store(bucket="test-bucket", prefix="features")
+
+    # When writing a feature
+    store.write("test_feature", PolarsResult(sample_dataframe))
+
+    # Then it should call write_parquet with correct S3 path
+    expected_path = Path("s3://test-bucket/features/test_feature.parquet")
+    mock_write.assert_called_once_with(expected_path)
+
+
+def test_s3_store_read_calls_polars_read_parquet(mocker, sample_dataframe):
+    # Given an S3Store and mock read_parquet
+    mock_s3 = MagicMock()
+    mock_s3.exists.return_value = True
+    mocker.patch("mlforge.store.s3fs.S3FileSystem", return_value=mock_s3)
+    mock_read = mocker.patch(
+        "mlforge.store.pl.read_parquet", return_value=sample_dataframe
+    )
+    store = S3Store(bucket="test-bucket", prefix="features")
+
+    # When reading a feature
+    result = store.read("test_feature")
+
+    # Then it should call read_parquet with correct S3 path
+    mock_read.assert_called_once_with("s3://test-bucket/features/test_feature.parquet")
+    assert result.equals(sample_dataframe)
+
+
+def test_s3_store_exists_returns_true_when_file_exists(mocker):
+    # Given an S3Store with a feature that exists
+    mock_s3 = MagicMock()
+    mock_s3.exists.side_effect = [True, True]  # First for bucket, second for file
+    mocker.patch("mlforge.store.s3fs.S3FileSystem", return_value=mock_s3)
+    store = S3Store(bucket="test-bucket", prefix="features")
+
+    # When checking existence
+    exists = store.exists("existing_feature")
+
+    # Then it should return True
+    assert exists is True
+    assert mock_s3.exists.call_count == 2
+
+
+def test_s3_store_exists_returns_false_when_file_missing(mocker):
+    # Given an S3Store with a feature that doesn't exist
+    mock_s3 = MagicMock()
+    mock_s3.exists.side_effect = [True, False]  # First for bucket, second for file
+    mocker.patch("mlforge.store.s3fs.S3FileSystem", return_value=mock_s3)
+    store = S3Store(bucket="test-bucket", prefix="features")
+
+    # When checking existence
+    exists = store.exists("missing_feature")
+
+    # Then it should return False
+    assert exists is False
+
+
+def test_s3_store_stores_region_attribute(mocker):
+    # Given a mock S3FileSystem
+    mock_s3 = MagicMock()
+    mock_s3.exists.return_value = True
+    mocker.patch("mlforge.store.s3fs.S3FileSystem", return_value=mock_s3)
+
+    # When creating S3Store with region
+    store = S3Store(bucket="test-bucket", region="us-west-2")
+
+    # Then region should be stored
+    assert store.region == "us-west-2"
+
+
+def test_s3_store_region_defaults_to_none(mocker):
+    # Given a mock S3FileSystem
+    mock_s3 = MagicMock()
+    mock_s3.exists.return_value = True
+    mocker.patch("mlforge.store.s3fs.S3FileSystem", return_value=mock_s3)
+
+    # When creating S3Store without region
+    store = S3Store(bucket="test-bucket")
+
+    # Then region should be None
+    assert store.region is None

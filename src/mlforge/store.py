@@ -3,6 +3,9 @@ from pathlib import Path
 from typing import override
 
 import polars as pl
+import s3fs
+
+import mlforge.results as results
 
 
 class Store(ABC):
@@ -14,13 +17,16 @@ class Store(ABC):
     """
 
     @abstractmethod
-    def write(self, feature_name: str, df: pl.DataFrame) -> None:
+    def write(self, feature_name: str, result: results.ResultKind) -> dict:
         """
         Persist a materialized feature to storage.
 
         Args:
             feature_name: Unique identifier for the feature
-            df: Materialized feature data to store
+            result: Result kind that store information needed to write data
+
+        Returns:
+            Metadata information about written data
         """
         ...
 
@@ -62,7 +68,8 @@ class Store(ABC):
             feature_name: Unique identifier for the feature
 
         Returns:
-            Path where the feature is or would be stored
+            Path where the feature is or would be stored.
+            Returns Path.
         """
         ...
 
@@ -107,15 +114,24 @@ class LocalStore(Store):
         return self.path / f"{feature_name}.parquet"
 
     @override
-    def write(self, feature_name: str, df: pl.DataFrame) -> None:
+    def write(self, feature_name: str, result: results.ResultKind) -> dict:
         """
         Write feature data to parquet file.
 
         Args:
             feature_name: Unique identifier for the feature
-            df: Feature data to persist
+            result: Engine result containing feature data and metadata
+
+        Returns:
+            Metadata dictionary with path, row count, and schema
         """
-        df.write_parquet(self.path_for(feature_name))
+        path = self.path_for(feature_name)
+        result.write_parquet(path)
+        return {
+            "path": str(path),
+            "row_count": result.row_count(),
+            "schema": result.schema(),
+        }
 
     @override
     def read(self, feature_name: str) -> pl.DataFrame:
@@ -147,4 +163,127 @@ class LocalStore(Store):
         return self.path_for(feature_name).exists()
 
 
-type OfflineStoreKind = LocalStore
+class S3Store(Store):
+    """
+    Amazon S3 storage backend using Parquet format.
+
+    Stores each feature as a separate .parquet file in an S3 bucket with
+    an optional prefix. Uses AWS credentials from environment variables
+    (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION).
+
+    Attributes:
+        bucket: S3 bucket name for storing features
+        prefix: Optional path prefix within the bucket (without leading/trailing slashes)
+        region: AWS region (optional, uses default if not specified)
+
+    Example:
+        store = S3Store(bucket="mlforge-features", prefix="prod/features")
+        store.write("user_age", age_df)
+        age_df = store.read("user_age")
+    """
+
+    def __init__(
+        self, bucket: str, prefix: str = "", region: str | None = None
+    ) -> None:
+        """
+        Initialize S3 storage backend.
+
+        Args:
+            bucket: S3 bucket name for feature storage
+            prefix: Path prefix within bucket. Defaults to empty string (bucket root).
+            region: AWS region. Defaults to None (uses AWS_DEFAULT_REGION env var).
+
+        Raises:
+            ValueError: If bucket doesn't exist or is not accessible with current credentials
+        """
+        self.bucket = bucket
+        self.prefix = prefix.strip("/")
+        self.region = region
+        self._s3 = s3fs.S3FileSystem()  # Uses AWS env vars automatically
+
+        if not self._s3.exists(self.bucket):
+            raise ValueError(
+                f"Bucket '{self.bucket}' does not exist or is not accessible. "
+                f"Ensure the bucket is created and credentials have appropriate permissions."
+            )
+
+    def _s3_path(self, feature_name: str) -> str:
+        """
+        Construct full S3 path for a feature.
+
+        Args:
+            feature_name: Unique identifier for the feature
+
+        Returns:
+            Full S3 URI (s3://bucket/prefix/feature_name.parquet)
+        """
+        return f"s3://{self.bucket}/{self.prefix}/{feature_name}.parquet"
+
+    @override
+    def path_for(self, feature_name: str) -> Path:
+        """
+        Get S3 URI for a feature.
+
+        Args:
+            feature_name: Unique identifier for the feature
+
+        Returns:
+            S3 URI where the feature is or would be stored
+        """
+        return Path(self._s3_path(feature_name))
+
+    @override
+    def write(self, feature_name: str, result: results.EngineResult) -> dict:
+        """
+        Write feature data to S3 as parquet file.
+
+        Args:
+            feature_name: Unique identifier for the feature
+            result: Engine result containing feature data and metadata
+
+        Returns:
+            Metadata dictionary with S3 URI, row count, and schema
+
+        Raises:
+            Exception: If S3 write fails due to permissions or connectivity issues
+        """
+        path = self.path_for(feature_name)
+        result.write_parquet(path)
+        return {
+            "path": str(path),
+            "row_count": result.row_count(),
+            "schema": result.schema(),
+        }
+
+    @override
+    def read(self, feature_name: str) -> pl.DataFrame:
+        """
+        Read feature data from S3 parquet file.
+
+        Args:
+            feature_name: Unique identifier for the feature
+
+        Returns:
+            Feature data as a DataFrame
+
+        Raises:
+            FileNotFoundError: If the feature file doesn't exist in S3
+        """
+        return pl.read_parquet(self._s3_path(feature_name))
+
+    @override
+    def exists(self, feature_name: str) -> bool:
+        """
+        Check if feature file exists in S3.
+
+        Args:
+            feature_name: Unique identifier for the feature
+
+        Returns:
+            True if the feature's parquet file exists in S3, False otherwise
+        """
+        path = self._s3_path(feature_name)
+        return self._s3.exists(path)
+
+
+type OfflineStoreKind = LocalStore | S3Store

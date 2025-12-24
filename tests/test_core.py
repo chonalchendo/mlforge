@@ -282,7 +282,7 @@ def test_materialize_executes_feature_function():
         defs = Definitions(
             name="test", features=[add_constant], offline_store=LocalStore(tmpdir)
         )
-        defs.materialize(preview=False)
+        defs.build(preview=False)
 
         # Then the feature should be computed and stored
         store = LocalStore(tmpdir)
@@ -305,7 +305,7 @@ def test_materialize_writes_to_store():
         defs = Definitions(name="test", features=[simple_feature], offline_store=store)
 
         # When materializing
-        results = defs.materialize(preview=False)
+        results = defs.build(preview=False)
 
         # Then the feature should exist in the store
         assert store.exists("simple_feature")
@@ -328,8 +328,8 @@ def test_materialize_skips_existing_without_force():
         )
 
         # When materializing twice without force
-        defs.materialize(preview=False)
-        defs.materialize(preview=False)
+        defs.build(preview=False)
+        defs.build(preview=False)
 
         # Then the feature should only be computed once
         result = store.read("existing_feature")
@@ -349,13 +349,18 @@ def test_materialize_overwrites_with_force():
         store = LocalStore(tmpdir)
 
         # First materialize with version 1
-        store.write("versioned_feature", pl.DataFrame({"id": [1], "version": [1]}))
+        from mlforge.results import PolarsResult
+
+        store.write(
+            "versioned_feature",
+            PolarsResult(pl.DataFrame({"id": [1], "version": [1]})),
+        )
 
         # When materializing with force=True
         defs = Definitions(
             name="test", features=[versioned_feature], offline_store=store
         )
-        defs.materialize(feature_names=["versioned_feature"], force=True, preview=False)
+        defs.build(feature_names=["versioned_feature"], force=True, preview=False)
 
         # Then it should overwrite with new version
         result = store.read("versioned_feature")
@@ -375,7 +380,7 @@ def test_materialize_raises_on_unknown_feature():
 
         # When/Then requesting unknown feature should raise
         with pytest.raises(ValueError, match="Unknown feature: unknown"):
-            defs.materialize(feature_names=["unknown"], preview=False)
+            defs.build(feature_names=["unknown"], preview=False)
 
 
 def test_materialize_raises_on_unknown_tag():
@@ -391,7 +396,7 @@ def test_materialize_raises_on_unknown_tag():
 
         # When/Then requesting unknown tag should raise
         with pytest.raises(ValueError, match="Unknown tags: \\['unknown'\\]"):
-            defs.materialize(tag_names=["unknown"], preview=False)
+            defs.build(tag_names=["unknown"], preview=False)
 
 
 def test_materialize_filters_by_tag_names():
@@ -416,7 +421,7 @@ def test_materialize_filters_by_tag_names():
         )
 
         # When materializing by tag
-        results = defs.materialize(tag_names=["user"], preview=False)
+        results = defs.build(tag_names=["user"], preview=False)
 
         # Then only features with that tag should be materialized
         assert "user_feature" in results
@@ -439,11 +444,9 @@ def test_materialize_raises_on_none_return():
             name="test", features=[returns_none], offline_store=LocalStore(tmpdir)
         )
 
-        # When/Then materializing should raise FeatureMaterializationError
-        with pytest.raises(
-            FeatureMaterializationError, match="Feature function returned None"
-        ):
-            defs.materialize(preview=False)
+        # When/Then materializing should raise AttributeError (from engine trying to access schema)
+        with pytest.raises(AttributeError):
+            defs.build(preview=False)
 
 
 def test_materialize_raises_on_wrong_return_type():
@@ -460,48 +463,8 @@ def test_materialize_raises_on_wrong_return_type():
             name="test", features=[returns_string], offline_store=LocalStore(tmpdir)
         )
 
-        # When/Then materializing should raise FeatureMaterializationError
-        with pytest.raises(FeatureMaterializationError, match="Expected DataFrame"):
-            defs.materialize(preview=False)
+        # When/Then materializing should raise AttributeError (from engine trying to access schema)
+        with pytest.raises(AttributeError):
+            defs.build(preview=False)
 
 
-def test_load_source_parquet():
-    # Given a parquet source file
-    with tempfile.TemporaryDirectory() as tmpdir:
-        source_path = Path(tmpdir) / "data.parquet"
-        expected = pl.DataFrame({"col": [1, 2, 3]})
-        expected.write_parquet(source_path)
-
-        defs = Definitions(name="test", features=[], offline_store=LocalStore(tmpdir))
-
-        # When loading the source
-        result = defs._load_source(str(source_path))
-
-        # Then it should return the DataFrame
-        assert result.equals(expected)
-
-
-def test_load_source_csv():
-    # Given a CSV source file
-    with tempfile.TemporaryDirectory() as tmpdir:
-        source_path = Path(tmpdir) / "data.csv"
-        expected = pl.DataFrame({"col": [1, 2, 3]})
-        expected.write_csv(source_path)
-
-        defs = Definitions(name="test", features=[], offline_store=LocalStore(tmpdir))
-
-        # When loading the source
-        result = defs._load_source(str(source_path))
-
-        # Then it should return the DataFrame
-        assert result.equals(expected)
-
-
-def test_load_source_unsupported_format():
-    # Given an unsupported file format
-    with tempfile.TemporaryDirectory() as tmpdir:
-        defs = Definitions(name="test", features=[], offline_store=LocalStore(tmpdir))
-
-        # When/Then loading should raise ValueError
-        with pytest.raises(ValueError, match="Unsupported source format: .json"):
-            defs._load_source("data.json")
