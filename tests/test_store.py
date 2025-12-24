@@ -272,9 +272,9 @@ def test_s3_store_path_for_returns_s3_uri(mocker):
     # When getting path for a feature
     path = store.path_for("user_age")
 
-    # Then it should return S3 URI as Path (Path normalizes // to /)
-    assert str(path) == "s3:/my-bucket/prod/features/user_age.parquet"
-    assert isinstance(path, Path)
+    # Then it should return S3 URI as str
+    assert str(path) == "s3://my-bucket/prod/features/user_age.parquet"
+    assert isinstance(path, str)
 
 
 def test_s3_store_path_for_with_empty_prefix(mocker):
@@ -288,7 +288,7 @@ def test_s3_store_path_for_with_empty_prefix(mocker):
     path = store.path_for("user_age")
 
     # Then it should return S3 URI (Path normalizes // to /)
-    assert str(path) == "s3:/my-bucket/user_age.parquet"
+    assert str(path) == "s3://my-bucket/user_age.parquet"
 
 
 def test_s3_store_write_calls_polars_write_parquet(mocker, sample_dataframe):
@@ -303,7 +303,7 @@ def test_s3_store_write_calls_polars_write_parquet(mocker, sample_dataframe):
     store.write("test_feature", PolarsResult(sample_dataframe))
 
     # Then it should call write_parquet with correct S3 path
-    expected_path = Path("s3://test-bucket/features/test_feature.parquet")
+    expected_path = "s3://test-bucket/features/test_feature.parquet"
     mock_write.assert_called_once_with(expected_path)
 
 

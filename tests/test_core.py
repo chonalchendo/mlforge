@@ -6,7 +6,6 @@ import polars as pl
 import pytest
 
 from mlforge import Definitions, Feature, LocalStore, feature
-from mlforge.errors import FeatureMaterializationError
 
 
 def test_feature_decorator_creates_feature_object():

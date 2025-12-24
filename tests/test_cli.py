@@ -4,7 +4,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from mlforge.cli import build, list_
+from mlforge.cli import build, inspect, list_, manifest
 from mlforge.errors import FeatureMaterializationError
 
 
@@ -435,3 +435,109 @@ defs = Definitions(
     # When/Then listing with unknown tag should raise ValueError
     with pytest.raises(ValueError, match="Unknown tags"):
         list_(target=str(definitions_file), tags="nonexistent")
+
+
+def test_inspect_command_displays_metadata(definitions_file):
+    # Given a built feature with metadata
+    target = str(definitions_file)
+
+    # First build the feature to generate metadata
+    with (
+        patch("mlforge.logging.print_build_results"),
+        patch("mlforge.logging.print_success"),
+    ):
+        build(
+            target=target,
+            features=None,
+            tags=None,
+            force=False,
+            no_preview=True,
+            preview_rows=5,
+        )
+
+    # When inspecting the feature
+    with patch("mlforge.logging.print_feature_metadata") as mock_print:
+        inspect(feature_name="test_feature", target=target)
+
+    # Then it should display the metadata
+    mock_print.assert_called_once()
+    call_args = mock_print.call_args[0]
+    assert call_args[0] == "test_feature"
+    assert call_args[1] is not None
+
+
+def test_inspect_command_handles_missing_metadata(definitions_file):
+    # Given a feature that hasn't been built yet
+    target = str(definitions_file)
+
+    # When/Then inspecting should exit with error
+    with pytest.raises(SystemExit) as exc_info:
+        inspect(feature_name="test_feature", target=target)
+
+    assert exc_info.value.code == 1
+
+
+def test_manifest_command_displays_summary(definitions_file):
+    # Given a built feature
+    target = str(definitions_file)
+
+    # First build the feature
+    with (
+        patch("mlforge.logging.print_build_results"),
+        patch("mlforge.logging.print_success"),
+    ):
+        build(
+            target=target,
+            features=None,
+            tags=None,
+            force=False,
+            no_preview=True,
+            preview_rows=5,
+        )
+
+    # When running manifest command
+    with patch("mlforge.logging.print_manifest_summary") as mock_print:
+        manifest(target=target, regenerate=False)
+
+    # Then it should display the summary
+    mock_print.assert_called_once()
+
+
+def test_manifest_command_regenerates_file(definitions_file, temp_dir):
+    # Given a built feature
+    target = str(definitions_file)
+
+    # First build the feature
+    with (
+        patch("mlforge.logging.print_build_results"),
+        patch("mlforge.logging.print_success"),
+    ):
+        build(
+            target=target,
+            features=None,
+            tags=None,
+            force=False,
+            no_preview=True,
+            preview_rows=5,
+        )
+
+    # When regenerating manifest
+    with patch("mlforge.logging.print_success") as mock_success:
+        manifest(target=target, regenerate=True)
+
+    # Then it should create manifest.json
+    mock_success.assert_called_once()
+    manifest_path = temp_dir / "store" / "manifest.json"
+    assert manifest_path.exists()
+
+
+def test_manifest_command_handles_no_metadata(definitions_file):
+    # Given no built features
+    target = str(definitions_file)
+
+    # When running manifest command
+    with patch("mlforge.logging.print_warning") as mock_warning:
+        manifest(target=target, regenerate=False)
+
+    # Then it should show a warning
+    mock_warning.assert_called_once()
