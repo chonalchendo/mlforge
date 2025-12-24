@@ -8,3 +8,8 @@ clean-build:
 [group('clean')]
 clean-constraints:
     rm -rf constraints.txt
+
+# clean example feature store
+[group('clean')]
+clean-example-fs
+    cd examples/transactions && rm -rf feature_store

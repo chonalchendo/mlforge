@@ -7,19 +7,20 @@ from transactions.features import with_account_id, with_merchant_id, with_user_i
 
 def main() -> None:
     entity_df = pl.read_parquet("data/transactions.parquet").with_columns(
-        pl.col("trans_date_trans_time").str.to_datetime("%Y-%m-%d %H:%M:%S")
+        pl.col("trans_date_trans_time")
+        .str.to_datetime("%Y-%m-%d %H:%M:%S")
+        .alias("transaction_date")
     )
 
     training_df = get_training_data(
         features=[
-            "account_total_spend",
-            "merchant_total_spend",
-            "user_total_spend",
-            "user_spend_mean_30d",
+            "account_spend_7d_interval",
+            "merchant_spend_1d_interval",
+            "user_spend_30d_interval",
         ],
         entity_df=entity_df,
         entities=[with_account_id, with_merchant_id, with_user_id],
-        timestamp="trans_date_trans_time",
+        timestamp="transaction_date",
         store="./feature_store",
     )
 

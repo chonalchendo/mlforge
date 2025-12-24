@@ -1,6 +1,8 @@
+from datetime import timedelta
+
 import polars as pl
 
-from mlforge import entity_key, feature
+from mlforge import Rolling, entity_key, feature
 
 SOURCE = "data/transactions.parquet"
 
@@ -12,6 +14,13 @@ with_merchant_id = entity_key("merchant", alias=MERCHANT_KEY)
 with_account_id = entity_key("cc_num", alias=ACCOUNT_KEY)
 with_user_id = entity_key("first", "last", "dob", alias=USER_KEY)
 
+### Metrics
+
+spend_metrics = Rolling(
+    windows=[timedelta(days=7), "30d", "90d"],
+    aggregations={"amt": ["count", "mean", "sum"]},
+)
+
 
 ### MERCHANT FEATURES
 
@@ -21,12 +30,17 @@ with_user_id = entity_key("first", "last", "dob", alias=USER_KEY)
     keys=[MERCHANT_KEY],
     tags=["merchants"],
     description="Total spend by merchant ID",
+    timestamp="transaction_date",
+    interval=timedelta(days=1),
+    metrics=[spend_metrics],
 )
-def merchant_total_spend(df: pl.DataFrame) -> pl.DataFrame:
-    return (
-        df.pipe(with_merchant_id)
-        .group_by(MERCHANT_KEY)
-        .agg(pl.col("amt").sum().alias("merchant_total_spend"))
+def merchant_spend_1d_interval(df: pl.DataFrame) -> pl.DataFrame:
+    return df.pipe(with_merchant_id).select(
+        pl.col("merchant_id"),
+        pl.col("trans_date_trans_time")
+        .str.to_datetime("%Y-%m-%d %H:%M:%S")
+        .alias("transaction_date"),
+        pl.col("amt"),
     )
 
 
@@ -38,12 +52,17 @@ def merchant_total_spend(df: pl.DataFrame) -> pl.DataFrame:
     keys=[ACCOUNT_KEY],
     tags=["accounts"],
     description="Total spend by account ID",
+    timestamp="transaction_date",
+    interval="7d",
+    metrics=[spend_metrics],
 )
-def account_total_spend(df: pl.DataFrame) -> pl.DataFrame:
-    return (
-        df.pipe(with_account_id)
-        .group_by(ACCOUNT_KEY)
-        .agg(pl.col("amt").sum().alias("account_total_spend"))
+def account_spend_7d_interval(df: pl.DataFrame) -> pl.DataFrame:
+    return df.pipe(with_account_id).select(
+        pl.col("account_id"),
+        pl.col("trans_date_trans_time")
+        .str.to_datetime("%Y-%m-%d %H:%M:%S")
+        .alias("transaction_date"),
+        pl.col("amt"),
     )
 
 
@@ -51,39 +70,19 @@ def account_total_spend(df: pl.DataFrame) -> pl.DataFrame:
 
 
 @feature(
-    keys=[USER_KEY], source=SOURCE, tags=["users"], description="Total spend by user ID"
-)
-def user_total_spend(df: pl.DataFrame) -> pl.DataFrame:
-    return (
-        df.pipe(with_user_id)
-        .group_by(USER_KEY)
-        .agg(pl.col("amt").sum().alias("total_spend"))
-    )
-
-
-@feature(
     keys=[USER_KEY],
     source=SOURCE,
     tags=["users"],
-    timestamp="feature_timestamp",
-    description="User mean spend over 30d rolling window",
+    description="Total spend by user ID",
+    timestamp="transaction_date",
+    interval=timedelta(days=30),
+    metrics=[spend_metrics],
 )
-def user_spend_mean_30d(df: pl.DataFrame) -> pl.DataFrame:
-    return (
-        df.pipe(with_user_id)
-        # User handles datetime conversion
-        .with_columns(
-            pl.col("trans_date_trans_time")
-            .str.to_datetime("%Y-%m-%d %H:%M:%S")
-            .alias("trans_dt")
-        )
-        .sort("trans_dt")
-        .group_by_dynamic(
-            "trans_dt",
-            every="1d",
-            period="30d",
-            by=USER_KEY,
-        )
-        .agg(pl.col("amt").mean().alias("user_spend_mean_30d"))
-        .rename({"trans_dt": "feature_timestamp"})
+def user_spend_30d_interval(df: pl.DataFrame) -> pl.DataFrame:
+    return df.pipe(with_user_id).select(
+        pl.col("user_id"),
+        pl.col("trans_date_trans_time")
+        .str.to_datetime("%Y-%m-%d %H:%M:%S")
+        .alias("transaction_date"),
+        pl.col("amt"),
     )
