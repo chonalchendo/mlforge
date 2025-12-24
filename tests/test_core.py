@@ -466,5 +466,3 @@ def test_materialize_raises_on_wrong_return_type():
         # When/Then materializing should raise AttributeError (from engine trying to access schema)
         with pytest.raises(AttributeError):
             defs.build(preview=False)
-
-

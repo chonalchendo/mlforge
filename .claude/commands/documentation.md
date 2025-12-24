@@ -44,7 +44,7 @@ def process(user):
 # ✅ Explains the non-obvious
 def process(user):
     """Process user for notification queue.
-    
+
     Skips recently active users (<5 min) due to eventual consistency
     with the activity pipeline.
     """
@@ -87,7 +87,7 @@ def get(self, key: str) -> Any:
 # ✅ Describes behavior callers care about
 def get(self, key: str) -> Any:
     """Retrieve value from cache.
-    
+
     Returns None if key not present or evicted.
     Accessing a key refreshes its LRU position.
     """
