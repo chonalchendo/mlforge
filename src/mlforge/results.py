@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from pathlib import Path
+from typing import override
 
 import polars as pl
 
@@ -15,7 +16,7 @@ class EngineResult(ABC):
     """
 
     @abstractmethod
-    def write_parquet(self, path: Path) -> None:
+    def write_parquet(self, path: Path | str) -> None:
         """
         Write result to parquet file.
 
@@ -94,15 +95,19 @@ class PolarsResult(EngineResult):
             self._df = self._lf.collect()
         return self._df
 
-    def write_parquet(self, path: Path) -> None:
+    @override
+    def write_parquet(self, path: Path | str) -> None:
         self._collect().write_parquet(path)
 
+    @override
     def to_polars(self) -> pl.DataFrame:
         return self._collect()
 
+    @override
     def row_count(self) -> int:
         return self._collect().height
 
+    @override
     def schema(self) -> dict[str, str]:
         return {name: str(dtype) for name, dtype in self._lf.collect_schema().items()}
 
