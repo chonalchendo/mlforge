@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import Callable
 
 import polars as pl
 from loguru import logger
@@ -25,7 +26,7 @@ class ComputeContext:
     keys: list[str]
     interval: str
     timestamp: str
-    dataframe: pl.DataFrame
+    dataframe: pl.DataFrame | pl.LazyFrame
     tag: str
 
 
@@ -53,7 +54,7 @@ class PolarsCompiler:
 
     def compile_rolling(
         self, metric: metrics.Rolling, ctx: ComputeContext
-    ) -> pl.DataFrame:
+    ) -> pl.DataFrame | pl.LazyFrame:
         """
         Compile rolling window aggregations.
 
@@ -69,8 +70,8 @@ class PolarsCompiler:
         """
         agg_exprs = self._build_agg_expressions(metric.aggregations)
 
-        window_results: list[pl.DataFrame] = []
-        for window in metric.windows:
+        window_results: list[pl.DataFrame | pl.LazyFrame] = []
+        for window in metric.converted_windows:
             logger.debug(f"Calculating for window: {window}")
             result = (
                 ctx.dataframe.sort(ctx.timestamp)
@@ -108,7 +109,7 @@ class PolarsCompiler:
         Returns:
             List of Polars expressions for computing aggregations
         """
-        agg_map = {
+        agg_map: dict[str, Callable[[str], pl.Expr]] = {
             "count": lambda c: pl.col(c).count(),
             "sum": lambda c: pl.col(c).sum(),
             "mean": lambda c: pl.col(c).mean(),
@@ -130,16 +131,16 @@ class PolarsCompiler:
 
     def _add_window_suffix(
         self,
-        df: pl.LazyFrame,
+        df: pl.LazyFrame | pl.DataFrame,
         aggregations: metrics.Aggregations,
         window: str,
         tag: str,
         interval: str,
-    ) -> pl.LazyFrame:
+    ) -> pl.LazyFrame | pl.DataFrame:
         """
         Rename aggregation columns with window and interval suffixes.
 
-        Creates standardized column names: {tag}__{col}__{agg}__{window}__{interval}
+        Creates standardized column names: {tag}__{col}__{agg}__{interval}__{window}
 
         Args:
             df: DataFrame with aggregation columns
@@ -152,7 +153,7 @@ class PolarsCompiler:
             DataFrame with renamed columns
         """
         renames = {
-            f"{col}__{agg}": f"{tag}__{col}__{agg}__{window}__{interval}"
+            f"{col}__{agg}": f"{tag}__{col}__{agg}__{interval}__{window}"
             for col, aggs in aggregations.items()
             for agg in aggs
         }
@@ -160,10 +161,10 @@ class PolarsCompiler:
 
     def _join_on_keys(
         self,
-        dfs: list[pl.LazyFrame],
+        dfs: list[pl.DataFrame | pl.LazyFrame],
         entity_keys: list[str],
         timestamp_col: str,
-    ) -> pl.LazyFrame:
+    ) -> pl.LazyFrame | pl.DataFrame:
         """
         Join multiple dataframes on entity keys and timestamp.
 

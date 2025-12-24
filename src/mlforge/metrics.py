@@ -67,9 +67,10 @@ class Rolling:
     aggregations: Aggregations
     closed: Literal["left", "right", "both", "none"] = "left"
 
-    def __post_init__(self):
+    @property
+    def converted_windows(self) -> list[str]:
         """Convert any timedelta windows to Polars duration strings."""
-        self.windows = [
+        return [
             timedelta_to_polars_duration(w) if isinstance(w, timedelta) else w
             for w in self.windows
         ]

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import ModuleType
 from typing import Any, Callable, Literal, Protocol
@@ -12,10 +12,9 @@ from loguru import logger
 import mlforge.engines as engines
 import mlforge.errors as errors
 import mlforge.logging as log
+import mlforge.manifest as manifest
 import mlforge.metrics as metrics_
 import mlforge.store as store
-
-# from mlforge.metrics import timedelta_to_polars_duration
 
 WindowFunc = Literal["1h", "1d", "7d", "30d"]
 
@@ -61,7 +60,7 @@ class Feature:
     description: str | None
     interval: str | None
     metrics: list[metrics_.MetricKind] | None
-    fn: Callable[..., pl.DataFrame]
+    fn: FeatureFunction
 
     def __call__(self, *args, **kwargs) -> pl.DataFrame:
         """
@@ -222,7 +221,7 @@ class Definitions:
         force: bool = False,
         preview: bool = True,
         preview_rows: int = 5,
-    ) -> dict[str, Path]:
+    ) -> dict[str, Path | str]:
         """
         Compute and persist features to offline storage.
 
@@ -250,7 +249,7 @@ class Definitions:
             )
         """
         selected_features = self._resolve_features_to_build(feature_names, tag_names)
-        results: dict[str, Path] = {}
+        results: dict[str, Path | str] = {}
 
         for feature in selected_features:
             if not force and self.offline_store.exists(feature.name):
@@ -262,8 +261,16 @@ class Definitions:
             result_df = result.to_polars()
             self._validate_result(feature.name, result_df)
 
-            self.offline_store.write(feature.name, result)
+            write_metadata = self.offline_store.write(feature.name, result)
             result_path = self.offline_store.path_for(feature.name)
+
+            # Build and write feature metadata
+            feature_metadata = self._build_feature_metadata(
+                feature=feature,
+                write_metadata=write_metadata,
+                schema=result.schema(),
+            )
+            self.offline_store.write_metadata(feature.name, feature_metadata)
 
             if preview:
                 log.print_feature_preview(
@@ -451,3 +458,35 @@ class Definitions:
 
         if features_found == 0:
             logger.warning(f"No features found in module: {module.__name__}")
+
+    def _build_feature_metadata(
+        self,
+        feature: Feature,
+        write_metadata: dict,
+        schema: dict[str, str],
+    ) -> manifest.FeatureMetadata:
+        """
+        Build FeatureMetadata from feature definition and write results.
+
+        Args:
+            feature: The Feature definition object
+            write_metadata: Metadata returned from store.write()
+            schema: Column name to dtype mapping from result
+
+        Returns:
+            FeatureMetadata object ready for persistence
+        """
+        return manifest.FeatureMetadata(
+            name=feature.name,
+            path=write_metadata["path"],
+            entity=feature.keys[0],
+            keys=feature.keys,
+            source=feature.source,
+            row_count=write_metadata["row_count"],
+            last_updated=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            timestamp=feature.timestamp,
+            interval=feature.interval,
+            columns=manifest.derive_column_metadata(feature, schema),
+            tags=feature.tags or [],
+            description=feature.description,
+        )

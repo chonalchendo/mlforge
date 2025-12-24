@@ -85,6 +85,11 @@ class PolarsEngine(Engine):
                 f"Timestamp column '{feature.timestamp}' not found in dataframe"
             )
 
+        if not feature.interval:
+            raise ValueError(
+                "Aggregation interval is not specified. Please set interval parameter in @feature decorator."
+            )
+
         # Use first tag if available, otherwise fall back to feature name
         tag = feature.tags[0] if feature.tags else feature.name
 
