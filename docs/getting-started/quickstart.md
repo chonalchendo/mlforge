@@ -8,12 +8,12 @@ First, install mlforge:
 
 === "pip"
     ```bash
-    pip install mlforge
+    pip install mlforge-sdk
     ```
 
 === "uv"
     ```bash
-    uv add mlforge
+    uv add mlforge-sdk
     ```
 
 ## 1. Prepare Your Data

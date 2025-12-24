@@ -70,12 +70,12 @@ training_data = get_training_data(
 
 === "pip"
     ```bash
-    pip install mlforge
+    pip install mlforge-sdk
     ```
 
 === "uv"
     ```bash
-    uv add mlforge
+    uv add mlforge-sdk
     ```
 
 ## Next Steps

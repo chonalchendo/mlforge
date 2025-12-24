@@ -489,7 +489,7 @@ jobs:
         with:
           python-version: "3.13"
       - name: Install dependencies
-        run: pip install mlforge
+        run: pip install mlforge-sdk
       - name: Build features
         run: mlforge build definitions.py --no-preview
 ```

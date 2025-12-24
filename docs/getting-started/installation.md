@@ -5,13 +5,13 @@ mlforge requires Python 3.13 or later.
 ## Install via pip
 
 ```bash
-pip install mlforge
+pip install mlforge-sdk
 ```
 
 ## Install via uv
 
 ```bash
-uv add mlforge
+uv add mlforge-sdk
 ```
 
 ## Dependencies
