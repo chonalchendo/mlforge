@@ -36,6 +36,86 @@ just check
 
 Automatically use context7 for code generation and library documentation.
 
+## Coding Standards
+
+### Standards 
+
+- Python ≥ 3.13 with full type annotations
+- Follow existing patterns and maintain consistency
+- Prioritize readable, understandable code - clarity over cleverness
+- Avoid obfuscated or confusing patterns even if they're shorter
+- Each feature needs corresponding tests
+- imports for mlforge should be imported as modules. For example: "import mlforge.core as core"
+- DO NOT import individual classes and functions unless it's for Python standard libraries.
+- ALWAYS place imports at the top of a file, never include inside a function or class.
+
+### Design Principles
+
+Think about each of these principles when writing new code and reviewing old pieces of code.
+
+| # | Principle | Question |
+|---|-----------|----------|
+| 1 | Complexity is incremental | Is this change adding subtle complexity? |
+| 2 | Working code isn't enough | Is this clear and maintainable, or just "working"? |
+| 3 | Continual investment | Did we leave this cleaner than we found it? |
+| 4 | Deep modules | Is the interface small relative to functionality? |
+| 5 | Simple common usage | Is the common case trivial to write? |
+| 6 | Simple interface over impl | Is complexity hidden inside, not pushed to callers? |
+| 7 | General-purpose depth | Is this general enough without over-engineering? |
+| 8 | Separate concerns | Are special cases leaking into general code? |
+| 9 | Layer abstraction | Does each layer provide a meaningful transformation? |
+| 10 | Pull complexity down | Are callers doing work the module should handle? |
+| 11 | Define errors out | Can we change the design so this error can't happen? |
+| 12 | Design it twice | Did we consider alternatives? |
+| 13 | Non-obvious comments | Do comments explain *why*, not *what*? |
+| 14 | Design for reading | Would a new reader understand this quickly? |
+| 15 | Abstractions over features | Are we building composable blocks or tangled features? |
+
+### Code Red Flags
+
+Think about each of these red flags when writing new code and reviewing old pieces of code.
+
+| # | Red Flag | Question |
+|---|----------|----------|
+| 1 | Shallow Module | Is the interface as complex as the implementation? |
+| 2 | Information Leakage | Does this decision appear in multiple places? |
+| 3 | Temporal Decomposition | Is this organized by *when* instead of *what info*? |
+| 4 | Overexposure | Must common cases know about rare features? |
+| 5 | Pass-Through Method | Does this just forward to another method? |
+| 6 | Repetition | Have I seen this pattern elsewhere? |
+| 7 | Special-General Mixture | Is special-case logic polluting general code? |
+| 8 | Conjoined Methods | Can I understand this without reading another method? |
+| 9 | Comment Repeats Code | Does this comment add any information? |
+| 10 | Implementation in Interface Docs | Do these docs expose internals? |
+| 11 | Vague Name | Would a new reader know what this is? |
+| 12 | Hard to Pick Name | Why is naming this so difficult? |
+| 13 | Hard to Describe | Why does explaining this require so much text? |
+| 14 | Non-Obvious Code | Can I understand this without tracing execution? |
+
+---
+
+### Red Flag → Root Cause Mapping
+
+Think about these red flag causes when writing new code and reviewing current code.
+
+| Red Flag | Often Indicates |
+|----------|-----------------|
+| Shallow Module | Module boundary in wrong place |
+| Information Leakage | Missing abstraction to centralize decision |
+| Temporal Decomposition | Organized by workflow instead of information |
+| Overexposure | Interface not designed for common case |
+| Pass-Through | Unnecessary layer; should merge or differentiate |
+| Repetition | Missing helper/abstraction |
+| Special-General Mixture | Concerns not separated |
+| Conjoined Methods | Should be merged or restructured |
+| Comment Repeats Code | Bad naming or unnecessary comment |
+| Implementation Docs | Leaky abstraction |
+| Vague Name | Unclear purpose; may need redesign |
+| Hard to Pick Name | Muddled responsibilities |
+| Hard to Describe | Doing too much; needs decomposition |
+| Non-Obvious Code | Needs refactoring or better naming |
+
+
 ## Documentation
 
 ### Style Guide
