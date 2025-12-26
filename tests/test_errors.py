@@ -186,3 +186,67 @@ def test_feature_materialization_error_can_be_raised_and_caught():
     # When/Then it should be catchable
     with pytest.raises(FeatureMaterializationError, match="Test error"):
         failing_function()
+
+
+# FeatureValidationError tests
+
+
+def test_feature_validation_error_with_failures():
+    # Given validation failures
+    from mlforge.errors import FeatureValidationError
+
+    failures = [
+        ("user_id", "not_null", "5 null values found"),
+        ("amount", "greater_than(0)", "3 values <= 0"),
+    ]
+    error = FeatureValidationError(feature_name="user_spend", failures=failures)
+
+    # When converting to string
+    error_str = str(error)
+
+    # Then it should include feature name and all failures
+    assert "user_spend" in error_str
+    assert "user_id" in error_str
+    assert "not_null" in error_str
+    assert "5 null values found" in error_str
+    assert "amount" in error_str
+    assert "greater_than(0)" in error_str
+    assert "3 values <= 0" in error_str
+
+
+def test_feature_validation_error_stores_attributes():
+    # Given a validation error
+    from mlforge.errors import FeatureValidationError
+
+    failures = [("col", "validator", "message")]
+    error = FeatureValidationError(feature_name="test_feature", failures=failures)
+
+    # When checking attributes
+    # Then they should be stored
+    assert error.feature_name == "test_feature"
+    assert error.failures == failures
+
+
+def test_feature_validation_error_is_exception():
+    # Given a FeatureValidationError
+    from mlforge.errors import FeatureValidationError
+
+    error = FeatureValidationError(feature_name="test", failures=[])
+
+    # When checking type
+    # Then it should be an Exception
+    assert isinstance(error, Exception)
+
+
+def test_feature_validation_error_can_be_raised_and_caught():
+    # Given a function that raises FeatureValidationError
+    from mlforge.errors import FeatureValidationError
+
+    def failing_function():
+        raise FeatureValidationError(
+            feature_name="test", failures=[("col", "val", "msg")]
+        )
+
+    # When/Then it should be catchable
+    with pytest.raises(FeatureValidationError, match="Validation failed"):
+        failing_function()
