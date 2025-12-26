@@ -13,6 +13,7 @@ if TYPE_CHECKING:
 
     from mlforge.core import Feature
     from mlforge.manifest import FeatureMetadata
+    from mlforge.validation import FeatureValidationResult
 
 
 console = console_.Console()
@@ -32,9 +33,18 @@ def setup_logging(verbose: bool = False) -> None:
 
     level = "DEBUG" if verbose else "INFO"
 
+    def formatter(record):
+        # Build location string and pad to fixed width for aligned messages
+        location = f"{record['name']}:{record['function']}:{record['line']}"
+        record["extra"]["location"] = f"{location: <45}"
+        return (
+            "{time:YYYY-MM-DD HH:mm:ss.SSS} | <level>{level: <8}</level> | "
+            "{extra[location]} - {message}\n"
+        )
+
     logger.add(
         sys.stderr,
-        format="<level>{level: <8}</level> | {message}",
+        format=formatter,
         level=level,
         colorize=True,
     )
@@ -222,3 +232,67 @@ def print_manifest_summary(metadata_list: list["FeatureMetadata"]) -> None:
 
     console.print(table)
     console.print(f"\n[dim]{len(metadata_list)} features total[/dim]")
+
+
+def print_validation_results(results: list["FeatureValidationResult"]) -> None:
+    """
+    Display validation results for all features.
+
+    Shows a summary table with pass/fail status for each feature,
+    followed by detailed failure information.
+
+    Args:
+        results: List of FeatureValidationResult objects
+    """
+    # Summary table
+    table = table_.Table(title="Validation Results")
+    table.add_column("Feature", style="cyan")
+    table.add_column("Status", justify="center")
+    table.add_column("Checks", justify="right")
+    table.add_column("Failures", justify="right")
+
+    for result in sorted(results, key=lambda r: r.feature_name):
+        status = "[green]PASS[/green]" if result.passed else "[red]FAIL[/red]"
+        table.add_row(
+            result.feature_name,
+            status,
+            str(len(result.column_results)),
+            str(result.failure_count),
+        )
+
+    console.print(table)
+
+    # Detailed failures
+    failed_results = [r for r in results if not r.passed]
+    if failed_results:
+        console.print("\n[bold red]Validation Failures:[/bold red]")
+        for result in failed_results:
+            console.print(f"\n  [cyan]{result.feature_name}[/cyan]:")
+            for failure in result.failures:
+                console.print(
+                    f"    [dim]•[/dim] Column '[yellow]{failure.column}[/yellow]' "
+                    f"({failure.validator_name}): {failure.result.message}"
+                )
+
+
+def print_validation_summary(passed: int, failed: int, skipped: int) -> None:
+    """
+    Display a summary of validation results.
+
+    Args:
+        passed: Number of features that passed validation
+        failed: Number of features that failed validation
+        skipped: Number of features skipped (no validators)
+    """
+    total = passed + failed + skipped
+    parts = []
+
+    if passed > 0:
+        parts.append(f"[green]{passed} passed[/green]")
+    if failed > 0:
+        parts.append(f"[red]{failed} failed[/red]")
+    if skipped > 0:
+        parts.append(f"[dim]{skipped} skipped[/dim]")
+
+    summary = ", ".join(parts)
+    console.print(f"\nValidation: {summary} ({total} total)")

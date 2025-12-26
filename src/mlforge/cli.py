@@ -103,6 +103,74 @@ def build(
 
 
 @app.command
+def validate(
+    target: Annotated[
+        str | None,
+        cyclopts.Parameter(
+            name="--target", help="Path to definitions.py file. Automatically handled."
+        ),
+    ] = None,
+    features: Annotated[
+        str | None,
+        cyclopts.Parameter(name="--features", help="Comma-separated feature names"),
+    ] = None,
+    tags: Annotated[
+        str | None,
+        cyclopts.Parameter(name="--tags", help="Comma-separated feature tags"),
+    ] = None,
+):
+    """
+    Run validation checks on features without building.
+
+    Loads feature definitions, runs feature transformations, and validates
+    outputs against defined validators. Does not compute metrics or persist data.
+
+    Args:
+        target: Path to definitions file. Defaults to "definitions.py".
+        features: Comma-separated list of feature names. Defaults to None (all).
+        tags: Comma-separated list of feature tags. Defaults to None.
+
+    Raises:
+        SystemExit: If loading definitions fails or any validation fails
+    """
+    if tags and features:
+        raise ValueError(
+            "Tags and features cannot be specified at the same time. Choose one or the other."
+        )
+
+    try:
+        defs = loader.load_definitions(target)
+        feature_names = [f.strip() for f in features.split(",")] if features else None
+        tag_names = [t.strip() for t in tags.split(",")] if tags else None
+
+        results = defs.validate(
+            feature_names=feature_names,
+            tag_names=tag_names,
+        )
+
+        if not results:
+            log.print_warning("No features with validators found.")
+            return
+
+        log.print_validation_results(results)
+
+        # Count results
+        passed = sum(1 for r in results if r.passed)
+        failed = sum(1 for r in results if not r.passed)
+        total_features = len(defs.list_features())
+        skipped = total_features - len(results)
+
+        log.print_validation_summary(passed, failed, skipped)
+
+        if failed > 0:
+            raise SystemExit(1)
+
+    except errors.DefinitionsLoadError as e:
+        log.print_error(str(e))
+        raise SystemExit(1)
+
+
+@app.command
 def list_(
     target: Annotated[
         str | None,
