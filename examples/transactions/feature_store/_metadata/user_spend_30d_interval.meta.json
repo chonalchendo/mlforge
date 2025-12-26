@@ -7,7 +7,7 @@
   ],
   "source": "data/transactions.parquet",
   "row_count": 22801,
-  "last_updated": "2025-12-24T16:52:34.477875Z",
+  "last_updated": "2025-12-26T11:25:32.822589Z",
   "timestamp": "transaction_date",
   "interval": "30d",
   "columns": [

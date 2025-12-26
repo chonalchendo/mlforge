@@ -2,7 +2,7 @@ from datetime import timedelta
 
 import polars as pl
 
-from mlforge import Rolling, entity_key, feature
+from mlforge import Rolling, entity_key, feature, greater_than_or_equal
 
 SOURCE = "data/transactions.parquet"
 
@@ -33,6 +33,7 @@ spend_metrics = Rolling(
     timestamp="transaction_date",
     interval=timedelta(days=1),
     metrics=[spend_metrics],
+    validators={"amt": [greater_than_or_equal(value=0)]},
 )
 def merchant_spend_1d_interval(df: pl.DataFrame) -> pl.DataFrame:
     return df.pipe(with_merchant_id).select(
