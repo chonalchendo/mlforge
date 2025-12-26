@@ -15,6 +15,8 @@ import mlforge.logging as log
 import mlforge.manifest as manifest
 import mlforge.metrics as metrics_
 import mlforge.store as store
+import mlforge.validation as validation_
+import mlforge.validators as validators_
 
 WindowFunc = Literal["1h", "1d", "7d", "30d"]
 
@@ -52,6 +54,7 @@ class Feature:
             return df.with_columns(...)
     """
 
+    fn: FeatureFunction
     name: str
     source: str
     keys: list[str]
@@ -60,7 +63,7 @@ class Feature:
     description: str | None
     interval: str | None
     metrics: list[metrics_.MetricKind] | None
-    fn: FeatureFunction
+    validators: dict[str, list[validators_.Validator]] | None
 
     def __call__(self, *args, **kwargs) -> pl.DataFrame:
         """
@@ -82,6 +85,7 @@ def feature(
     timestamp: str | None = None,
     interval: str | timedelta | None = None,
     metrics: list[metrics_.MetricKind] | None = None,
+    validators: dict[str, list[validators_.Validator]] | None = None,
 ) -> Callable[[FeatureFunction], Feature]:
     """
     Decorator that marks a function as a feature definition.
@@ -97,6 +101,8 @@ def feature(
         timestamp: Column name for temporal features. Defaults to None.
         interval: Time interval for rolling computations (e.g., "1d" or timedelta(days=1)). Defaults to None.
         metrics: Aggregation metrics like Rolling for time-based features. Defaults to None.
+        validators: Column validators to run before metrics are computed. Defaults to None.
+            Mapping of column names to lists of validator functions.
 
     Returns:
         Decorator function that converts a function into a Feature
@@ -108,7 +114,11 @@ def feature(
             tags=['users'],
             timestamp="transaction_time",
             description="User spending statistics",
-            interval=timedelta(days=1)
+            interval=timedelta(days=1),
+            validators={
+                "amount": [not_null(), greater_than(0)],
+                "user_id": [not_null()],
+            },
         )
         def user_spend_stats(df):
             return df.group_by("user_id").agg(
@@ -133,6 +143,7 @@ def feature(
             timestamp=timestamp,
             interval=interval_str,
             metrics=metrics,
+            validators=validators,
         )
 
     return decorator
@@ -226,7 +237,8 @@ class Definitions:
         Compute and persist features to offline storage.
 
         Loads source data, applies feature transformations, validates results,
-        and writes to the configured storage backend.
+        and writes to the configured storage backend. Features that fail
+        validation are skipped, but other features continue to build.
 
         Args:
             feature_names: Specific features to materialize. Defaults to None (all).
@@ -250,13 +262,19 @@ class Definitions:
         """
         selected_features = self._resolve_features_to_build(feature_names, tag_names)
         results: dict[str, Path | str] = {}
+        failed_features: list[str] = []
 
         for feature in selected_features:
             if not force and self.offline_store.exists(feature.name):
                 logger.debug(f"Skipping {feature.name} (already exists)")
                 continue
 
-            result = self._engine.execute(feature)
+            try:
+                result = self._engine.execute(feature)
+            except errors.FeatureValidationError as e:
+                logger.error(str(e))
+                failed_features.append(feature.name)
+                continue
 
             result_df = result.to_polars()
             self._validate_result(feature.name, result_df)
@@ -278,6 +296,83 @@ class Definitions:
                 )
 
             results[feature.name] = result_path
+
+        if failed_features:
+            logger.warning(
+                f"Build completed with validation failures: {failed_features}"
+            )
+
+        return results
+
+    def validate(
+        self,
+        feature_names: list[str] | None = None,
+        tag_names: list[str] | None = None,
+    ) -> list[validation_.FeatureValidationResult]:
+        """
+        Run validation checks on features without building.
+
+        Loads source data, applies feature transformations, and runs validators
+        on the output. Does not compute metrics or write to storage.
+
+        Args:
+            feature_names: Specific features to validate. Defaults to None (all).
+            tag_names: Specific features to validate by tag. Defaults to None (all).
+
+        Returns:
+            List of FeatureValidationResult objects, one per validated feature.
+            Features without validators are skipped.
+
+        Raises:
+            ValueError: If specified feature name is not registered
+
+        Example:
+            results = defs.validate(feature_names=["user_spend"])
+            for result in results:
+                if not result.passed:
+                    print(f"{result.feature_name} failed validation")
+        """
+        selected_features = self._resolve_features_to_build(feature_names, tag_names)
+        results: list[validation_.FeatureValidationResult] = []
+
+        for feature in selected_features:
+            if not feature.validators:
+                logger.debug(f"Skipping {feature.name} (no validators)")
+                continue
+
+            try:
+                # Load and process data (without metrics)
+                source_df = self._engine._load_source(feature.source)
+                processed_df = feature(source_df)
+
+                # Collect if LazyFrame
+                if isinstance(processed_df, pl.LazyFrame):
+                    processed_df = processed_df.collect()
+
+                # Run validators
+                result = validation_.validate_feature(
+                    feature.name, processed_df, feature.validators
+                )
+                results.append(result)
+
+            except Exception as e:
+                logger.error(f"Error validating {feature.name}: {e}")
+                # Create a failed result for the feature
+                results.append(
+                    validation_.FeatureValidationResult(
+                        feature_name=feature.name,
+                        column_results=[
+                            validation_.ColumnValidationResult(
+                                column="<error>",
+                                validator_name="execution",
+                                result=validators_.ValidationResult(
+                                    passed=False,
+                                    message=str(e),
+                                ),
+                            )
+                        ],
+                    )
+                )
 
         return results
 

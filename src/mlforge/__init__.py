@@ -20,6 +20,17 @@ from mlforge.metrics import Rolling
 from mlforge.retrieval import get_training_data
 from mlforge.store import LocalStore, S3Store
 from mlforge.utils import entity_key, surrogate_key
+from mlforge.validators import (
+    greater_than,
+    greater_than_or_equal,
+    in_range,
+    is_in,
+    less_than,
+    less_than_or_equal,
+    matches_regex,
+    not_null,
+    unique,
+)
 
 __all__ = [
     "feature",
@@ -31,4 +42,13 @@ __all__ = [
     "surrogate_key",
     "get_training_data",
     "Rolling",
+    "greater_than",
+    "greater_than_or_equal",
+    "less_than",
+    "less_than_or_equal",
+    "unique",
+    "is_in",
+    "in_range",
+    "matches_regex",
+    "not_null",
 ]

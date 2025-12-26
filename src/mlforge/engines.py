@@ -5,7 +5,9 @@ from typing import TYPE_CHECKING, override
 import polars as pl
 
 import mlforge.compilers as compilers
+import mlforge.errors as errors
 import mlforge.results as results_
+import mlforge.validation as validation
 
 if TYPE_CHECKING:
     import mlforge.core as core
@@ -77,6 +79,10 @@ class PolarsEngine(Engine):
         if missing_keys:
             raise ValueError(f"Entity keys {missing_keys} not found in dataframe")
 
+        # run validators on processed dataframe (before metrics)
+        if feature.validators:
+            self._run_validators(feature.name, processed_df, feature.validators)
+
         if not feature.metrics:
             return results_.PolarsResult(processed_df)
 
@@ -140,6 +146,40 @@ class PolarsEngine(Engine):
                 return pl.read_csv(path)
             case _:
                 raise ValueError(f"Unsupported source format: {path.suffix}")
+
+    def _run_validators(
+        self,
+        feature_name: str,
+        df: pl.DataFrame | pl.LazyFrame,
+        validators: dict,
+    ) -> None:
+        """
+        Run validators on the processed DataFrame.
+
+        Args:
+            feature_name: Name of the feature being validated
+            df: DataFrame to validate
+            validators: Mapping of column names to validator lists
+
+        Raises:
+            FeatureValidationError: If any validation fails
+        """
+        # Collect LazyFrame if needed for validation
+        if isinstance(df, pl.LazyFrame):
+            df = df.collect()
+
+        results = validation.validate_dataframe(df, validators)
+        failures = [
+            (r.column, r.validator_name, r.result.message or "Validation failed")
+            for r in results
+            if not r.result.passed
+        ]
+
+        if failures:
+            raise errors.FeatureValidationError(
+                feature_name=feature_name,
+                failures=failures,
+            )
 
 
 EngineKind = PolarsEngine
