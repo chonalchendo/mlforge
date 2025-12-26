@@ -99,3 +99,44 @@ class FeatureMaterializationError(Exception):
             parts.append(f"\nHint: {self.hint}")
 
         return "\n".join(parts)
+
+
+class FeatureValidationError(Exception):
+    """
+    Raised when feature validation fails.
+
+    Contains detailed information about which validators failed on which
+    columns, allowing for comprehensive error reporting.
+
+    Attributes:
+        feature_name: Name of the feature that failed validation
+        failures: List of (column, validator_name, message) tuples
+    """
+
+    def __init__(
+        self,
+        feature_name: str,
+        failures: list[tuple[str, str, str]],
+    ):
+        """
+        Initialize feature validation error.
+
+        Args:
+            feature_name: Name of the feature that failed validation
+            failures: List of (column, validator_name, message) tuples
+        """
+        self.feature_name = feature_name
+        self.failures = failures
+        super().__init__(f"Validation failed for '{feature_name}'")
+
+    def __str__(self) -> str:
+        """
+        Format error message with all validation failures.
+
+        Returns:
+            Formatted multi-line error message
+        """
+        parts = [f"Validation failed for '{self.feature_name}':"]
+        for column, validator_name, message in self.failures:
+            parts.append(f"  - Column '{column}' ({validator_name}): {message}")
+        return "\n".join(parts)
