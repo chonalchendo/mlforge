@@ -38,7 +38,9 @@ class PolarsCompiler:
     for efficient computation.
     """
 
-    def compile(self, metric: metrics.MetricKind, ctx: ComputeContext) -> pl.DataFrame:
+    def compile(
+        self, metric: metrics.MetricKind, ctx: ComputeContext
+    ) -> pl.DataFrame | pl.LazyFrame:
         """
         Compile a metric specification into a Polars computation.
 
@@ -49,7 +51,7 @@ class PolarsCompiler:
         Returns:
             DataFrame with computed metrics
         """
-        method = getattr(self, f"compile_{type(metric).__name__.lower()}")
+        method: Callable = getattr(self, f"compile_{type(metric).__name__.lower()}")
         return method(metric, ctx)
 
     def compile_rolling(
@@ -68,11 +70,16 @@ class PolarsCompiler:
         Returns:
             DataFrame with all window aggregations joined on entity keys and timestamp
         """
+        cols = list(metric.aggregations.keys())
+        windows = metric.converted_windows
+        logger.debug(
+            f"Rolling aggregations: {cols} over {windows} (interval={ctx.interval})"
+        )
+
         agg_exprs = self._build_agg_expressions(metric.aggregations)
 
         window_results: list[pl.DataFrame | pl.LazyFrame] = []
-        for window in metric.converted_windows:
-            logger.debug(f"Calculating for window: {window}")
+        for window in windows:
             result = (
                 ctx.dataframe.sort(ctx.timestamp)
                 .group_by_dynamic(
@@ -121,9 +128,7 @@ class PolarsCompiler:
 
         exprs: list[pl.Expr] = []
         for col, agg_types in aggregations.items():
-            logger.debug(f"Creating aggreagations for: {col}")
             for agg_type in agg_types:
-                logger.debug(f"Creating aggregation type: {agg_type}")
                 expr = agg_map[agg_type](col).alias(f"{col}__{agg_type}")
                 exprs.append(expr)
 
