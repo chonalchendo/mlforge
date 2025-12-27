@@ -255,7 +255,7 @@ class Definitions:
             FeatureMaterializationError: If feature function fails or returns invalid data
 
         Example:
-            paths = defs.materialize(
+            paths = defs.build(
                 feature_names=["user_age", "user_spend"],
                 force=True
             )
@@ -287,6 +287,9 @@ class Definitions:
                 feature=feature,
                 write_metadata=write_metadata,
                 schema=result.schema(),
+                base_schema=result.base_schema()
+                if hasattr(result, "base_schema")
+                else None,
             )
             self.offline_store.write_metadata(feature.name, feature_metadata)
 
@@ -559,6 +562,7 @@ class Definitions:
         feature: Feature,
         write_metadata: dict,
         schema: dict[str, str],
+        base_schema: dict[str, str] | None = None,
     ) -> manifest.FeatureMetadata:
         """
         Build FeatureMetadata from feature definition and write results.
@@ -566,11 +570,15 @@ class Definitions:
         Args:
             feature: The Feature definition object
             write_metadata: Metadata returned from store.write()
-            schema: Column name to dtype mapping from result
+            schema: Column name to dtype mapping from result (final schema after metrics)
+            base_schema: Column name to dtype mapping before metrics were applied
 
         Returns:
             FeatureMetadata object ready for persistence
         """
+        base_columns, feature_columns = manifest.derive_column_metadata(
+            feature, schema, base_schema
+        )
         return manifest.FeatureMetadata(
             name=feature.name,
             path=write_metadata["path"],
@@ -581,7 +589,8 @@ class Definitions:
             last_updated=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
             timestamp=feature.timestamp,
             interval=feature.interval,
-            columns=manifest.derive_column_metadata(feature, schema),
+            columns=base_columns,
+            features=feature_columns,
             tags=feature.tags or [],
             description=feature.description,
         )

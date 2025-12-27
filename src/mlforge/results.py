@@ -66,14 +66,18 @@ class PolarsResult(EngineResult):
     Attributes:
         _lf: LazyFrame containing the computation graph
         _df: Materialized DataFrame (cached after first collect)
+        _base_schema: Schema of base DataFrame before metrics (optional)
     """
 
-    def __init__(self, lf: pl.LazyFrame | pl.DataFrame):
+    def __init__(
+        self, lf: pl.LazyFrame | pl.DataFrame, base_schema: dict[str, str] | None = None
+    ):
         """
         Initialize Polars result wrapper.
 
         Args:
             lf: Polars LazyFrame or eager DataFrame
+            base_schema: Schema of base DataFrame before metrics were applied
         """
         if isinstance(lf, pl.DataFrame):
             self._lf = lf.lazy()
@@ -81,6 +85,7 @@ class PolarsResult(EngineResult):
         else:
             self._lf = lf
             self._df: pl.DataFrame | None = None
+        self._base_schema = base_schema
 
     def _collect(self) -> pl.DataFrame:
         """
@@ -110,6 +115,15 @@ class PolarsResult(EngineResult):
     @override
     def schema(self) -> dict[str, str]:
         return {name: str(dtype) for name, dtype in self._lf.collect_schema().items()}
+
+    def base_schema(self) -> dict[str, str] | None:
+        """
+        Get the base schema before metrics were applied.
+
+        Returns:
+            Schema of base DataFrame or None if not available
+        """
+        return self._base_schema
 
 
 # class DuckDBResult(EngineResult):

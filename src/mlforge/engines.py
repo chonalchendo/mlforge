@@ -75,6 +75,11 @@ class PolarsEngine(Engine):
         processed_df = feature(source_df)
         columns = processed_df.collect_schema().names()
 
+        # Capture base schema before metrics are applied
+        base_schema = {
+            name: str(dtype) for name, dtype in processed_df.collect_schema().items()
+        }
+
         missing_keys = [key for key in feature.keys if key not in columns]
         if missing_keys:
             raise ValueError(f"Entity keys {missing_keys} not found in dataframe")
@@ -84,7 +89,7 @@ class PolarsEngine(Engine):
             self._run_validators(feature.name, processed_df, feature.validators)
 
         if not feature.metrics:
-            return results_.PolarsResult(processed_df)
+            return results_.PolarsResult(processed_df, base_schema=base_schema)
 
         if feature.timestamp not in columns:
             raise ValueError(
@@ -108,21 +113,21 @@ class PolarsEngine(Engine):
         )
 
         # compute metrics and join results
-        results: list[pl.DataFrame] = []
+        results: list[pl.DataFrame | pl.LazyFrame] = []
         for metric in feature.metrics:
             metric.validate(columns)
             result = self._compiler.compile(metric, ctx)
             results.append(result)
 
         if len(results) == 1:
-            return results_.PolarsResult(results.pop(0))
+            return results_.PolarsResult(results.pop(0), base_schema=base_schema)
 
         # join results
-        result: pl.DataFrame = results.pop(0)
+        result: pl.DataFrame | pl.LazyFrame = results.pop(0)
         for df in results:
             result = result.join(df, on=[*ctx.keys, ctx.timestamp], how="outer")
 
-        return results_.PolarsResult(result)
+        return results_.PolarsResult(result, base_schema=base_schema)
 
     def _load_source(self, source: str) -> pl.DataFrame:
         """

@@ -254,12 +254,13 @@ def test_derive_column_metadata_for_simple_columns():
     schema = {"user_id": "Utf8", "value": "Float64"}
 
     # When deriving column metadata
-    columns = derive_column_metadata(simple_feature, schema)
+    base_columns, feature_columns = derive_column_metadata(simple_feature, schema)
 
-    # Then it should have basic dtype info
-    assert len(columns) == 2
-    assert any(c.name == "user_id" and c.dtype == "Utf8" for c in columns)
-    assert any(c.name == "value" and c.dtype == "Float64" for c in columns)
+    # Then it should have basic dtype info in base columns
+    assert len(base_columns) == 2
+    assert len(feature_columns) == 0
+    assert any(c.name == "user_id" and c.dtype == "Utf8" for c in base_columns)
+    assert any(c.name == "value" and c.dtype == "Float64" for c in base_columns)
 
 
 def test_derive_column_metadata_for_rolling_columns():
@@ -287,16 +288,100 @@ def test_derive_column_metadata_for_rolling_columns():
     }
 
     # When deriving column metadata
-    columns = derive_column_metadata(rolling_feature, schema)
+    base_columns, feature_columns = derive_column_metadata(rolling_feature, schema)
 
-    # Then it should parse rolling columns
+    # Then base columns should contain keys and timestamp
+    assert len(base_columns) == 2
+    assert any(c.name == "user_id" for c in base_columns)
+    assert any(c.name == "event_time" for c in base_columns)
+
+    # And feature columns should contain rolling metrics
+    assert len(feature_columns) == 4
     sum_7d = next(
-        (c for c in columns if c.name == "rolling_feature__amt__sum__1d__7d"), None
+        (c for c in feature_columns if c.name == "rolling_feature__amt__sum__1d__7d"),
+        None,
     )
     assert sum_7d is not None
     assert sum_7d.input == "amt"
     assert sum_7d.agg == "sum"
     assert sum_7d.window == "7d"
+
+
+def test_derive_column_metadata_with_validators():
+    # Given a feature with validators
+    from mlforge.validators import greater_than, not_null
+
+    @feature(
+        keys=["user_id"],
+        source="data.parquet",
+        validators={
+            "user_id": [not_null()],
+            "amount": [not_null(), greater_than(0)],
+        },
+    )
+    def validated_feature(df):
+        return df
+
+    schema = {"user_id": "Utf8", "amount": "Float64"}
+
+    # When deriving column metadata
+    base_columns, feature_columns = derive_column_metadata(validated_feature, schema)
+
+    # Then base columns should include validators as structured dicts
+    assert len(base_columns) == 2
+    assert len(feature_columns) == 0
+
+    user_id_col = next((c for c in base_columns if c.name == "user_id"), None)
+    assert user_id_col is not None
+    assert user_id_col.validators == [{"validator": "not_null"}]
+
+    amount_col = next((c for c in base_columns if c.name == "amount"), None)
+    assert amount_col is not None
+    assert amount_col.validators == [
+        {"validator": "not_null"},
+        {"validator": "greater_than", "value": 0},
+    ]
+
+
+def test_feature_metadata_serializes_columns_and_features():
+    # Given metadata with both base columns and feature columns
+    meta = FeatureMetadata(
+        name="test_feature",
+        path="store/test.parquet",
+        entity="user_id",
+        keys=["user_id"],
+        source="data.parquet",
+        row_count=100,
+        last_updated="2024-01-01T00:00:00Z",
+        columns=[
+            ColumnMetadata(name="user_id", dtype="Utf8"),
+            ColumnMetadata(
+                name="amount",
+                dtype="Float64",
+                validators=[{"validator": "not_null"}],
+            ),
+        ],
+        features=[
+            ColumnMetadata(
+                name="test_feature__amt__sum__1d__7d",
+                dtype="Float64",
+                input="amt",
+                agg="sum",
+                window="7d",
+            )
+        ],
+    )
+
+    # When converting to dict
+    result = meta.to_dict()
+
+    # Then both columns and features should be present
+    assert "columns" in result
+    assert "features" in result
+    assert len(result["columns"]) == 2
+    assert len(result["features"]) == 1
+    assert result["columns"][1]["validators"] == [{"validator": "not_null"}]
+    assert result["features"][0]["input"] == "amt"
 
 
 def test_build_creates_metadata_file():
@@ -327,6 +412,9 @@ def test_build_creates_metadata_file():
         assert data["name"] == "test_feature"
         assert data["row_count"] == 3
         assert data["description"] == "Test feature"
+        assert "columns" in data
+        # Features should not be present if empty
+        assert "features" not in data or len(data.get("features", [])) == 0
 
 
 def test_build_updates_metadata_on_rebuild():

@@ -26,6 +26,7 @@ class ColumnMetadata:
 
     For columns derived from Rolling metrics, captures the source column,
     aggregation type, and window size. For other columns, captures dtype.
+    For base columns, captures validator information.
 
     Attributes:
         name: Column name in the output
@@ -33,6 +34,7 @@ class ColumnMetadata:
         input: Source column name for aggregations
         agg: Aggregation type (count, mean, sum, etc.)
         window: Time window for rolling aggregations (e.g., "7d")
+        validators: List of validator specifications applied to this column
     """
 
     name: str
@@ -40,6 +42,7 @@ class ColumnMetadata:
     input: str | None = None
     agg: str | None = None
     window: str | None = None
+    validators: list[dict[str, Any]] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary, excluding None values."""
@@ -54,6 +57,7 @@ class ColumnMetadata:
             input=data.get("input"),
             agg=data.get("agg"),
             window=data.get("window"),
+            validators=data.get("validators"),
         )
 
 
@@ -75,7 +79,8 @@ class FeatureMetadata:
         last_updated: ISO 8601 timestamp of last build
         timestamp: Timestamp column for temporal features
         interval: Time interval for rolling aggregations
-        columns: List of column metadata
+        columns: Base column metadata (from feature function before metrics)
+        features: Generated feature column metadata (from metrics)
         tags: Feature grouping tags
         description: Human-readable description
     """
@@ -90,6 +95,7 @@ class FeatureMetadata:
     timestamp: str | None = None
     interval: str | None = None
     columns: list[ColumnMetadata] = field(default_factory=list)
+    features: list[ColumnMetadata] = field(default_factory=list)
     tags: list[str] = field(default_factory=list)
     description: str | None = None
 
@@ -110,6 +116,8 @@ class FeatureMetadata:
             result["interval"] = self.interval
         if self.columns:
             result["columns"] = [col.to_dict() for col in self.columns]
+        if self.features:
+            result["features"] = [col.to_dict() for col in self.features]
         if self.tags:
             result["tags"] = self.tags
         if self.description:
@@ -120,6 +128,7 @@ class FeatureMetadata:
     def from_dict(cls, data: dict[str, Any]) -> FeatureMetadata:
         """Create from dictionary."""
         columns = [ColumnMetadata.from_dict(c) for c in data.get("columns", [])]
+        features = [ColumnMetadata.from_dict(c) for c in data.get("features", [])]
         return cls(
             name=data["name"],
             path=data["path"],
@@ -131,6 +140,7 @@ class FeatureMetadata:
             timestamp=data.get("timestamp"),
             interval=data.get("interval"),
             columns=columns,
+            features=features,
             tags=data.get("tags", []),
             description=data.get("description"),
         )
@@ -195,58 +205,182 @@ class Manifest:
 # Regex pattern to parse Rolling column names: {tag}__{column}__{agg}__{interval}__{window}
 _ROLLING_COLUMN_PATTERN = re.compile(r"^(.+)__(\w+)__(\d+[dhmsw])__(\d+[dhmsw])$")
 
+# Regex pattern to parse validator names with parameters
+_VALIDATOR_PATTERN = re.compile(r"^(\w+)(?:\((.*)\))?$")
+
+
+def _parse_validator_name(validator_name: str) -> dict[str, Any]:
+    """
+    Parse validator name into structured format.
+
+    Converts validator names like "greater_than_or_equal(0)" into
+    structured dictionaries like {"validator": "greater_than_or_equal", "value": 0}.
+
+    Args:
+        validator_name: Validator name string (e.g., "not_null" or "greater_than(5)")
+
+    Returns:
+        Dictionary with validator name and parameters
+
+    Examples:
+        >>> _parse_validator_name("not_null")
+        {"validator": "not_null"}
+        >>> _parse_validator_name("greater_than_or_equal(0)")
+        {"validator": "greater_than_or_equal", "value": 0}
+    """
+    match = _VALIDATOR_PATTERN.match(validator_name)
+    if not match:
+        return {"validator": validator_name}
+
+    name, params_str = match.groups()
+    result: dict[str, Any] = {"validator": name}
+
+    if not params_str:
+        return result
+
+    # Parse parameters based on validator type
+    params_str = params_str.strip()
+
+    # Handle numeric parameters
+    if name in {
+        "greater_than",
+        "less_than",
+        "greater_than_or_equal",
+        "less_than_or_equal",
+    }:
+        try:
+            # Try to parse as int first, then float
+            result["value"] = (
+                int(params_str) if "." not in params_str else float(params_str)
+            )
+        except ValueError:
+            result["value"] = params_str
+
+    # Handle range parameters
+    elif name == "in_range":
+        parts = [p.strip() for p in params_str.split(",")]
+        if len(parts) >= 2:
+            try:
+                result["min"] = (
+                    int(parts[0]) if "." not in parts[0] else float(parts[0])
+                )
+                result["max"] = (
+                    int(parts[1]) if "." not in parts[1] else float(parts[1])
+                )
+            except ValueError:
+                result["params"] = params_str
+
+    # Handle string parameters (regex, is_in)
+    elif name == "matches_regex":
+        # Remove quotes if present
+        result["pattern"] = params_str.strip("'\"")
+
+    else:
+        # For unknown validators, just store the raw parameter string
+        result["params"] = params_str
+
+    return result
+
 
 def derive_column_metadata(
     feature: Feature,
     schema: dict[str, str],
-) -> list[ColumnMetadata]:
+    base_schema: dict[str, str] | None = None,
+) -> tuple[list[ColumnMetadata], list[ColumnMetadata]]:
     """
     Derive column metadata from feature definition and result schema.
 
-    For features with Rolling metrics, parses column names to extract
-    the input column, aggregation type, and window size. For other
-    features, captures basic dtype information.
+    Separates base columns (keys, timestamp, other non-metric columns) from
+    generated feature columns (rolling metrics). Base columns include validator
+    information if available.
 
     Args:
         feature: The Feature definition object
-        schema: Dictionary mapping column names to dtype strings
+        schema: Dictionary mapping column names to dtype strings (final schema after metrics)
+        base_schema: Dictionary mapping column names to dtype strings (before metrics)
 
     Returns:
-        List of ColumnMetadata for each column in the schema
+        Tuple of (base_columns, feature_columns) where:
+            - base_columns: Keys, timestamp, and other non-metric columns with validators
+            - feature_columns: Rolling metric columns with aggregation metadata
     """
-    columns: list[ColumnMetadata] = []
+    base_columns: list[ColumnMetadata] = []
+    feature_columns: list[ColumnMetadata] = []
 
-    for col_name, dtype in schema.items():
-        # Skip key and timestamp columns from detailed parsing
-        if col_name in feature.keys:
-            columns.append(ColumnMetadata(name=col_name, dtype=dtype))
-            continue
-        if feature.timestamp and col_name == feature.timestamp:
-            columns.append(ColumnMetadata(name=col_name, dtype=dtype))
-            continue
+    if base_schema:
+        # When base_schema is provided, use it to identify base columns
+        # First, add all base columns from base_schema
+        for col_name, dtype in base_schema.items():
+            # Check if this column has validators and parse them
+            validator_specs = None
+            if feature.validators and col_name in feature.validators:
+                validator_specs = [
+                    _parse_validator_name(v.name) for v in feature.validators[col_name]
+                ]
 
-        # Try to parse as Rolling column: {tag}__{column}__{agg}__{interval}__{window}
-        match = _ROLLING_COLUMN_PATTERN.match(col_name)
-        if match:
-            # Extract tag__column and get just the column name (last part)
-            tag_and_column = match.group(1)
-            input_col = tag_and_column.split("__")[-1]
-
-            columns.append(
-                ColumnMetadata(
-                    name=col_name,
-                    dtype=dtype,
-                    input=input_col,
-                    agg=match.group(2),
-                    window=match.group(4),  # Window is now the 4th group
-                )
+            base_columns.append(
+                ColumnMetadata(name=col_name, dtype=dtype, validators=validator_specs)
             )
-            continue
 
-        # Default: just dtype info
-        columns.append(ColumnMetadata(name=col_name, dtype=dtype))
+        # Then, add generated feature columns from final schema (only columns not in base_schema)
+        for col_name, dtype in schema.items():
+            # Skip if this is a base column
+            if col_name in base_schema:
+                continue
 
-    return columns
+            # Try to parse as Rolling column: {tag}__{column}__{agg}__{interval}__{window}
+            match = _ROLLING_COLUMN_PATTERN.match(col_name)
+            if match:
+                # Extract tag__column and get just the column name (last part)
+                tag_and_column = match.group(1)
+                input_col = tag_and_column.split("__")[-1]
+
+                feature_columns.append(
+                    ColumnMetadata(
+                        name=col_name,
+                        dtype=dtype,
+                        input=input_col,
+                        agg=match.group(2),
+                        window=match.group(4),  # Window is now the 4th group
+                    )
+                )
+    else:
+        # When base_schema is not provided, use old logic
+        # Process all columns from schema and categorize them
+        for col_name, dtype in schema.items():
+            # Check if this column has validators and parse them
+            validator_specs = None
+            if feature.validators and col_name in feature.validators:
+                validator_specs = [
+                    _parse_validator_name(v.name) for v in feature.validators[col_name]
+                ]
+
+            # Try to parse as Rolling column: {tag}__{column}__{agg}__{interval}__{window}
+            match = _ROLLING_COLUMN_PATTERN.match(col_name)
+            if match:
+                # Extract tag__column and get just the column name (last part)
+                tag_and_column = match.group(1)
+                input_col = tag_and_column.split("__")[-1]
+
+                feature_columns.append(
+                    ColumnMetadata(
+                        name=col_name,
+                        dtype=dtype,
+                        input=input_col,
+                        agg=match.group(2),
+                        window=match.group(4),
+                        validators=validator_specs,
+                    )
+                )
+            else:
+                # Not a rolling column, so it's a base column
+                base_columns.append(
+                    ColumnMetadata(
+                        name=col_name, dtype=dtype, validators=validator_specs
+                    )
+                )
+
+    return base_columns, feature_columns
 
 
 def _get_rolling_output_columns(feature: Feature) -> set[str]:
