@@ -285,6 +285,71 @@ $ mlforge manifest
 Warning: No feature metadata found. Run 'mlforge build' first.
 ```
 
+### validate
+
+Run validation on features without building them.
+
+```bash
+mlforge validate [TARGET] [OPTIONS]
+```
+
+#### Arguments
+
+- `TARGET` (optional): Path to definitions file. Auto-discovers `definitions.py` if not specified.
+
+#### Options
+
+- `--features NAMES`: Comma-separated list of feature names to validate. Defaults to all features.
+- `--tags TAGS`: Comma-separated list of feature tags to validate. Mutually exclusive with `--features`.
+- `--verbose`, `-v`: Enable debug logging. Defaults to `False`.
+
+#### Examples
+
+Validate all features:
+
+```bash
+mlforge validate definitions.py
+```
+
+Validate specific features:
+
+```bash
+mlforge validate --features merchant_transactions,user_transactions
+```
+
+Validate features by tag:
+
+```bash
+mlforge validate --tags transactions
+```
+
+#### Output
+
+Displays validation results for each feature:
+
+```
+Validating merchant_transactions...
+✓ All validations passed for merchant_transactions
+
+Validating user_transactions...
+✗ Validation failed for user_transactions
+  - Column 'amount': 3 values < 0 (greater_than_or_equal(0))
+
+Validated 2 features (1 passed, 1 failed)
+```
+
+#### Error Handling
+
+**ValidationError**: If any feature fails validation:
+
+```bash
+$ mlforge validate definitions.py
+Error: Validation failed for 1 feature(s)
+Exit code: 1
+```
+
+The command exits with code 1 if any validations fail, making it suitable for CI/CD pipelines.
+
 ### list
 
 Display all registered features in a table.

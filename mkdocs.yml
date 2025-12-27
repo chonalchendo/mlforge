@@ -63,6 +63,7 @@ nav:
   - User Guide:
       - Defining Features: user-guide/defining-features.md
       - Building Features: user-guide/building-features.md
+      - Validators: user-guide/validators.md
       - Storage Backends: user-guide/storage-backends.md
       - Feature Metadata: user-guide/feature-metadata.md
       - Retrieving Features: user-guide/retrieving-features.md
@@ -71,6 +72,8 @@ nav:
   - CLI Reference: cli.md
   - API Reference:
       - Core: api/core.md
+      - Validators: api/validators.md
+      - Validation: api/validation.md
       - Store: api/store.md
       - Manifest: api/manifest.md
       - Retrieval: api/retrieval.md
