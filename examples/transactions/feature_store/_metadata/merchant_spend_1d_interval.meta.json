@@ -7,7 +7,7 @@
   ],
   "source": "data/transactions.parquet",
   "row_count": 506525,
-  "last_updated": "2025-12-26T11:25:31.075742Z",
+  "last_updated": "2025-12-27T11:30:49.880867Z",
   "timestamp": "transaction_date",
   "interval": "1d",
   "columns": [
@@ -19,6 +19,18 @@
       "name": "transaction_date",
       "dtype": "Datetime(time_unit='us', time_zone=None)"
     },
+    {
+      "name": "amt",
+      "dtype": "Float64",
+      "validators": [
+        {
+          "validator": "greater_than_or_equal",
+          "value": 0
+        }
+      ]
+    }
+  ],
+  "features": [
     {
       "name": "merchants__amt__count__1d__7d",
       "dtype": "UInt32",

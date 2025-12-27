@@ -7,7 +7,7 @@
   ],
   "source": "data/transactions.parquet",
   "row_count": 96211,
-  "last_updated": "2025-12-26T11:25:32.003113Z",
+  "last_updated": "2025-12-27T11:30:50.788077Z",
   "timestamp": "transaction_date",
   "interval": "7d",
   "columns": [
@@ -19,6 +19,12 @@
       "name": "transaction_date",
       "dtype": "Datetime(time_unit='us', time_zone=None)"
     },
+    {
+      "name": "amt",
+      "dtype": "Float64"
+    }
+  ],
+  "features": [
     {
       "name": "accounts__amt__count__7d__7d",
       "dtype": "UInt32",
