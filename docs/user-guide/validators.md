@@ -18,15 +18,14 @@ mlforge includes common validators for typical data quality checks.
 ### Basic Example
 
 ```python
-from mlforge import feature
-from mlforge.validators import not_null, greater_than_or_equal
+import mlforge as mlf
 
-@feature(
+@mlf.feature(
     keys=["merchant_id"],
     source="data/transactions.parquet",
     validators={
-        "merchant_id": [not_null()],
-        "amount": [not_null(), greater_than_or_equal(0)],
+        "merchant_id": [mlf.not_null()],
+        "amount": [mlf.not_null(), mlf.greater_than_or_equal(0)],
     }
 )
 def merchant_transactions(df):
@@ -45,14 +44,14 @@ ERROR: Feature validation failed for merchant_transactions
 #### Null Checks
 
 ```python
-from mlforge.validators import not_null
+import mlforge as mlf
 
-@feature(
+@mlf.feature(
     keys=["user_id"],
     source="users.parquet",
     validators={
-        "user_id": [not_null()],
-        "email": [not_null()],
+        "user_id": [mlf.not_null()],
+        "email": [mlf.not_null()],
     }
 )
 def user_features(df):
@@ -62,13 +61,13 @@ def user_features(df):
 #### Uniqueness
 
 ```python
-from mlforge.validators import unique
+import mlforge as mlf
 
-@feature(
+@mlf.feature(
     keys=["user_id"],
     source="users.parquet",
     validators={
-        "user_id": [unique()],  # Ensure no duplicate user IDs
+        "user_id": [mlf.unique()],  # Ensure no duplicate user IDs
     }
 )
 def user_features(df):
@@ -78,20 +77,15 @@ def user_features(df):
 #### Numeric Comparisons
 
 ```python
-from mlforge.validators import (
-    greater_than,
-    less_than,
-    greater_than_or_equal,
-    less_than_or_equal,
-)
+import mlforge as mlf
 
-@feature(
+@mlf.feature(
     keys=["product_id"],
     source="products.parquet",
     validators={
-        "price": [greater_than(0)],
-        "discount_pct": [greater_than_or_equal(0), less_than_or_equal(100)],
-        "stock": [greater_than_or_equal(0)],
+        "price": [mlf.greater_than(0)],
+        "discount_pct": [mlf.greater_than_or_equal(0), mlf.less_than_or_equal(100)],
+        "stock": [mlf.greater_than_or_equal(0)],
     }
 )
 def product_features(df):
@@ -101,14 +95,14 @@ def product_features(df):
 #### Range Validation
 
 ```python
-from mlforge.validators import in_range
+import mlforge as mlf
 
-@feature(
+@mlf.feature(
     keys=["user_id"],
     source="users.parquet",
     validators={
-        "age": [in_range(18, 120)],  # inclusive by default
-        "score": [in_range(0, 100, inclusive=True)],
+        "age": [mlf.in_range(18, 120)],  # inclusive by default
+        "score": [mlf.in_range(0, 100, inclusive=True)],
     }
 )
 def user_features(df):
@@ -118,14 +112,14 @@ def user_features(df):
 #### Pattern Matching
 
 ```python
-from mlforge.validators import matches_regex
+import mlforge as mlf
 
-@feature(
+@mlf.feature(
     keys=["user_id"],
     source="users.parquet",
     validators={
-        "email": [matches_regex(r"^\w+@\w+\.\w+$")],
-        "phone": [matches_regex(r"^\+?1?\d{9,15}$")],
+        "email": [mlf.matches_regex(r"^\w+@\w+\.\w+$")],
+        "phone": [mlf.matches_regex(r"^\+?1?\d{9,15}$")],
     }
 )
 def user_features(df):
@@ -135,14 +129,14 @@ def user_features(df):
 #### Set Membership
 
 ```python
-from mlforge.validators import is_in
+import mlforge as mlf
 
-@feature(
+@mlf.feature(
     keys=["transaction_id"],
     source="transactions.parquet",
     validators={
-        "status": [is_in(["pending", "approved", "rejected"])],
-        "payment_method": [is_in(["card", "bank", "wallet"])],
+        "status": [mlf.is_in(["pending", "approved", "rejected"])],
+        "payment_method": [mlf.is_in(["card", "bank", "wallet"])],
     }
 )
 def transaction_features(df):
@@ -154,16 +148,16 @@ def transaction_features(df):
 You can apply multiple validators to a single column:
 
 ```python
-from mlforge.validators import not_null, greater_than, less_than
+import mlforge as mlf
 
-@feature(
+@mlf.feature(
     keys=["user_id"],
     source="users.parquet",
     validators={
         "age": [
-            not_null(),           # Must have a value
-            greater_than(0),      # Must be positive
-            less_than(150),       # Must be reasonable
+            mlf.not_null(),           # Must have a value
+            mlf.greater_than(0),      # Must be positive
+            mlf.less_than(150),       # Must be reasonable
         ],
     }
 )
@@ -209,7 +203,9 @@ def is_valid_email() -> Validator:
 Use it like any built-in validator:
 
 ```python
-@feature(
+import mlforge as mlf
+
+@mlf.feature(
     keys=["user_id"],
     source="users.parquet",
     validators={
@@ -246,7 +242,7 @@ def min_length(length: int) -> Validator:
     return Validator(name=f"min_length({length})", fn=validate)
 
 
-@feature(
+@mlf.feature(
     keys=["user_id"],
     source="users.parquet",
     validators={
@@ -328,7 +324,7 @@ def within_std_devs(n_std: float) -> Validator:
     return Validator(name=f"within_std_devs({n_std})", fn=validate)
 
 
-@feature(
+@mlf.feature(
     keys=["user_id"],
     source="transactions.parquet",
     validators={
@@ -344,7 +340,7 @@ def transaction_features(df):
 For validators that need to check relationships between columns, implement the logic in your feature function and validate the result:
 
 ```python
-from mlforge import feature
+import mlforge as mlf
 from mlforge.validators import Validator, ValidationResult
 import polars as pl
 
@@ -367,7 +363,7 @@ def discount_less_than_price() -> Validator:
     return Validator(name="discount_less_than_price", fn=validate)
 
 
-@feature(
+@mlf.feature(
     keys=["product_id"],
     source="products.parquet",
     validators={
@@ -421,13 +417,13 @@ Run validation without building features:
 
 ```bash
 # Validate all features
-mlforge validate definitions.py
+mlforge validate
 
 # Validate specific features
-mlforge validate definitions.py --features merchant_transactions
+mlforge validate --features merchant_transactions
 
 # Validate by tag
-mlforge validate definitions.py --tags transactions
+mlforge validate --tags transactions
 ```
 
 This is useful for:
@@ -442,13 +438,13 @@ This is useful for:
 Add validators close to where data enters your feature store:
 
 ```python
-@feature(
+@mlf.feature(
     keys=["user_id"],
     source="raw/users.parquet",
     validators={
-        "user_id": [not_null(), unique()],
-        "created_at": [not_null()],
-        "email": [not_null(), matches_regex(r"^\w+@\w+\.\w+$")],
+        "user_id": [mlf.not_null(), mlf.unique()],
+        "created_at": [mlf.not_null()],
+        "email": [mlf.not_null(), mlf.matches_regex(r"^\w+@\w+\.\w+$")],
     }
 )
 def user_base_features(df):
@@ -460,11 +456,11 @@ def user_base_features(df):
 Document assumptions your feature logic makes:
 
 ```python
-@feature(
+@mlf.feature(
     keys=["transaction_id"],
     source="transactions.parquet",
     validators={
-        "amount": [greater_than(0)],  # Feature assumes positive amounts
+        "amount": [mlf.greater_than(0)],  # Feature assumes positive amounts
     }
 )
 def transaction_features(df):
@@ -481,7 +477,7 @@ Each validator should check one thing:
 ```python
 # Good: Each validator checks one aspect
 validators={
-    "age": [not_null(), greater_than(0), less_than(150)]
+    "age": [mlf.not_null(), mlf.greater_than(0), mlf.less_than(150)]
 }
 
 # Bad: Complex multi-condition validator

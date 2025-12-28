@@ -1,9 +1,9 @@
-from mlforge import Definitions, LocalStore, S3Store
+import mlforge as mlf
 from transactions import features
 
-defs = Definitions(
+defs = mlf.Definitions(
     name="Transactions features.",
     features=[features],
-    offline_store=LocalStore(path="./feature_store"),
-    # offline_store=S3Store(bucket="mlforge-example", prefix="features/"),
+    offline_store=mlf.LocalStore(path="./feature_store"),
+    # offline_store=mlf.S3Store(bucket="mlforge-example", prefix="features/"),
 )

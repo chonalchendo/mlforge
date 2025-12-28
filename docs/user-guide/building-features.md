@@ -9,7 +9,7 @@ The recommended way to build features is via the `mlforge build` command.
 ### Basic Usage
 
 ```bash
-mlforge build definitions.py
+mlforge build
 ```
 
 This will:
@@ -24,7 +24,7 @@ This will:
 Build only selected features by name:
 
 ```bash
-mlforge build definitions.py --features user_total_spend,user_avg_spend
+mlforge build --features user_total_spend,user_avg_spend
 ```
 
 Or build features by tag:
@@ -41,7 +41,7 @@ mlforge build --tags user_metrics,demographics
 By default, mlforge skips features that already exist. Use `--force` to rebuild:
 
 ```bash
-mlforge build definitions.py --force
+mlforge build --force
 ```
 
 ### Disable Preview
@@ -49,7 +49,7 @@ mlforge build definitions.py --force
 Turn off the data preview:
 
 ```bash
-mlforge build definitions.py --no-preview
+mlforge build --no-preview
 ```
 
 ### Control Preview Size
@@ -57,7 +57,7 @@ mlforge build definitions.py --no-preview
 Adjust the number of rows shown:
 
 ```bash
-mlforge build definitions.py --preview-rows 10
+mlforge build --preview-rows 10
 ```
 
 ### Verbose Logging
@@ -65,7 +65,7 @@ mlforge build definitions.py --preview-rows 10
 Enable debug logging:
 
 ```bash
-mlforge build definitions.py --verbose
+mlforge build --verbose
 ```
 
 ## Using the Python API
@@ -73,13 +73,13 @@ mlforge build definitions.py --verbose
 You can also build features programmatically:
 
 ```python
-from mlforge import Definitions, LocalStore
+import mlforge as mlf
 import features
 
-defs = Definitions(
+defs = mlf.Definitions(
     name="my-project",
     features=[features],
-    offline_store=LocalStore("./feature_store")
+    offline_store=mlf.LocalStore("./feature_store")
 )
 
 # Build all features
@@ -147,9 +147,9 @@ Features are stored in the configured offline store. mlforge supports both local
 Stores features as individual Parquet files on the local filesystem:
 
 ```python
-from mlforge import LocalStore
+import mlforge as mlf
 
-store = LocalStore(path="./feature_store")
+store = mlf.LocalStore(path="./feature_store")
 ```
 
 Each feature is saved as `feature_store/<feature_name>.parquet`.
@@ -159,9 +159,9 @@ Each feature is saved as `feature_store/<feature_name>.parquet`.
 Stores features in Amazon S3 for production deployments:
 
 ```python
-from mlforge import S3Store
+import mlforge as mlf
 
-store = S3Store(
+store = mlf.S3Store(
     bucket="mlforge-features",
     prefix="prod/features"
 )
@@ -179,7 +179,7 @@ See the [Storage Backends](storage-backends.md) guide for detailed configuration
 View all registered features:
 
 ```bash
-mlforge list definitions.py
+mlforge list
 ```
 
 Filter by tags:
@@ -231,7 +231,7 @@ Common causes:
 
 1. **Feature function returns None**
    ```python
-   @feature(keys=["user_id"], source="data/users.parquet")
+   @mlf.feature(keys=["user_id"], source="data/users.parquet")
    def broken_feature(df):
        df.group_by("user_id").agg(...)
        # Missing return statement!
@@ -239,14 +239,14 @@ Common causes:
 
 2. **Feature function returns wrong type**
    ```python
-   @feature(keys=["user_id"], source="data/users.parquet")
+   @mlf.feature(keys=["user_id"], source="data/users.parquet")
    def broken_feature(df):
        return df.to_dict()  # Should return DataFrame
    ```
 
 3. **Missing key columns in output**
    ```python
-   @feature(keys=["user_id"], source="data/users.parquet")
+   @mlf.feature(keys=["user_id"], source="data/users.parquet")
    def broken_feature(df):
        return df.select("amount")  # user_id is missing!
    ```
@@ -256,7 +256,7 @@ Common causes:
 If the source file doesn't exist or has an unsupported format:
 
 ```python
-@feature(keys=["user_id"], source="data/missing.parquet")
+@mlf.feature(keys=["user_id"], source="data/missing.parquet")
 def my_feature(df): ...
 
 # Raises: FileNotFoundError
@@ -272,34 +272,34 @@ A typical development workflow:
 ```bash
 # 1. Define features
 cat > features.py << 'EOF'
-from mlforge import feature
+import mlforge as mlf
 import polars as pl
 
-@feature(keys=["user_id"], source="data/users.parquet")
+@mlf.feature(keys=["user_id"], source="data/users.parquet")
 def user_age(df):
     return df.select(["user_id", "age"])
 EOF
 
 # 2. Create definitions
 cat > definitions.py << 'EOF'
-from mlforge import Definitions, LocalStore
+import mlforge as mlf
 import features
 
-defs = Definitions(
+defs = mlf.Definitions(
     name="user-features",
     features=[features],
-    offline_store=LocalStore("./feature_store")
+    offline_store=mlf.LocalStore("./feature_store")
 )
 EOF
 
 # 3. Build features
-mlforge build definitions.py
+mlforge build
 
 # 4. Verify
-mlforge list definitions.py
+mlforge list
 
 # 5. Rebuild specific features if needed
-mlforge build definitions.py --features user_age --force
+mlforge build --features user_age --force
 ```
 
 ## Performance Tips
@@ -316,7 +316,7 @@ df = pl.read_csv("data/large_file.csv")
 df.write_parquet("data/large_file.parquet")
 
 # Then use Parquet in features
-@feature(keys=["id"], source="data/large_file.parquet")
+@mlf.feature(keys=["id"], source="data/large_file.parquet")
 def my_feature(df): ...
 ```
 
@@ -325,7 +325,7 @@ def my_feature(df): ...
 If you don't need all source data, filter it early in your feature function:
 
 ```python
-@feature(keys=["user_id"], source="data/all_events.parquet")
+@mlf.feature(keys=["user_id"], source="data/all_events.parquet")
 def recent_user_activity(df):
     return (
         df
@@ -340,7 +340,7 @@ def recent_user_activity(df):
 During development, build one feature at a time:
 
 ```bash
-mlforge build definitions.py --features new_feature
+mlforge build --features new_feature
 ```
 
 Once it works, build all features together.

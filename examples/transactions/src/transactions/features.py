@@ -1,8 +1,7 @@
 from datetime import timedelta
 
+import mlforge as mlf
 import polars as pl
-
-from mlforge import Rolling, entity_key, feature, greater_than_or_equal
 
 SOURCE = "data/transactions.parquet"
 
@@ -10,13 +9,13 @@ USER_KEY = "user_id"
 MERCHANT_KEY = "merchant_id"
 ACCOUNT_KEY = "account_id"
 
-with_merchant_id = entity_key("merchant", alias=MERCHANT_KEY)
-with_account_id = entity_key("cc_num", alias=ACCOUNT_KEY)
-with_user_id = entity_key("first", "last", "dob", alias=USER_KEY)
+with_merchant_id = mlf.entity_key("merchant", alias=MERCHANT_KEY)
+with_account_id = mlf.entity_key("cc_num", alias=ACCOUNT_KEY)
+with_user_id = mlf.entity_key("first", "last", "dob", alias=USER_KEY)
 
 ### Metrics
 
-spend_metrics = Rolling(
+spend_metrics = mlf.Rolling(
     windows=[timedelta(days=7), "30d", "90d"],
     aggregations={"amt": ["count", "mean", "sum"]},
 )
@@ -25,7 +24,7 @@ spend_metrics = Rolling(
 ### MERCHANT FEATURES
 
 
-@feature(
+@mlf.feature(
     source=SOURCE,
     keys=[MERCHANT_KEY],
     tags=["merchants"],
@@ -33,7 +32,7 @@ spend_metrics = Rolling(
     timestamp="transaction_date",
     interval=timedelta(days=1),
     metrics=[spend_metrics],
-    validators={"amt": [greater_than_or_equal(value=0)]},
+    validators={"amt": [mlf.greater_than_or_equal(value=0)]},
 )
 def merchant_spend_1d_interval(df: pl.DataFrame) -> pl.DataFrame:
     return df.pipe(with_merchant_id).select(
@@ -48,7 +47,7 @@ def merchant_spend_1d_interval(df: pl.DataFrame) -> pl.DataFrame:
 ### ACCOUNT FEATURES
 
 
-@feature(
+@mlf.feature(
     source=SOURCE,
     keys=[ACCOUNT_KEY],
     tags=["accounts"],
@@ -70,7 +69,7 @@ def account_spend_7d_interval(df: pl.DataFrame) -> pl.DataFrame:
 ### USER FEATURES
 
 
-@feature(
+@mlf.feature(
     keys=[USER_KEY],
     source=SOURCE,
     tags=["users"],

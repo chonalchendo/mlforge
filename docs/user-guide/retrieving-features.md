@@ -1,18 +1,18 @@
 # Retrieving Features
 
-Once features are built, use `get_training_data()` to join them to your entity DataFrame.
+Once features are built, use `mlf.get_training_data()` to join them to your entity DataFrame.
 
 ## Basic Usage
 
 ```python
-from mlforge import get_training_data
+import mlforge as mlf
 import polars as pl
 
 # Load your entity data (e.g., labels, predictions)
 entities = pl.read_parquet("data/labels.parquet")
 
 # Get features joined to entities
-training_data = get_training_data(
+training_data = mlf.get_training_data(
     features=["user_total_spend", "user_avg_spend"],
     entity_df=entities
 )
@@ -37,7 +37,7 @@ def get_training_data(
 List of feature names to retrieve. Must match the names of built features.
 
 ```python
-training_data = get_training_data(
+training_data = mlf.get_training_data(
     features=["user_age", "user_tenure_days"],
     entity_df=entities
 )
@@ -63,24 +63,24 @@ entities = pl.DataFrame({
 Path to feature store or a `Store` instance. Defaults to `"./feature_store"`.
 
 ```python
+import mlforge as mlf
+
 # Using default path
-training_data = get_training_data(
+training_data = mlf.get_training_data(
     features=["user_age"],
     entity_df=entities
 )
 
 # Custom path
-training_data = get_training_data(
+training_data = mlf.get_training_data(
     features=["user_age"],
     entity_df=entities,
     store="./my_features"
 )
 
 # Store instance
-from mlforge import LocalStore
-
-store = LocalStore("./my_features")
-training_data = get_training_data(
+store = mlf.LocalStore("./my_features")
+training_data = mlf.get_training_data(
     features=["user_age"],
     entity_df=entities,
     store=store
@@ -92,13 +92,13 @@ training_data = get_training_data(
 List of entity key transforms to apply to `entity_df` before joining. Use this when your entity DataFrame doesn't have the required keys.
 
 ```python
-from mlforge import entity_key
+import mlforge as mlf
 
 # Define transform
-with_user_id = entity_key("first", "last", "dob", alias="user_id")
+with_user_id = mlf.entity_key("first", "last", "dob", alias="user_id")
 
 # Apply during retrieval
-training_data = get_training_data(
+training_data = mlf.get_training_data(
     features=["user_spend_stats"],
     entity_df=raw_entities,
     entities=[with_user_id]  # Adds user_id column
@@ -112,7 +112,7 @@ See [Entity Keys](entity-keys.md) for details.
 Column name in `entity_df` to use for point-in-time joins. When specified, features with timestamps are joined using asof joins.
 
 ```python
-training_data = get_training_data(
+training_data = mlf.get_training_data(
     features=["user_spend_mean_30d"],
     entity_df=transactions,
     timestamp="transaction_time"  # Point-in-time correct
@@ -133,7 +133,7 @@ entities = pl.DataFrame({
     "label": [0, 1, 0]
 })
 
-training_data = get_training_data(
+training_data = mlf.get_training_data(
     features=["user_total_spend"],
     entity_df=entities
 )
@@ -152,7 +152,7 @@ transactions = pl.DataFrame({
     "label": [0, 1, 0]
 })
 
-training_data = get_training_data(
+training_data = mlf.get_training_data(
     features=["user_spend_mean_30d"],  # Has feature_timestamp
     entity_df=transactions,
     timestamp="transaction_time"  # Asof join
@@ -170,7 +170,7 @@ Join keys are automatically detected from common columns:
 # feature has: user_id, merchant_id, total_spend
 
 # Joins on: user_id, merchant_id
-training_data = get_training_data(
+training_data = mlf.get_training_data(
     features=["user_merchant_spend"],
     entity_df=entities
 )
@@ -181,17 +181,17 @@ Timestamp columns are excluded from join keys when performing asof joins.
 ## Complete Example
 
 ```python
-from mlforge import get_training_data, entity_key
+import mlforge as mlf
 import polars as pl
 
 # 1. Load entity data
 transactions = pl.read_parquet("data/transactions.parquet")
 
 # 2. Define entity transform
-with_user_id = entity_key("first", "last", "dob", alias="user_id")
+with_user_id = mlf.entity_key("first", "last", "dob", alias="user_id")
 
 # 3. Retrieve features with point-in-time correctness
-training_data = get_training_data(
+training_data = mlf.get_training_data(
     features=["user_spend_mean_30d", "user_total_spend"],
     entity_df=transactions,
     entities=[with_user_id],
@@ -216,10 +216,10 @@ model.fit(X.to_pandas(), y.to_pandas())
 If a requested feature hasn't been built:
 
 ```python
-from mlforge import get_training_data
+import mlforge as mlf
 
 try:
-    training_data = get_training_data(
+    training_data = mlf.get_training_data(
         features=["nonexistent_feature"],
         entity_df=entities
     )
@@ -231,7 +231,7 @@ except ValueError as e:
 Build the feature first:
 
 ```bash
-mlforge build definitions.py
+mlforge build
 ```
 
 ### Missing Join Keys
@@ -243,7 +243,7 @@ If entity_df and features don't share common columns:
 # feature has: user_id, total_spend
 
 try:
-    training_data = get_training_data(
+    training_data = mlf.get_training_data(
         features=["user_total_spend"],
         entity_df=entities
     )
@@ -255,9 +255,9 @@ except ValueError as e:
 Solution: Use entity transforms to add required keys:
 
 ```python
-with_user_id = entity_key("customer_id", alias="user_id")
+with_user_id = mlf.entity_key("customer_id", alias="user_id")
 
-training_data = get_training_data(
+training_data = mlf.get_training_data(
     features=["user_total_spend"],
     entity_df=entities,
     entities=[with_user_id]
@@ -273,7 +273,7 @@ For asof joins, timestamp columns must have matching data types:
 # feature["feature_timestamp"] is Datetime
 
 try:
-    training_data = get_training_data(
+    training_data = mlf.get_training_data(
         features=["temporal_feature"],
         entity_df=entities,
         timestamp="event_time"
@@ -284,14 +284,14 @@ except ValueError as e:
     # but feature has Datetime.
 ```
 
-Solution: Convert timestamps before calling `get_training_data()`:
+Solution: Convert timestamps before calling `mlf.get_training_data()`:
 
 ```python
 entities = entities.with_columns(
     pl.col("event_time").str.to_datetime().alias("event_time")
 )
 
-training_data = get_training_data(
+training_data = mlf.get_training_data(
     features=["temporal_feature"],
     entity_df=entities,
     timestamp="event_time"
@@ -300,18 +300,20 @@ training_data = get_training_data(
 
 ## Multiple Feature Stores
 
-You can retrieve features from different stores by calling `get_training_data()` multiple times:
+You can retrieve features from different stores by calling `mlf.get_training_data()` multiple times:
 
 ```python
+import mlforge as mlf
+
 # Features from store A
-training_data = get_training_data(
+training_data = mlf.get_training_data(
     features=["user_age", "user_tenure"],
     entity_df=entities,
     store="./store_a"
 )
 
 # Add features from store B
-training_data = get_training_data(
+training_data = mlf.get_training_data(
     features=["user_spend_stats"],
     entity_df=training_data,
     store="./store_b"
@@ -332,7 +334,7 @@ entities = (
     )
 )
 
-training_data = get_training_data(
+training_data = mlf.get_training_data(
     features=["temporal_features"],
     entity_df=entities,
     timestamp="event_time"
@@ -345,10 +347,11 @@ Add type hints for clarity:
 
 ```python
 import polars as pl
+import mlforge as mlf
 
 entities: pl.DataFrame = pl.read_parquet("data/labels.parquet")
 
-training_data: pl.DataFrame = get_training_data(
+training_data: pl.DataFrame = mlf.get_training_data(
     features=["user_age"],
     entity_df=entities
 )
@@ -359,7 +362,7 @@ training_data: pl.DataFrame = get_training_data(
 Check built features before retrieval:
 
 ```bash
-mlforge list definitions.py
+mlforge list
 ```
 
 ### 4. Handle Missing Values
@@ -367,7 +370,7 @@ mlforge list definitions.py
 Features may have nulls for entities not in the feature source:
 
 ```python
-training_data = get_training_data(
+training_data = mlf.get_training_data(
     features=["user_total_spend"],
     entity_df=entities
 )

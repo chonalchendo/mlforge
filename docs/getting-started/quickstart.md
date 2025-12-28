@@ -47,10 +47,10 @@ transactions.write_parquet("data/transactions.parquet")
 Create a file called `features.py`:
 
 ```python
-from mlforge import feature
+import mlforge as mlf
 import polars as pl
 
-@feature(
+@mlf.feature(
     keys=["user_id"],
     source="data/transactions.parquet",
     tags=["spending"],
@@ -61,7 +61,7 @@ def user_total_spend(df: pl.DataFrame) -> pl.DataFrame:
         pl.col("amount").sum().alias("total_spend")
     )
 
-@feature(
+@mlf.feature(
     keys=["user_id"],
     source="data/transactions.parquet",
     tags=["spending"],
@@ -78,13 +78,13 @@ def user_avg_transaction(df: pl.DataFrame) -> pl.DataFrame:
 Create `definitions.py`:
 
 ```python
-from mlforge import Definitions, LocalStore
+import mlforge as mlf
 import features
 
-defs = Definitions(
+defs = mlf.Definitions(
     name="quickstart",
     features=[features],
-    offline_store=LocalStore("./feature_store")
+    offline_store=mlf.LocalStore("./feature_store")
 )
 ```
 
@@ -93,7 +93,7 @@ defs = Definitions(
 Materialize your features using the CLI:
 
 ```bash
-mlforge build definitions.py
+mlforge build
 ```
 
 You should see output like:
@@ -125,7 +125,7 @@ Built 2 features
 Use features in your training pipeline:
 
 ```python
-from mlforge import get_training_data
+import mlforge as mlf
 import polars as pl
 
 # Load entity data (e.g., labels for training)
@@ -135,7 +135,7 @@ entities = pl.DataFrame({
 })
 
 # Get training data with features
-training_data = get_training_data(
+training_data = mlf.get_training_data(
     features=["user_total_spend", "user_avg_transaction"],
     entity_df=entities
 )
@@ -157,10 +157,10 @@ Output:
 
 ## What Just Happened?
 
-1. You defined features using the `@feature` decorator
-2. Registered them with a `Definitions` object
+1. You defined features using the `@mlf.feature` decorator
+2. Registered them with a `mlf.Definitions` object
 3. Materialized them to local Parquet storage with `mlforge build`
-4. Retrieved them for training using `get_training_data()`
+4. Retrieved them for training using `mlf.get_training_data()`
 
 ## Next Steps
 

@@ -1,16 +1,16 @@
 # Defining Features
 
-Features in mlforge are defined using the `@feature` decorator, which transforms a Python function into a feature that can be built and retrieved.
+Features in mlforge are defined using the `@mlf.feature` decorator, which transforms a Python function into a feature that can be built and retrieved.
 
 ## The @feature Decorator
 
 The decorator requires two parameters and accepts several optional ones:
 
 ```python
-from mlforge import feature
+import mlforge as mlf
 import polars as pl
 
-@feature(
+@mlf.feature(
     keys=["user_id"],                    # Required: entity keys
     source="data/transactions.parquet",  # Required: source data path
     tags=["user_metrics"],               # Optional: feature grouping tags
@@ -32,13 +32,13 @@ def user_stats(df: pl.DataFrame) -> pl.DataFrame:
 List of column names that uniquely identify entities. These columns will be used to join features to your entity DataFrame.
 
 ```python
-@feature(
+@mlf.feature(
     keys=["user_id"],  # Single key
     source="data/users.parquet"
 )
 def user_age(df): ...
 
-@feature(
+@mlf.feature(
     keys=["user_id", "merchant_id"],  # Composite key
     source="data/interactions.parquet"
 )
@@ -50,13 +50,13 @@ def user_merchant_interaction(df): ...
 Path to the source data file. Supports Parquet and CSV formats.
 
 ```python
-@feature(
+@mlf.feature(
     keys=["product_id"],
     source="data/products.parquet"  # Parquet
 )
 def product_features(df): ...
 
-@feature(
+@mlf.feature(
     keys=["customer_id"],
     source="data/customers.csv"  # CSV
 )
@@ -72,14 +72,14 @@ The path can be relative or absolute. Relative paths are resolved from your work
 List of tags to group related features together. Tags enable selective building and listing of features.
 
 ```python
-@feature(
+@mlf.feature(
     keys=["user_id"],
     source="data/transactions.parquet",
     tags=["user_metrics", "revenue"]
 )
 def user_lifetime_value(df): ...
 
-@feature(
+@mlf.feature(
     keys=["user_id"],
     source="data/demographics.parquet",
     tags=["demographics"]
@@ -108,7 +108,7 @@ mlforge list --tags revenue
 Column name for temporal features. When specified, enables point-in-time correct joins during retrieval.
 
 ```python
-@feature(
+@mlf.feature(
     keys=["user_id"],
     source="data/events.parquet",
     timestamp="event_timestamp"  # Enables point-in-time joins
@@ -118,7 +118,7 @@ def user_rolling_stats(df): ...
 
 !!! tip "Point-in-time correctness"
     Always specify a timestamp for features computed from time-series data. This ensures
-    `get_training_data()` performs asof joins, preventing data leakage.
+    `mlf.get_training_data()` performs asof joins, preventing data leakage.
 
 See [Point-in-Time Correctness](point-in-time.md) for details.
 
@@ -127,7 +127,7 @@ See [Point-in-Time Correctness](point-in-time.md) for details.
 Human-readable description displayed by `mlforge list`.
 
 ```python
-@feature(
+@mlf.feature(
     keys=["user_id"],
     source="data/transactions.parquet",
     description="Total lifetime spend by user"
@@ -142,7 +142,7 @@ Time interval for rolling aggregations. Accepts either a string (e.g., `"1d"`, `
 ```python
 from datetime import timedelta
 
-@feature(
+@mlf.feature(
     keys=["user_id"],
     source="data/transactions.parquet",
     timestamp="transaction_time",
@@ -150,7 +150,7 @@ from datetime import timedelta
 )
 def daily_features(df): ...
 
-@feature(
+@mlf.feature(
     keys=["user_id"],
     source="data/transactions.parquet",
     timestamp="transaction_time",
@@ -171,19 +171,19 @@ Supported string formats: `"Ns"` (seconds), `"Nm"` (minutes), `"Nh"` (hours), `"
 
 #### metrics
 
-List of metric specifications for computing features. Currently supports `Rolling` for time-windowed aggregations.
+List of metric specifications for computing features. Currently supports `mlf.Rolling` for time-windowed aggregations.
 
 ```python
-from mlforge import Rolling
+import mlforge as mlf
 from datetime import timedelta
 
-@feature(
+@mlf.feature(
     keys=["user_id"],
     source="data/transactions.parquet",
     timestamp="transaction_time",
     interval="1d",
     metrics=[
-        Rolling(
+        mlf.Rolling(
             windows=["7d", "30d"],  # Can use strings
             aggregations={"amount": ["sum", "mean", "count"]}
         )
@@ -192,13 +192,13 @@ from datetime import timedelta
 def user_transaction_metrics(df): ...
 
 # Or with timedelta for better readability
-@feature(
+@mlf.feature(
     keys=["user_id"],
     source="data/transactions.parquet",
     timestamp="transaction_time",
     interval=timedelta(days=1),
     metrics=[
-        Rolling(
+        mlf.Rolling(
             windows=[timedelta(days=7), timedelta(days=30)],  # timedelta objects
             aggregations={"amount": ["sum", "mean", "count"]}
         )
@@ -207,7 +207,7 @@ def user_transaction_metrics(df): ...
 def user_transaction_metrics(df): ...
 ```
 
-The `Rolling` metric computes aggregations over sliding time windows. Output column names follow the pattern: `{tag}__{column}__{aggregation}__{window}__{interval}`.
+The `mlf.Rolling` metric computes aggregations over sliding time windows. Output column names follow the pattern: `{tag}__{column}__{aggregation}__{window}__{interval}`.
 
 ## Feature Functions
 
@@ -220,7 +220,7 @@ The decorated function must:
 ### Basic Example
 
 ```python
-@feature(
+@mlf.feature(
     keys=["product_id"],
     source="data/sales.parquet"
 )
@@ -233,7 +233,7 @@ def product_total_sales(df: pl.DataFrame) -> pl.DataFrame:
 ### Aggregation Example
 
 ```python
-@feature(
+@mlf.feature(
     keys=["customer_id"],
     source="data/orders.parquet",
     description="Customer order statistics"
@@ -250,7 +250,7 @@ def customer_order_stats(df: pl.DataFrame) -> pl.DataFrame:
 ### Time-Based Rolling Features
 
 ```python
-@feature(
+@mlf.feature(
     keys=["user_id"],
     source="data/activity.parquet",
     timestamp="feature_timestamp",
@@ -284,12 +284,12 @@ Organize related features in a single module:
 
 ```python
 # user_features.py
-from mlforge import feature
+import mlforge as mlf
 import polars as pl
 
 SOURCE = "data/users.parquet"
 
-@feature(
+@mlf.feature(
     keys=["user_id"],
     source=SOURCE,
     tags=["demographics"]
@@ -297,7 +297,7 @@ SOURCE = "data/users.parquet"
 def user_age(df: pl.DataFrame) -> pl.DataFrame:
     return df.select(["user_id", "age"])
 
-@feature(
+@mlf.feature(
     keys=["user_id"],
     source=SOURCE,
     tags=["demographics"]
@@ -309,7 +309,7 @@ def user_tenure_days(df: pl.DataFrame) -> pl.DataFrame:
         .alias("tenure_days")
     ).select(["user_id", "tenure_days"])
 
-@feature(
+@mlf.feature(
     keys=["user_id"],
     source=SOURCE,
     tags=["subscription"]
@@ -322,13 +322,13 @@ Then register the entire module:
 
 ```python
 # definitions.py
-from mlforge import Definitions, LocalStore
+import mlforge as mlf
 import user_features
 
-defs = Definitions(
+defs = mlf.Definitions(
     name="my-project",
     features=[user_features],  # Auto-discovers all features
-    offline_store=LocalStore("./feature_store")
+    offline_store=mlf.LocalStore("./feature_store")
 )
 ```
 
@@ -340,7 +340,7 @@ Feature functions should be deterministic and stateless:
 
 ```python
 # Good - pure transformation
-@feature(keys=["user_id"], source="data/users.parquet")
+@mlf.feature(keys=["user_id"], source="data/users.parquet")
 def user_age_group(df: pl.DataFrame) -> pl.DataFrame:
     return df.with_columns(
         pl.when(pl.col("age") < 25).then(pl.lit("young"))
@@ -352,7 +352,7 @@ def user_age_group(df: pl.DataFrame) -> pl.DataFrame:
 # Bad - depends on external state
 current_year = 2024  # External dependency
 
-@feature(keys=["user_id"], source="data/users.parquet")
+@mlf.feature(keys=["user_id"], source="data/users.parquet")
 def user_is_adult(df: pl.DataFrame) -> pl.DataFrame:
     return df.with_columns(
         (current_year - pl.col("birth_year") >= 18).alias("is_adult")
@@ -365,11 +365,11 @@ Name features after what they represent, not how they're computed:
 
 ```python
 # Good
-@feature(keys=["user_id"], source="data/transactions.parquet")
+@mlf.feature(keys=["user_id"], source="data/transactions.parquet")
 def user_total_spend(df): ...
 
 # Bad
-@feature(keys=["user_id"], source="data/transactions.parquet")
+@mlf.feature(keys=["user_id"], source="data/transactions.parquet")
 def sum_amount_by_user(df): ...
 ```
 
@@ -379,14 +379,14 @@ Always ensure key columns are in the output:
 
 ```python
 # Good
-@feature(keys=["user_id"], source="data/events.parquet")
+@mlf.feature(keys=["user_id"], source="data/events.parquet")
 def user_event_count(df: pl.DataFrame) -> pl.DataFrame:
     return df.group_by("user_id").agg(
         pl.col("event_id").count().alias("event_count")
     )  # user_id is preserved by group_by
 
 # Bad - missing key
-@feature(keys=["user_id"], source="data/events.parquet")
+@mlf.feature(keys=["user_id"], source="data/events.parquet")
 def user_event_count(df: pl.DataFrame) -> pl.DataFrame:
     return df.select(
         pl.col("event_id").count().alias("event_count")
@@ -396,7 +396,7 @@ def user_event_count(df: pl.DataFrame) -> pl.DataFrame:
 ### 4. Add Descriptions for Complex Features
 
 ```python
-@feature(
+@mlf.feature(
     keys=["user_id"],
     source="data/transactions.parquet",
     timestamp="feature_timestamp",

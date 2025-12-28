@@ -20,27 +20,25 @@ uv add mlforge-sdk
 
 ## Quick Start
 
-Define features using the `@feature` decorator:
-
 ```python
-from datetime import timedelta
+import mlforge as mlf
 import polars as pl
-from mlforge import feature, Rolling, not_null, greater_than
+from datetime import timedelta
 
-@feature(
+@mlf.feature(
     keys=["user_id"],
     source="data/transactions.parquet",
     timestamp="transaction_date",
     interval=timedelta(days=1),
     metrics=[
-        Rolling(
+        mlf.Rolling(
             windows=["7d", "30d"],
             aggregations={"amount": ["sum", "mean", "count"]}
         )
     ],
     validators={
-        "amount": [not_null(), greater_than(0)],
-        "user_id": [not_null()],
+        "amount": [mlf.not_null(), mlf.greater_than(0)],
+        "user_id": [mlf.not_null()],
     },
     description="User spending patterns over rolling windows"
 )
@@ -51,13 +49,13 @@ def user_spend(df: pl.DataFrame) -> pl.DataFrame:
 Register features and build them:
 
 ```python
-from mlforge import Definitions, LocalStore
+import mlforge as mlf
 import my_features
 
-defs = Definitions(
+defs = mlf.Definitions(
     name="my-project",
     features=[my_features],
-    offline_store=LocalStore("./feature_store")
+    offline_store=mlf.LocalStore("./feature_store")
 )
 
 # Build features to storage
@@ -67,22 +65,22 @@ defs.build()
 Retrieve features for training with point-in-time correctness:
 
 ```python
-from mlforge import get_training_data
+import mlforge as mlf
 
-training_df = get_training_data(
+training_df = mlf.get_training_data(
     entity_df=labels_df,
     features=["user_spend"],
-    store=LocalStore("./feature_store"),
+    store=mlf.LocalStore("./feature_store"),
     timestamp="label_time"
 )
 ```
 
 ## Features
 
-- **Feature Definition**: Define features with the `@feature` decorator
-- **Rolling Aggregations**: Compute time-windowed metrics (sum, mean, count, etc.)
-- **Data Validation**: Validate feature data before materialization with built-in validators
-- **Storage Backends**: Local filesystem (Parquet) and Amazon S3 support
+- **Feature Definition**: Define features with the `@mlf.feature` decorator
+- **Rolling Aggregations**: Compute time-windowed metrics with `mlf.Rolling`
+- **Data Validation**: Validate data with built-in validators (`mlf.not_null()`, `mlf.greater_than()`, etc.)
+- **Storage Backends**: Local filesystem and Amazon S3 support
 - **Point-in-Time Joins**: Retrieve training data with temporal correctness
 - **Feature Metadata**: Automatic tracking of schemas, row counts, and lineage
 - **CLI**: Build, validate, and inspect features from the command line
@@ -125,58 +123,45 @@ Inspect feature metadata:
 mlforge inspect user_spend
 ```
 
-View feature manifest:
-
-```bash
-mlforge manifest
-```
-
 ## Validators
 
 Built-in validators for data quality:
 
 ```python
-from mlforge import (
-    not_null,
-    unique,
-    greater_than,
-    less_than,
-    greater_than_or_equal,
-    less_than_or_equal,
-    in_range,
-    matches_regex,
-    is_in,
-)
+import mlforge as mlf
 
-@feature(
+@mlf.feature(
     keys=["id"],
     source="data.parquet",
     validators={
-        "email": [not_null(), matches_regex(r"^[\w.-]+@[\w.-]+\.\w+$")],
-        "age": [not_null(), in_range(0, 120)],
-        "status": [is_in(["active", "inactive"])],
+        "email": [mlf.not_null(), mlf.matches_regex(r"^[\w.-]+@[\w.-]+\.\w+$")],
+        "age": [mlf.not_null(), mlf.in_range(0, 120)],
+        "status": [mlf.is_in(["active", "inactive"])],
+        "score": [mlf.greater_than_or_equal(0), mlf.less_than_or_equal(100)],
     }
 )
 def validated_feature(df):
     return df
 ```
 
+Available validators: `not_null`, `unique`, `greater_than`, `less_than`, `greater_than_or_equal`, `less_than_or_equal`, `in_range`, `matches_regex`, `is_in`
+
 ## Storage Backends
 
 ### Local Storage
 
 ```python
-from mlforge import LocalStore
+import mlforge as mlf
 
-store = LocalStore("./feature_store")
+store = mlf.LocalStore("./feature_store")
 ```
 
 ### S3 Storage
 
 ```python
-from mlforge import S3Store
+import mlforge as mlf
 
-store = S3Store(
+store = mlf.S3Store(
     bucket="my-features",
     prefix="prod/features",
     region="us-west-2"

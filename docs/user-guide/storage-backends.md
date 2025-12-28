@@ -9,29 +9,30 @@ The default storage backend that writes features to the local filesystem as Parq
 ### Basic Usage
 
 ```python
-from mlforge import Definitions, LocalStore
+import mlforge as mlf
 import features
 
-defs = Definitions(
+defs = mlf.Definitions(
     name="my-project",
     features=[features],
-    offline_store=LocalStore(path="./feature_store")
+    offline_store=mlf.LocalStore(path="./feature_store")
 )
 ```
 
 ### Configuration
 
 ```python
+import mlforge as mlf
 from pathlib import Path
 
 # Using string path
-store = LocalStore(path="./feature_store")
+store = mlf.LocalStore(path="./feature_store")
 
 # Using Path object
-store = LocalStore(path=Path("./feature_store"))
+store = mlf.LocalStore(path=Path("./feature_store"))
 
 # Custom location
-store = LocalStore(path=Path.home() / "ml_projects" / "features")
+store = mlf.LocalStore(path=Path.home() / "ml_projects" / "features")
 ```
 
 ### Storage Format
@@ -59,13 +60,13 @@ Cloud storage backend for Amazon S3, supporting distributed access and productio
 ### Basic Usage
 
 ```python
-from mlforge import Definitions, S3Store
+import mlforge as mlf
 import features
 
-defs = Definitions(
+defs = mlf.Definitions(
     name="my-project",
     features=[features],
-    offline_store=S3Store(
+    offline_store=mlf.S3Store(
         bucket="mlforge-features",
         prefix="prod/features"
     )
@@ -75,20 +76,22 @@ defs = Definitions(
 ### Configuration
 
 ```python
+import mlforge as mlf
+
 # With prefix (recommended for organization)
-store = S3Store(
+store = mlf.S3Store(
     bucket="my-bucket",
     prefix="prod/features"  # Features stored at s3://my-bucket/prod/features/
 )
 
 # Without prefix (bucket root)
-store = S3Store(
+store = mlf.S3Store(
     bucket="my-bucket",
     prefix=""  # Features stored at s3://my-bucket/
 )
 
 # With explicit region
-store = S3Store(
+store = mlf.S3Store(
     bucket="my-bucket",
     prefix="prod/features",
     region="us-west-2"
@@ -122,8 +125,10 @@ S3Store uses standard AWS credential resolution:
     When running on AWS services, use IAM roles instead of static credentials:
 
     ```python
+    import mlforge as mlf
+
     # No credentials needed - uses instance/task role
-    store = S3Store(bucket="mlforge-features", prefix="prod")
+    store = mlf.S3Store(bucket="mlforge-features", prefix="prod")
     ```
 
 ### Storage Format
@@ -252,10 +257,10 @@ Restrict access to specific prefixes (e.g., `prod/` vs `dev/`):
 ### Error Handling
 
 ```python
-from mlforge import S3Store
+import mlforge as mlf
 
 try:
-    store = S3Store(bucket="nonexistent-bucket", prefix="features")
+    store = mlf.S3Store(bucket="nonexistent-bucket", prefix="features")
 except ValueError as e:
     print(f"Bucket error: {e}")
     # Bucket 'nonexistent-bucket' does not exist or is not accessible.
@@ -274,20 +279,20 @@ Common issues:
 ### Local Development
 
 ```python
-from mlforge import Definitions, LocalStore, feature
+import mlforge as mlf
 import polars as pl
 
-@feature(keys=["user_id"], source="data/transactions.parquet")
+@mlf.feature(keys=["user_id"], source="data/transactions.parquet")
 def user_total_spend(df):
     return df.group_by("user_id").agg(
         pl.col("amount").sum().alias("total_spend")
     )
 
 # Local development - fast iteration
-defs = Definitions(
+defs = mlf.Definitions(
     name="user-features",
     features=[user_total_spend],
-    offline_store=LocalStore("./dev_features")
+    offline_store=mlf.LocalStore("./dev_features")
 )
 
 defs.build()
@@ -296,11 +301,11 @@ defs.build()
 ### Production Deployment
 
 ```python
-from mlforge import Definitions, S3Store, feature
+import mlforge as mlf
 import polars as pl
 import os
 
-@feature(keys=["user_id"], source="s3://my-bucket/data/transactions.parquet")
+@mlf.feature(keys=["user_id"], source="s3://my-bucket/data/transactions.parquet")
 def user_total_spend(df):
     return df.group_by("user_id").agg(
         pl.col("amount").sum().alias("total_spend")
@@ -309,10 +314,10 @@ def user_total_spend(df):
 # Production - S3 storage
 environment = os.getenv("ENVIRONMENT", "dev")
 
-defs = Definitions(
+defs = mlf.Definitions(
     name="user-features",
     features=[user_total_spend],
-    offline_store=S3Store(
+    offline_store=mlf.S3Store(
         bucket="mlforge-features",
         prefix=f"{environment}/features"  # dev/features or prod/features
     )
@@ -324,7 +329,7 @@ defs.build()
 ### Multi-Environment Setup
 
 ```python
-from mlforge import Definitions, S3Store, LocalStore
+import mlforge as mlf
 import os
 
 def get_store():
@@ -332,17 +337,17 @@ def get_store():
     env = os.getenv("ENVIRONMENT", "local")
 
     if env == "local":
-        return LocalStore("./feature_store")
+        return mlf.LocalStore("./feature_store")
     elif env == "dev":
-        return S3Store(bucket="mlforge-features", prefix="dev/features")
+        return mlf.S3Store(bucket="mlforge-features", prefix="dev/features")
     elif env == "staging":
-        return S3Store(bucket="mlforge-features", prefix="staging/features")
+        return mlf.S3Store(bucket="mlforge-features", prefix="staging/features")
     elif env == "prod":
-        return S3Store(bucket="mlforge-features-prod", prefix="features")
+        return mlf.S3Store(bucket="mlforge-features-prod", prefix="features")
     else:
         raise ValueError(f"Unknown environment: {env}")
 
-defs = Definitions(
+defs = mlf.Definitions(
     name="user-features",
     features=[...],
     offline_store=get_store()
@@ -404,7 +409,7 @@ defs.build()  # Builds all features
 
 # Less efficient: Individual feature builds
 for feature_name in ["feature1", "feature2", "feature3"]:
-    defs.materialize(feature_names=[feature_name])
+    defs.build(feature_names=[feature_name])
 ```
 
 ## Next Steps
