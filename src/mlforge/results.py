@@ -55,6 +55,16 @@ class EngineResult(ABC):
         """
         pass
 
+    @abstractmethod
+    def base_schema(self) -> dict[str, str] | None:
+        """
+        Get the base schema before metrics were applied.
+
+        Returns:
+            Schema of base DataFrame or None if not available
+        """
+        pass
+
 
 class PolarsResult(EngineResult):
     """
@@ -116,6 +126,7 @@ class PolarsResult(EngineResult):
     def schema(self) -> dict[str, str]:
         return {name: str(dtype) for name, dtype in self._lf.collect_schema().items()}
 
+    @override
     def base_schema(self) -> dict[str, str] | None:
         """
         Get the base schema before metrics were applied.
