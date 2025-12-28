@@ -15,6 +15,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from loguru import logger
+
 if TYPE_CHECKING:
     from mlforge.core import Feature
 
@@ -420,11 +422,18 @@ def read_metadata_file(path: Path) -> FeatureMetadata | None:
     """
     if not path.exists():
         return None
+
     try:
         with open(path) as f:
             data = json.load(f)
+    except json.JSONDecodeError as e:
+        logger.warning(f"Invalid JSON in {path}: {e}")
+        return None
+
+    try:
         return FeatureMetadata.from_dict(data)
-    except (json.JSONDecodeError, KeyError):
+    except KeyError as e:
+        logger.warning(f"Schema mismatch in {path}: missing key {e}")
         return None
 
 
@@ -452,9 +461,16 @@ def read_manifest_file(path: Path) -> Manifest | None:
     """
     if not path.exists():
         return None
+
     try:
         with open(path) as f:
             data = json.load(f)
+    except json.JSONDecodeError as e:
+        logger.warning(f"Invalid JSON in {path}: {e}")
+        return None
+
+    try:
         return Manifest.from_dict(data)
-    except (json.JSONDecodeError, KeyError):
+    except KeyError as e:
+        logger.warning(f"Schema mismatch in {path}: missing key {e}")
         return None

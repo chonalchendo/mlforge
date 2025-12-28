@@ -445,15 +445,23 @@ class S3Store(Store):
         Returns:
             FeatureMetadata if file exists and is valid, None otherwise
         """
+        from loguru import logger
 
         path = self._s3_metadata_path(feature_name)
         if not self._s3.exists(path):
             return None
+
         try:
             with self._s3.open(path, "r") as f:
                 data = json.load(f)
+        except json.JSONDecodeError as e:
+            logger.warning(f"Invalid JSON in {path}: {e}")
+            return None
+
+        try:
             return manifest.FeatureMetadata.from_dict(data)
-        except (json.JSONDecodeError, KeyError):
+        except KeyError as e:
+            logger.warning(f"Schema mismatch in {path}: missing key {e}")
             return None
 
     @override

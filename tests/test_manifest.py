@@ -245,6 +245,32 @@ def test_read_metadata_file_returns_none_for_nonexistent():
     assert result is None
 
 
+def test_read_metadata_file_handles_corrupt_json(tmp_path):
+    # Given a file with invalid JSON
+    path = tmp_path / "corrupt.meta.json"
+    path.write_text("{invalid json content")
+
+    # When reading
+    result = read_metadata_file(path)
+
+    # Then it should return None and log warning
+    assert result is None
+
+
+def test_read_metadata_file_handles_schema_mismatch(tmp_path):
+    # Given a JSON file missing required keys
+    path = tmp_path / "mismatch.meta.json"
+    path.write_text(
+        '{"name": "test"}'
+    )  # Missing required fields like path, entity, etc.
+
+    # When reading
+    result = read_metadata_file(path)
+
+    # Then it should return None and log warning
+    assert result is None
+
+
 def test_derive_column_metadata_for_simple_columns():
     # Given a simple feature
     @feature(keys=["user_id"], source="data.parquet")
