@@ -245,6 +245,32 @@ def test_read_metadata_file_returns_none_for_nonexistent():
     assert result is None
 
 
+def test_read_metadata_file_handles_corrupt_json(tmp_path):
+    # Given a file with invalid JSON
+    path = tmp_path / "corrupt.meta.json"
+    path.write_text("{invalid json content")
+
+    # When reading
+    result = read_metadata_file(path)
+
+    # Then it should return None and log warning
+    assert result is None
+
+
+def test_read_metadata_file_handles_schema_mismatch(tmp_path):
+    # Given a JSON file missing required keys
+    path = tmp_path / "mismatch.meta.json"
+    path.write_text(
+        '{"name": "test"}'
+    )  # Missing required fields like path, entity, etc.
+
+    # When reading
+    result = read_metadata_file(path)
+
+    # Then it should return None and log warning
+    assert result is None
+
+
 def test_derive_column_metadata_for_simple_columns():
     # Given a simple feature
     @feature(keys=["user_id"], source="data.parquet")
@@ -341,6 +367,76 @@ def test_derive_column_metadata_with_validators():
         {"validator": "not_null"},
         {"validator": "greater_than", "value": 0},
     ]
+
+
+def test_derive_column_metadata_with_base_schema():
+    # Given a feature with metrics and a base_schema
+    @feature(keys=["user_id"], source="data.parquet")
+    def test_feature(df):
+        return df
+
+    # Base schema before metrics
+    base_schema = {"user_id": "Utf8", "amount": "Float64", "timestamp": "Datetime"}
+
+    # Final schema after Rolling metrics added
+    schema = {
+        "user_id": "Utf8",
+        "amount": "Float64",
+        "timestamp": "Datetime",
+        "users__amount__sum__1d__7d": "Float64",
+        "users__amount__mean__1d__7d": "Float64",
+    }
+
+    # When deriving with base_schema provided
+    base_columns, feature_columns = derive_column_metadata(
+        test_feature, schema, base_schema
+    )
+
+    # Then it should correctly separate base columns from feature columns
+    assert len(base_columns) == 3  # user_id, amount, timestamp
+    assert len(feature_columns) == 2  # Two rolling aggregations
+
+    # Verify base columns contain original columns
+    base_names = {c.name for c in base_columns}
+    assert base_names == {"user_id", "amount", "timestamp"}
+
+    # Verify feature columns are parsed correctly
+    feature_names = {c.name for c in feature_columns}
+    assert feature_names == {
+        "users__amount__sum__1d__7d",
+        "users__amount__mean__1d__7d",
+    }
+
+
+def test_derive_column_metadata_legacy_without_base_schema():
+    # Given a feature with rolling columns but no base_schema
+    @feature(keys=["user_id"], source="data.parquet")
+    def test_feature(df):
+        return df
+
+    # Schema includes both base and rolling columns (no separation)
+    schema = {
+        "user_id": "Utf8",
+        "amount": "Float64",
+        "users__amount__sum__1d__7d": "Float64",
+    }
+
+    # When deriving without base_schema (legacy mode)
+    base_columns, feature_columns = derive_column_metadata(test_feature, schema)
+
+    # Then it should use regex to categorize columns
+    assert len(base_columns) == 2  # user_id, amount (non-rolling)
+    assert len(feature_columns) == 1  # Rolling column
+
+    # Verify base columns
+    base_names = {c.name for c in base_columns}
+    assert base_names == {"user_id", "amount"}
+
+    # Verify feature column parsed via regex
+    assert feature_columns[0].name == "users__amount__sum__1d__7d"
+    assert feature_columns[0].input == "amount"
+    assert feature_columns[0].agg == "sum"
+    assert feature_columns[0].window == "7d"
 
 
 def test_feature_metadata_serializes_columns_and_features():

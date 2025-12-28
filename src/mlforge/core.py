@@ -287,9 +287,7 @@ class Definitions:
                 feature=feature,
                 write_metadata=write_metadata,
                 schema=result.schema(),
-                base_schema=result.base_schema()
-                if hasattr(result, "base_schema")
-                else None,
+                base_schema=result.base_schema(),
             )
             self.offline_store.write_metadata(feature.name, feature_metadata)
 

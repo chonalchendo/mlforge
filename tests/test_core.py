@@ -465,3 +465,23 @@ def test_materialize_raises_on_wrong_return_type():
         # When/Then materializing should raise AttributeError (from engine trying to access schema)
         with pytest.raises(AttributeError):
             defs.build(preview=False)
+
+
+def test_polars_result_base_schema():
+    # Given a PolarsResult with base_schema
+    from mlforge.results import PolarsResult
+
+    df = pl.DataFrame({"id": [1, 2], "value": [10, 20]})
+    base_schema = {"id": "Int64", "value": "Int64"}
+
+    # When creating result with base_schema
+    result_with_schema = PolarsResult(df, base_schema=base_schema)
+
+    # Then base_schema should be retrievable
+    assert result_with_schema.base_schema() == base_schema
+
+    # When creating result without base_schema
+    result_without_schema = PolarsResult(df)
+
+    # Then base_schema should return None
+    assert result_without_schema.base_schema() is None
