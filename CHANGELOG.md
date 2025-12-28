@@ -1,38 +1,61 @@
-## v0.4.0 (2025-12-19)
+## v0.4.0 (2025-12-28)
 
 ### ✨ Features
 
+- add `__version__` via importlib.metadata
+- add `mlforge validate` CLI command for data validation
+- integrate validators into build pipeline
+- add validators and validation infrastructure (`greater_than_or_equal`, `less_than`, etc.)
+- add `inspect` and `manifest` CLI commands for feature metadata
+- integrate metadata generation into build process
+- add metadata methods to Store ABC and implementations (LocalStore, S3Store)
+- add manifest module for feature metadata tracking
+- add rolling aggregation metrics with timedelta support
+- add metadata files for account, merchant, and user spend intervals (example)
 - update transactions example to use S3Store
-- add comprehensive design principles and red flags analysis documentation
 
 ### 🐛🚑️ Fixes
 
-- standardize code formatting and remove trailing whitespace in design analysis documentation
+- correct type annotations for metric compilation results
+- add missing colon in clean-example-fs task
 
 ### ♻️ Refactorings
 
+- split derive_column_metadata into focused helper functions
+- add base_schema() method to EngineResult ABC
+- improve JSON error handling with specific logging
+- consolidate code review commands into unified agent
+- improve logging message alignment and conciseness
 - extract helper methods from materialize to reduce complexity
 
-### 🎨🏗️ Style & Architecture
+### ✅🤡🧪 Tests
 
-- remove trailing whitespace from gitignore comments
+- add tests for FeatureValidationError
+- add comprehensive tests for metadata feature
 
-### 💚👷 CI & Build
+### 📝💡 Documentation
 
-- handle no-commits case in bump workflow
+- standardize on namespace import pattern (`import mlforge as mlf`)
+- update README to reflect current v0.4.0 feature set
+- add comprehensive validator documentation with custom examples
+- add comprehensive documentation for metadata feature
+- update package name to mlforge-sdk in installation commands
+- update transaction example for metadata feature
+- update documentation for build() rename and timedelta support
+
+### 🔧🔨📦️ Configuration, Scripts, Packages
+
+- migrate from claude cli to opencode
+- gitignore reports directory for analysis artifacts
+- add commitizen bump mappings to pyproject.toml
 
 ### 📌➕⬇️➖⬆️ Dependencies
 
 - add s3fs for S3 storage support
 
-### 📝💡 Documentation
+### 💚👷 CI & Build
 
-- simplify commit command documentation
-
-### 🔧🔨📦️ Configuration, Scripts, Packages
-
-- gitignore reports directory for analysis artifacts
-- add commitizen bump mappings to pyproject.toml
+- handle no-commits case in bump workflow
 
 ## v0.3.0 (2025-12-16)
 
