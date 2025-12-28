@@ -4,7 +4,7 @@
 [![Python versions](https://img.shields.io/pypi/pyversions/mlforge-sdk.svg)](https://pypi.org/project/mlforge-sdk/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-A simple feature store SDK for machine learning workflows.
+A simple feature store SDK for machine learning workflows. Build, validate, and serve ML features with point-in-time correctness.
 
 ## Installation
 
@@ -23,26 +23,32 @@ uv add mlforge-sdk
 Define features using the `@feature` decorator:
 
 ```python
+from datetime import timedelta
 import polars as pl
-from mlforge import feature, entity_key
-
-# Create reusable entity key transforms
-with_user_id = entity_key("first", "last", "dob", alias="user_id")
+from mlforge import feature, Rolling, not_null, greater_than
 
 @feature(
     keys=["user_id"],
     source="data/transactions.parquet",
-    description="Total spend by user"
+    timestamp="transaction_date",
+    interval=timedelta(days=1),
+    metrics=[
+        Rolling(
+            windows=["7d", "30d"],
+            aggregations={"amount": ["sum", "mean", "count"]}
+        )
+    ],
+    validators={
+        "amount": [not_null(), greater_than(0)],
+        "user_id": [not_null()],
+    },
+    description="User spending patterns over rolling windows"
 )
-def user_total_spend(df: pl.DataFrame) -> pl.DataFrame:
-    return (
-        df.pipe(with_user_id)
-        .group_by("user_id")
-        .agg(pl.col("amt").sum().alias("total_spend"))
-    )
+def user_spend(df: pl.DataFrame) -> pl.DataFrame:
+    return df.select(["user_id", "transaction_date", "amount"])
 ```
 
-Register features and materialize them:
+Register features and build them:
 
 ```python
 from mlforge import Definitions, LocalStore
@@ -54,49 +60,127 @@ defs = Definitions(
     offline_store=LocalStore("./feature_store")
 )
 
-# Materialize features to storage
-defs.materialize()
+# Build features to storage
+defs.build()
 ```
 
-Retrieve features for training:
+Retrieve features for training with point-in-time correctness:
 
 ```python
 from mlforge import get_training_data
 
 training_df = get_training_data(
-    features=["user_total_spend"],
-    entity_df=transactions,
-    entities=[with_user_id],
-    timestamp="trans_date_trans_time"  # Point-in-time correct joins
+    entity_df=labels_df,
+    features=["user_spend"],
+    store=LocalStore("./feature_store"),
+    timestamp="label_time"
 )
 ```
 
 ## Features
 
-- **Simple API**: Define features with a `@feature` decorator
-- **Entity Keys**: Generate surrogate keys from natural keys using `entity_key()`
-- **Local Storage**: Persist features to Parquet with `LocalStore`
-- **Point-in-Time Joins**: Retrieve training data with temporal correctness using `get_training_data()`
-- **CLI**: Build and list features from the command line
+- **Feature Definition**: Define features with the `@feature` decorator
+- **Rolling Aggregations**: Compute time-windowed metrics (sum, mean, count, etc.)
+- **Data Validation**: Validate feature data before materialization with built-in validators
+- **Storage Backends**: Local filesystem (Parquet) and Amazon S3 support
+- **Point-in-Time Joins**: Retrieve training data with temporal correctness
+- **Feature Metadata**: Automatic tracking of schemas, row counts, and lineage
+- **CLI**: Build, validate, and inspect features from the command line
 
 ## CLI Usage
 
-Build features:
+Build all features:
 
 ```bash
-mlforge build definitions.py
+mlforge build
 ```
 
 Build specific features:
 
 ```bash
-mlforge build definitions.py --features user_total_spend,merchant_total_spend
+mlforge build --features user_spend,merchant_spend
+```
+
+Build features by tag:
+
+```bash
+mlforge build --tags users
+```
+
+Validate features without building:
+
+```bash
+mlforge validate
 ```
 
 List registered features:
 
 ```bash
-mlforge list definitions.py
+mlforge list
+```
+
+Inspect feature metadata:
+
+```bash
+mlforge inspect user_spend
+```
+
+View feature manifest:
+
+```bash
+mlforge manifest
+```
+
+## Validators
+
+Built-in validators for data quality:
+
+```python
+from mlforge import (
+    not_null,
+    unique,
+    greater_than,
+    less_than,
+    greater_than_or_equal,
+    less_than_or_equal,
+    in_range,
+    matches_regex,
+    is_in,
+)
+
+@feature(
+    keys=["id"],
+    source="data.parquet",
+    validators={
+        "email": [not_null(), matches_regex(r"^[\w.-]+@[\w.-]+\.\w+$")],
+        "age": [not_null(), in_range(0, 120)],
+        "status": [is_in(["active", "inactive"])],
+    }
+)
+def validated_feature(df):
+    return df
+```
+
+## Storage Backends
+
+### Local Storage
+
+```python
+from mlforge import LocalStore
+
+store = LocalStore("./feature_store")
+```
+
+### S3 Storage
+
+```python
+from mlforge import S3Store
+
+store = S3Store(
+    bucket="my-features",
+    prefix="prod/features",
+    region="us-west-2"
+)
 ```
 
 ## Documentation
