@@ -284,6 +284,122 @@ def _parse_validator_name(validator_name: str) -> dict[str, Any]:
     return result
 
 
+def _derive_with_base_schema(
+    feature: Feature,
+    schema: dict[str, str],
+    base_schema: dict[str, str],
+) -> tuple[list[ColumnMetadata], list[ColumnMetadata]]:
+    """
+    Derive column metadata when base schema is available (recommended path).
+
+    Uses base_schema to accurately separate base columns from generated feature columns.
+    This is the preferred method as it doesn't rely on regex pattern matching.
+
+    Args:
+        feature: The Feature definition object
+        schema: Final schema after metrics are applied
+        base_schema: Schema before metrics were applied
+
+    Returns:
+        Tuple of (base_columns, feature_columns)
+    """
+    base_columns: list[ColumnMetadata] = []
+    feature_columns: list[ColumnMetadata] = []
+
+    # Add all base columns from base_schema
+    for col_name, dtype in base_schema.items():
+        # Check if this column has validators and parse them
+        validator_specs = None
+        if feature.validators and col_name in feature.validators:
+            validator_specs = [
+                _parse_validator_name(v.name) for v in feature.validators[col_name]
+            ]
+
+        base_columns.append(
+            ColumnMetadata(name=col_name, dtype=dtype, validators=validator_specs)
+        )
+
+    # Add generated feature columns from final schema (only columns not in base_schema)
+    for col_name, dtype in schema.items():
+        # Skip if this is a base column
+        if col_name in base_schema:
+            continue
+
+        # Try to parse as Rolling column: {tag}__{column}__{agg}__{interval}__{window}
+        match = _ROLLING_COLUMN_PATTERN.match(col_name)
+        if match:
+            # Extract tag__column and get just the column name (last part)
+            tag_and_column = match.group(1)
+            input_col = tag_and_column.split("__")[-1]
+
+            feature_columns.append(
+                ColumnMetadata(
+                    name=col_name,
+                    dtype=dtype,
+                    input=input_col,
+                    agg=match.group(2),
+                    window=match.group(4),
+                )
+            )
+
+    return base_columns, feature_columns
+
+
+def _derive_legacy(
+    feature: Feature,
+    schema: dict[str, str],
+) -> tuple[list[ColumnMetadata], list[ColumnMetadata]]:
+    """
+    Derive column metadata without base schema (legacy path for backward compatibility).
+
+    Uses regex pattern matching to categorize columns as base vs feature columns.
+    Less accurate than _derive_with_base_schema but maintains backward compatibility.
+
+    Args:
+        feature: The Feature definition object
+        schema: Final schema (only available schema)
+
+    Returns:
+        Tuple of (base_columns, feature_columns)
+    """
+    base_columns: list[ColumnMetadata] = []
+    feature_columns: list[ColumnMetadata] = []
+
+    # Process all columns from schema and categorize them
+    for col_name, dtype in schema.items():
+        # Check if this column has validators and parse them
+        validator_specs = None
+        if feature.validators and col_name in feature.validators:
+            validator_specs = [
+                _parse_validator_name(v.name) for v in feature.validators[col_name]
+            ]
+
+        # Try to parse as Rolling column: {tag}__{column}__{agg}__{interval}__{window}
+        match = _ROLLING_COLUMN_PATTERN.match(col_name)
+        if match:
+            # Extract tag__column and get just the column name (last part)
+            tag_and_column = match.group(1)
+            input_col = tag_and_column.split("__")[-1]
+
+            feature_columns.append(
+                ColumnMetadata(
+                    name=col_name,
+                    dtype=dtype,
+                    input=input_col,
+                    agg=match.group(2),
+                    window=match.group(4),
+                    validators=validator_specs,
+                )
+            )
+        else:
+            # Not a rolling column, so it's a base column
+            base_columns.append(
+                ColumnMetadata(name=col_name, dtype=dtype, validators=validator_specs)
+            )
+
+    return base_columns, feature_columns
+
+
 def derive_column_metadata(
     feature: Feature,
     schema: dict[str, str],
@@ -293,96 +409,23 @@ def derive_column_metadata(
     Derive column metadata from feature definition and result schema.
 
     Separates base columns (keys, timestamp, other non-metric columns) from
-    generated feature columns (rolling metrics). Base columns include validator
-    information if available.
+    generated feature columns (rolling metrics). Uses base_schema when available
+    for accurate separation, falls back to regex parsing for backward compatibility.
 
     Args:
         feature: The Feature definition object
         schema: Dictionary mapping column names to dtype strings (final schema after metrics)
-        base_schema: Dictionary mapping column names to dtype strings (before metrics)
+        base_schema: Dictionary mapping column names to dtype strings (before metrics).
+            When provided, enables accurate column separation. Defaults to None.
 
     Returns:
         Tuple of (base_columns, feature_columns) where:
             - base_columns: Keys, timestamp, and other non-metric columns with validators
             - feature_columns: Rolling metric columns with aggregation metadata
     """
-    base_columns: list[ColumnMetadata] = []
-    feature_columns: list[ColumnMetadata] = []
-
     if base_schema:
-        # When base_schema is provided, use it to identify base columns
-        # First, add all base columns from base_schema
-        for col_name, dtype in base_schema.items():
-            # Check if this column has validators and parse them
-            validator_specs = None
-            if feature.validators and col_name in feature.validators:
-                validator_specs = [
-                    _parse_validator_name(v.name) for v in feature.validators[col_name]
-                ]
-
-            base_columns.append(
-                ColumnMetadata(name=col_name, dtype=dtype, validators=validator_specs)
-            )
-
-        # Then, add generated feature columns from final schema (only columns not in base_schema)
-        for col_name, dtype in schema.items():
-            # Skip if this is a base column
-            if col_name in base_schema:
-                continue
-
-            # Try to parse as Rolling column: {tag}__{column}__{agg}__{interval}__{window}
-            match = _ROLLING_COLUMN_PATTERN.match(col_name)
-            if match:
-                # Extract tag__column and get just the column name (last part)
-                tag_and_column = match.group(1)
-                input_col = tag_and_column.split("__")[-1]
-
-                feature_columns.append(
-                    ColumnMetadata(
-                        name=col_name,
-                        dtype=dtype,
-                        input=input_col,
-                        agg=match.group(2),
-                        window=match.group(4),  # Window is now the 4th group
-                    )
-                )
-    else:
-        # When base_schema is not provided, use old logic
-        # Process all columns from schema and categorize them
-        for col_name, dtype in schema.items():
-            # Check if this column has validators and parse them
-            validator_specs = None
-            if feature.validators and col_name in feature.validators:
-                validator_specs = [
-                    _parse_validator_name(v.name) for v in feature.validators[col_name]
-                ]
-
-            # Try to parse as Rolling column: {tag}__{column}__{agg}__{interval}__{window}
-            match = _ROLLING_COLUMN_PATTERN.match(col_name)
-            if match:
-                # Extract tag__column and get just the column name (last part)
-                tag_and_column = match.group(1)
-                input_col = tag_and_column.split("__")[-1]
-
-                feature_columns.append(
-                    ColumnMetadata(
-                        name=col_name,
-                        dtype=dtype,
-                        input=input_col,
-                        agg=match.group(2),
-                        window=match.group(4),
-                        validators=validator_specs,
-                    )
-                )
-            else:
-                # Not a rolling column, so it's a base column
-                base_columns.append(
-                    ColumnMetadata(
-                        name=col_name, dtype=dtype, validators=validator_specs
-                    )
-                )
-
-    return base_columns, feature_columns
+        return _derive_with_base_schema(feature, schema, base_schema)
+    return _derive_legacy(feature, schema)
 
 
 def _get_rolling_output_columns(feature: Feature) -> set[str]:
