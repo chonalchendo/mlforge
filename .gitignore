@@ -211,3 +211,7 @@ __marimo__/
 examples/**/data/*.parquet
 examples/**/feature_store/*.parquet
 reports/
+
+# OpenCode
+#  OpenCode is an AI coding assistant. These are workspace-specific configuration files.
+.opencode/
