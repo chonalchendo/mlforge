@@ -1,0 +1,113 @@
+{
+  "name": "merchant_spend_1d_interval",
+  "version": "1.0.0",
+  "path": "feature_store/merchant_spend_1d_interval/1.0.0/data.parquet",
+  "entity": "merchant_id",
+  "keys": [
+    "merchant_id"
+  ],
+  "source": "data/transactions.parquet",
+  "row_count": 506525,
+  "created_at": "2025-12-31T16:19:16.693138Z",
+  "updated_at": "2025-12-31T16:19:16.693138Z",
+  "content_hash": "b3834eff6773",
+  "schema_hash": "14bf4919e8d9",
+  "config_hash": "3a6f1b307e9f",
+  "source_hash": "da9aef320198",
+  "timestamp": "transaction_date",
+  "interval": "1d",
+  "columns": [
+    {
+      "name": "merchant_id",
+      "dtype": "String"
+    },
+    {
+      "name": "transaction_date",
+      "dtype": "Datetime(time_unit='us', time_zone=None)"
+    },
+    {
+      "name": "amt",
+      "dtype": "Float64",
+      "validators": [
+        {
+          "validator": "greater_than_or_equal",
+          "value": 0
+        }
+      ]
+    }
+  ],
+  "features": [
+    {
+      "name": "merchants__amt__count__1d__7d",
+      "dtype": "UInt32",
+      "input": "amt",
+      "agg": "count",
+      "window": "7d"
+    },
+    {
+      "name": "merchants__amt__mean__1d__7d",
+      "dtype": "Float64",
+      "input": "amt",
+      "agg": "mean",
+      "window": "7d"
+    },
+    {
+      "name": "merchants__amt__sum__1d__7d",
+      "dtype": "Float64",
+      "input": "amt",
+      "agg": "sum",
+      "window": "7d"
+    },
+    {
+      "name": "merchants__amt__count__1d__30d",
+      "dtype": "UInt32",
+      "input": "amt",
+      "agg": "count",
+      "window": "30d"
+    },
+    {
+      "name": "merchants__amt__mean__1d__30d",
+      "dtype": "Float64",
+      "input": "amt",
+      "agg": "mean",
+      "window": "30d"
+    },
+    {
+      "name": "merchants__amt__sum__1d__30d",
+      "dtype": "Float64",
+      "input": "amt",
+      "agg": "sum",
+      "window": "30d"
+    },
+    {
+      "name": "merchants__amt__count__1d__90d",
+      "dtype": "UInt32",
+      "input": "amt",
+      "agg": "count",
+      "window": "90d"
+    },
+    {
+      "name": "merchants__amt__mean__1d__90d",
+      "dtype": "Float64",
+      "input": "amt",
+      "agg": "mean",
+      "window": "90d"
+    },
+    {
+      "name": "merchants__amt__sum__1d__90d",
+      "dtype": "Float64",
+      "input": "amt",
+      "agg": "sum",
+      "window": "90d"
+    }
+  ],
+  "tags": [
+    "merchants"
+  ],
+  "description": "Total spend by merchant ID",
+  "change_summary": {
+    "bump_type": "initial",
+    "reason": "first_build",
+    "details": []
+  }
+}
