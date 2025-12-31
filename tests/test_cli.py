@@ -4,8 +4,8 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from mlforge.cli import build, inspect, list_, manifest
-from mlforge.errors import FeatureMaterializationError
+from mlforge.cli import build, inspect, list_, manifest, sync
+from mlforge.errors import FeatureMaterializationError, SourceDataChangedError
 
 
 @pytest.fixture
@@ -541,3 +541,202 @@ def test_manifest_command_handles_no_metadata(definitions_file):
 
     # Then it should show a warning
     mock_warning.assert_called_once()
+
+
+# =============================================================================
+# Sync Command Tests
+# =============================================================================
+
+
+def test_sync_command_dry_run_shows_needs_sync(definitions_file):
+    # Given a built feature with missing data
+    target = str(definitions_file)
+
+    # First build the feature
+    with (
+        patch("mlforge.logging.print_build_results"),
+        patch("mlforge.logging.print_success"),
+    ):
+        build(
+            target=target,
+            features=None,
+            tags=None,
+            force=False,
+            no_preview=True,
+            preview_rows=5,
+        )
+
+    # Mock sync to return needs_sync
+    with (
+        patch("mlforge.loader.load_definitions") as mock_load,
+        patch("mlforge.logging.print_info") as mock_info,
+    ):
+        mock_defs = Mock()
+        mock_defs.offline_store = Mock(spec=["path"])
+        mock_defs.offline_store.__class__.__name__ = "LocalStore"
+        mock_defs.sync.return_value = {
+            "needs_sync": ["test_feature"],
+            "source_changed": [],
+            "synced": [],
+        }
+        # Make isinstance check pass for LocalStore
+        from mlforge.store import LocalStore
+
+        mock_defs.offline_store = Mock(spec=LocalStore)
+        mock_load.return_value = mock_defs
+
+        sync(target=target, features=None, dry_run=True, force=False)
+
+    # Then it should show what needs syncing
+    assert mock_info.call_count >= 1
+
+
+def test_sync_command_syncs_missing_features(definitions_file):
+    # Given a feature that needs syncing
+    target = str(definitions_file)
+
+    with (
+        patch("mlforge.loader.load_definitions") as mock_load,
+        patch("mlforge.logging.print_success") as mock_success,
+    ):
+        mock_defs = Mock()
+        from mlforge.store import LocalStore
+
+        mock_defs.offline_store = Mock(spec=LocalStore)
+        mock_defs.sync.return_value = {
+            "needs_sync": ["test_feature"],
+            "source_changed": [],
+            "synced": ["test_feature"],
+        }
+        mock_load.return_value = mock_defs
+
+        sync(target=target, features=None, dry_run=False, force=False)
+
+    # Then it should report success
+    mock_success.assert_called_once()
+    assert "1" in mock_success.call_args[0][0]
+
+
+def test_sync_command_with_all_up_to_date(definitions_file):
+    # Given all features are up to date
+    target = str(definitions_file)
+
+    with (
+        patch("mlforge.loader.load_definitions") as mock_load,
+        patch("mlforge.logging.print_success") as mock_success,
+    ):
+        mock_defs = Mock()
+        from mlforge.store import LocalStore
+
+        mock_defs.offline_store = Mock(spec=LocalStore)
+        mock_defs.sync.return_value = {
+            "needs_sync": [],
+            "source_changed": [],
+            "synced": [],
+        }
+        mock_load.return_value = mock_defs
+
+        sync(target=target, features=None, dry_run=False, force=False)
+
+    # Then it should report all up to date
+    mock_success.assert_called_once()
+    assert "up to date" in mock_success.call_args[0][0]
+
+
+def test_sync_command_rejects_non_local_store(definitions_file):
+    # Given a definitions file with S3Store
+    target = str(definitions_file)
+
+    with (
+        patch("mlforge.loader.load_definitions") as mock_load,
+        pytest.raises(SystemExit) as exc_info,
+    ):
+        mock_defs = Mock()
+        # Use a non-LocalStore mock
+        mock_defs.offline_store = Mock()
+        mock_defs.offline_store.__class__.__name__ = "S3Store"
+        mock_load.return_value = mock_defs
+
+        sync(target=target, features=None, dry_run=False, force=False)
+
+    assert exc_info.value.code == 1
+
+
+def test_sync_command_handles_source_changed_error(definitions_file):
+    # Given a feature with changed source data
+    target = str(definitions_file)
+
+    with (
+        patch("mlforge.loader.load_definitions") as mock_load,
+        pytest.raises(SystemExit) as exc_info,
+    ):
+        mock_defs = Mock()
+        from mlforge.store import LocalStore
+
+        mock_defs.offline_store = Mock(spec=LocalStore)
+        mock_defs.sync.side_effect = SourceDataChangedError(
+            feature_name="test_feature",
+            expected_hash="abc123",
+            current_hash="def456",
+            source_path="data/source.parquet",
+        )
+        mock_load.return_value = mock_defs
+
+        sync(target=target, features=None, dry_run=False, force=False)
+
+    assert exc_info.value.code == 1
+
+
+def test_sync_command_with_specific_features(definitions_file):
+    # Given specific features to sync
+    target = str(definitions_file)
+
+    with (
+        patch("mlforge.loader.load_definitions") as mock_load,
+        patch("mlforge.logging.print_success"),
+    ):
+        mock_defs = Mock()
+        from mlforge.store import LocalStore
+
+        mock_defs.offline_store = Mock(spec=LocalStore)
+        mock_defs.sync.return_value = {
+            "needs_sync": ["test_feature"],
+            "source_changed": [],
+            "synced": ["test_feature"],
+        }
+        mock_load.return_value = mock_defs
+
+        sync(target=target, features="test_feature", dry_run=False, force=False)
+
+    # Then it should pass feature names to sync
+    mock_defs.sync.assert_called_once_with(
+        feature_names=["test_feature"],
+        dry_run=False,
+        force=False,
+    )
+
+
+def test_sync_command_dry_run_shows_source_changed(definitions_file):
+    # Given a feature with changed source data in dry run mode
+    target = str(definitions_file)
+
+    with (
+        patch("mlforge.loader.load_definitions") as mock_load,
+        patch("mlforge.logging.print_info"),
+        patch("mlforge.logging.print_warning") as mock_warning,
+    ):
+        mock_defs = Mock()
+        from mlforge.store import LocalStore
+
+        mock_defs.offline_store = Mock(spec=LocalStore)
+        mock_defs.sync.return_value = {
+            "needs_sync": ["test_feature"],
+            "source_changed": ["test_feature"],
+            "synced": [],
+        }
+        mock_load.return_value = mock_defs
+
+        sync(target=target, features=None, dry_run=True, force=False)
+
+    # Then it should warn about source changes
+    assert mock_warning.call_count >= 1

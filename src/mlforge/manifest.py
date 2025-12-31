@@ -78,13 +78,20 @@ class FeatureMetadata:
         keys: All entity key columns
         source: Source data file path
         row_count: Number of rows in materialized feature
-        last_updated: ISO 8601 timestamp of last build
+        updated_at: ISO 8601 timestamp of last build (renamed from last_updated in v0.5.0)
+        version: Semantic version string (v0.5.0)
+        created_at: ISO 8601 timestamp when version was first created (v0.5.0)
+        content_hash: Hash of data.parquet for integrity verification (v0.5.0)
+        schema_hash: Hash of column names + dtypes for change detection (v0.5.0)
+        config_hash: Hash of keys, timestamp, interval, metrics config (v0.5.0)
+        source_hash: Hash of source data file for reproducibility verification (v0.5.0)
         timestamp: Timestamp column for temporal features
         interval: Time interval for rolling aggregations
         columns: Base column metadata (from feature function before metrics)
         features: Generated feature column metadata (from metrics)
         tags: Feature grouping tags
         description: Human-readable description
+        change_summary: Documents why version was bumped (v0.5.0)
     """
 
     name: str
@@ -93,7 +100,17 @@ class FeatureMetadata:
     keys: list[str]
     source: str
     row_count: int
-    last_updated: str
+    updated_at: str
+
+    # v0.5.0: New required fields for versioning
+    version: str = "1.0.0"
+    created_at: str = ""
+    content_hash: str = ""
+    schema_hash: str = ""
+    config_hash: str = ""
+    source_hash: str = ""
+
+    # Existing optional fields
     timestamp: str | None = None
     interval: str | None = None
     columns: list[ColumnMetadata] = field(default_factory=list)
@@ -101,16 +118,25 @@ class FeatureMetadata:
     tags: list[str] = field(default_factory=list)
     description: str | None = None
 
+    # v0.5.0: New optional field
+    change_summary: dict[str, Any] | None = None
+
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
-        result = {
+        result: dict[str, Any] = {
             "name": self.name,
+            "version": self.version,
             "path": self.path,
             "entity": self.entity,
             "keys": self.keys,
             "source": self.source,
             "row_count": self.row_count,
-            "last_updated": self.last_updated,
+            "created_at": self.created_at,
+            "updated_at": self.updated_at,
+            "content_hash": self.content_hash,
+            "schema_hash": self.schema_hash,
+            "config_hash": self.config_hash,
+            "source_hash": self.source_hash,
         }
         if self.timestamp:
             result["timestamp"] = self.timestamp
@@ -124,6 +150,8 @@ class FeatureMetadata:
             result["tags"] = self.tags
         if self.description:
             result["description"] = self.description
+        if self.change_summary:
+            result["change_summary"] = self.change_summary
         return result
 
     @classmethod
@@ -131,20 +159,31 @@ class FeatureMetadata:
         """Create from dictionary."""
         columns = [ColumnMetadata.from_dict(c) for c in data.get("columns", [])]
         features = [ColumnMetadata.from_dict(c) for c in data.get("features", [])]
+
+        # Handle backward compatibility: last_updated → updated_at
+        updated_at = data.get("updated_at") or data.get("last_updated", "")
+
         return cls(
             name=data["name"],
+            version=data.get("version", "1.0.0"),
             path=data["path"],
             entity=data["entity"],
             keys=data["keys"],
             source=data["source"],
             row_count=data["row_count"],
-            last_updated=data["last_updated"],
+            created_at=data.get("created_at", ""),
+            updated_at=updated_at,
+            content_hash=data.get("content_hash", ""),
+            schema_hash=data.get("schema_hash", ""),
+            config_hash=data.get("config_hash", ""),
+            source_hash=data.get("source_hash", ""),
             timestamp=data.get("timestamp"),
             interval=data.get("interval"),
             columns=columns,
             features=features,
             tags=data.get("tags", []),
             description=data.get("description"),
+            change_summary=data.get("change_summary"),
         )
 
 

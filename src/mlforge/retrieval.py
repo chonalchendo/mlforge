@@ -6,9 +6,12 @@ import polars as pl
 import mlforge.store as store_
 import mlforge.utils as utils
 
+# Type alias for feature specification: "feature_name" or ("feature_name", "1.0.0")
+FeatureSpec = str | tuple[str, str]
+
 
 def get_training_data(
-    features: list[str],
+    features: list[FeatureSpec],
     entity_df: pl.DataFrame,
     store: str | Path | store_.Store = "./feature_store",
     entities: list[utils.EntityKeyTransform] | None = None,
@@ -18,7 +21,9 @@ def get_training_data(
     Retrieve features and join to an entity DataFrame.
 
     Args:
-        features: Feature names to retrieve
+        features: Feature specifications. Can be:
+            - "feature_name" - uses latest version
+            - ("feature_name", "1.0.0") - uses specific version
         entity_df: DataFrame with entity keys to join on
         store: Path to feature store or Store instance
         entities: Entity key transforms to apply to entity_df before joining
@@ -34,9 +39,12 @@ def get_training_data(
 
         transactions = pl.read_parquet("data/transactions.parquet")
 
-        # Point-in-time correct training data
+        # Point-in-time correct training data with mixed versions
         training_df = get_training_data(
-            features=["user_spend_mean_30d"],
+            features=[
+                "user_spend_mean_30d",              # latest version
+                ("merchant_features", "1.0.0"),    # pinned version
+            ],
             entity_df=transactions,
             entities=[with_user_id],
             timestamp="trans_date_trans_time",
@@ -66,13 +74,22 @@ def get_training_data(
 
         result = result.pipe(entity_fn)
 
-    for feature_name in features:
-        if not store.exists(feature_name):
+    for feature_spec in features:
+        # Parse feature specification
+        if isinstance(feature_spec, tuple):
+            feature_name, feature_version = feature_spec
+        else:
+            feature_name = feature_spec
+            feature_version = None  # Use latest
+
+        if not store.exists(feature_name, feature_version):
+            version_str = f" version '{feature_version}'" if feature_version else ""
             raise ValueError(
-                f"Feature '{feature_name}' not found. Run `mlforge build` first."
+                f"Feature '{feature_name}'{version_str} not found. "
+                f"Run `mlforge build` first."
             )
 
-        feature_df = store.read(feature_name)
+        feature_df = store.read(feature_name, feature_version)
         join_keys = list(set(result.columns) & set(feature_df.columns))
 
         # Remove timestamp columns from join keys—they're handled separately

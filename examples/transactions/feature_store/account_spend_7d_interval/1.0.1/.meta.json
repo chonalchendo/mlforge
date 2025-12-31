@@ -1,13 +1,19 @@
 {
   "name": "account_spend_7d_interval",
-  "path": "feature_store/account_spend_7d_interval.parquet",
+  "version": "1.0.1",
+  "path": "feature_store/account_spend_7d_interval/1.0.1/data.parquet",
   "entity": "account_id",
   "keys": [
     "account_id"
   ],
   "source": "data/transactions.parquet",
   "row_count": 96211,
-  "last_updated": "2025-12-27T11:30:50.788077Z",
+  "created_at": "2025-12-31T16:19:17.718163Z",
+  "updated_at": "2025-12-31T16:19:54.138865Z",
+  "content_hash": "6122198dbaa8",
+  "schema_hash": "8b70d7ff102a",
+  "config_hash": "2152a4627909",
+  "source_hash": "da9aef320198",
   "timestamp": "transaction_date",
   "interval": "7d",
   "columns": [
@@ -92,5 +98,10 @@
   "tags": [
     "accounts"
   ],
-  "description": "Total spend by account ID"
+  "description": "Total spend by account ID",
+  "change_summary": {
+    "bump_type": "patch",
+    "reason": "data_refresh",
+    "details": []
+  }
 }

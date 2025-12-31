@@ -17,6 +17,7 @@ import mlforge.metrics as metrics_
 import mlforge.store as store
 import mlforge.validation as validation_
 import mlforge.validators as validators_
+import mlforge.version as version
 
 WindowFunc = Literal["1h", "1d", "7d", "30d"]
 
@@ -229,20 +230,22 @@ class Definitions:
         self,
         feature_names: list[str] | None = None,
         tag_names: list[str] | None = None,
+        feature_version: str | None = None,
         force: bool = False,
         preview: bool = True,
         preview_rows: int = 5,
     ) -> dict[str, Path | str]:
         """
-        Compute and persist features to offline storage.
+        Compute and persist features to offline storage with versioning.
 
         Loads source data, applies feature transformations, validates results,
-        and writes to the configured storage backend. Features that fail
-        validation are skipped, but other features continue to build.
+        and writes to the configured storage backend. Automatically determines
+        the appropriate version based on schema and configuration changes.
 
         Args:
             feature_names: Specific features to materialize. Defaults to None (all).
             tag_names: Specific features to materialize by tag. Defaults to None (all).
+            feature_version: Explicit version override (e.g., "2.0.0"). If None, auto-detects.
             force: Overwrite existing features. Defaults to False.
             preview: Display preview of materialized data. Defaults to True.
             preview_rows: Number of preview rows to show. Defaults to 5.
@@ -255,18 +258,40 @@ class Definitions:
             FeatureMaterializationError: If feature function fails or returns invalid data
 
         Example:
-            paths = defs.build(
-                feature_names=["user_age", "user_spend"],
-                force=True
-            )
+            # Auto-versioning (default)
+            paths = defs.build(feature_names=["user_age", "user_spend"])
+
+            # Explicit version
+            paths = defs.build(feature_names=["user_spend"], feature_version="2.0.0")
         """
         selected_features = self._resolve_features_to_build(feature_names, tag_names)
         results: dict[str, Path | str] = {}
         failed_features: list[str] = []
 
         for feature in selected_features:
-            if not force and self.offline_store.exists(feature.name):
-                logger.debug(f"Skipping {feature.name} (already exists)")
+            # Get previous metadata for change detection
+            previous_meta = self.offline_store.read_metadata(feature.name)
+
+            # Determine target version
+            if feature_version is not None:
+                # Explicit version override
+                target_version = feature_version
+                change_summary = version.ChangeSummary(
+                    change_type=version.ChangeType.PATCH,
+                    reason="explicit_version",
+                    details=[],
+                )
+            else:
+                # Auto-detect version
+                target_version, change_summary = self._determine_version(
+                    feature, previous_meta
+                )
+
+            # Check if this version already exists (unless force)
+            if not force and self.offline_store.exists(feature.name, target_version):
+                logger.debug(
+                    f"Skipping {feature.name} v{target_version} (already exists)"
+                )
                 continue
 
             try:
@@ -279,21 +304,53 @@ class Definitions:
             result_df = result.to_polars()
             self._validate_result(feature.name, result_df)
 
-            write_metadata = self.offline_store.write(feature.name, result)
-            result_path = self.offline_store.path_for(feature.name)
+            # Write with version
+            write_metadata = self.offline_store.write(
+                feature.name, result, feature_version=target_version
+            )
+
+            # Compute hashes for metadata
+            # Use base_schema (before metrics) for consistent hash computation
+            base_schema_dict = result.base_schema() or result.schema()
+            schema_columns = [
+                manifest.ColumnMetadata(name=k, dtype=v)
+                for k, v in base_schema_dict.items()
+            ]
+            schema_hash = version.compute_schema_hash(schema_columns)
+            config_hash = version.compute_config_hash(
+                keys=feature.keys,
+                timestamp=feature.timestamp,
+                interval=feature.interval,
+                metrics_config=self._serialize_metrics_config(feature.metrics),
+            )
+            content_hash = version.compute_content_hash(Path(write_metadata["path"]))
+            source_hash = version.compute_source_hash(feature.source)
 
             # Build and write feature metadata
+            now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
             feature_metadata = self._build_feature_metadata(
                 feature=feature,
                 write_metadata=write_metadata,
                 schema=result.schema(),
                 base_schema=result.base_schema(),
+                target_version=target_version,
+                created_at=previous_meta.created_at if previous_meta else now,
+                updated_at=now,
+                content_hash=content_hash,
+                schema_hash=schema_hash,
+                config_hash=config_hash,
+                source_hash=source_hash,
+                change_summary=change_summary,
             )
             self.offline_store.write_metadata(feature.name, feature_metadata)
 
+            result_path = self.offline_store.path_for(feature.name, target_version)
+
             if preview:
                 log.print_feature_preview(
-                    feature.name, result_df, max_rows=preview_rows
+                    f"{feature.name} v{target_version}",
+                    result_df,
+                    max_rows=preview_rows,
                 )
 
             results[feature.name] = result_path
@@ -304,6 +361,96 @@ class Definitions:
             )
 
         return results
+
+    def _determine_version(
+        self,
+        feature: Feature,
+        previous_meta: manifest.FeatureMetadata | None,
+    ) -> tuple[str, version.ChangeSummary]:
+        """
+        Determine next version based on change detection.
+
+        Args:
+            feature: Feature being built
+            previous_meta: Metadata from previous version (None if first build)
+
+        Returns:
+            Tuple of (version_string, ChangeSummary)
+        """
+        if previous_meta is None:
+            # First build
+            return "1.0.0", version.build_change_summary(
+                version.ChangeType.INITIAL, None, []
+            )
+
+        # Load and process to get current schema (before metrics)
+        source_df = self._engine._load_source(feature.source)
+        preview_df = feature(source_df)
+
+        if isinstance(preview_df, pl.LazyFrame):
+            preview_df = preview_df.collect()
+
+        current_columns = list(preview_df.columns)
+        previous_columns = [c.name for c in previous_meta.columns]
+
+        # Compute current hashes
+        current_schema_columns = [
+            manifest.ColumnMetadata(name=c, dtype=str(preview_df.schema[c]))
+            for c in current_columns
+        ]
+        current_schema_hash = version.compute_schema_hash(current_schema_columns)
+        current_config_hash = version.compute_config_hash(
+            keys=feature.keys,
+            timestamp=feature.timestamp,
+            interval=feature.interval,
+            metrics_config=self._serialize_metrics_config(feature.metrics),
+        )
+
+        # Detect change type
+        change_type = version.detect_change_type(
+            previous_columns=previous_columns,
+            current_columns=current_columns,
+            previous_schema_hash=previous_meta.schema_hash,
+            current_schema_hash=current_schema_hash,
+            previous_config_hash=previous_meta.config_hash,
+            current_config_hash=current_config_hash,
+        )
+
+        # Determine target version
+        if change_type == version.ChangeType.INITIAL:
+            target_version = "1.0.0"
+        else:
+            target_version = version.bump_version(previous_meta.version, change_type)
+
+        change_summary = version.build_change_summary(
+            change_type, previous_columns, current_columns
+        )
+
+        return target_version, change_summary
+
+    def _serialize_metrics_config(
+        self, metrics: list[metrics_.MetricKind] | None
+    ) -> list[dict[str, Any]]:
+        """
+        Serialize metrics configuration for hashing.
+
+        Args:
+            metrics: List of metric configurations
+
+        Returns:
+            List of serialized metric dictionaries
+        """
+        if not metrics:
+            return []
+
+        configs = []
+        for metric in metrics:
+            if hasattr(metric, "to_dict"):
+                configs.append(metric.to_dict())
+            else:
+                # Fallback: use repr
+                configs.append({"repr": repr(metric)})
+        return configs
 
     def validate(
         self,
@@ -376,6 +523,133 @@ class Definitions:
                 )
 
         return results
+
+    def sync(
+        self,
+        feature_names: list[str] | None = None,
+        dry_run: bool = False,
+        force: bool = False,
+    ) -> dict[str, Any]:
+        """
+        Rebuild features that have metadata but no data.
+
+        Scans the store for features with metadata (.meta.json) but no data
+        (data.parquet missing). For each such feature, verifies source data
+        hasn't changed, then rebuilds the feature.
+
+        This is used for the Git workflow where teammates share metadata
+        but not data files. After pulling metadata, running sync will
+        rebuild the features locally from source data.
+
+        Args:
+            feature_names: Specific features to sync. Defaults to None (all).
+            dry_run: If True, only report what would be synced. Defaults to False.
+            force: If True, rebuild even if source data hash differs. Defaults to False.
+
+        Returns:
+            Dictionary with:
+                - needs_sync: List of feature names that need syncing
+                - source_changed: List of feature names with changed source data
+                - synced: List of feature names that were synced (empty if dry_run)
+
+        Raises:
+            SourceDataChangedError: If source data has changed and force=False
+
+        Example:
+            # Check what needs syncing
+            result = defs.sync(dry_run=True)
+            print(result["needs_sync"])
+
+            # Rebuild missing data
+            result = defs.sync()
+            print(f"Synced {len(result['synced'])} features")
+        """
+        needs_sync: list[str] = []
+        source_changed: list[str] = []
+        synced: list[str] = []
+
+        # Get list of features to check
+        features_to_check = (
+            [self._get_feature(name) for name in feature_names]
+            if feature_names
+            else self.list_features()
+        )
+
+        for feature in features_to_check:
+            # Read metadata for latest version
+            metadata = self.offline_store.read_metadata(feature.name)
+            if metadata is None:
+                # No metadata - nothing to sync
+                continue
+
+            latest_version = self.offline_store.get_latest_version(feature.name)
+            if latest_version is None:
+                continue
+
+            # Check if data file exists
+            if self.offline_store.exists(feature.name, latest_version):
+                # Data exists - nothing to sync
+                continue
+
+            # Metadata exists but data doesn't - needs sync
+            needs_sync.append(feature.name)
+
+            # Check source hash
+            if metadata.source_hash:
+                try:
+                    current_source_hash = version.compute_source_hash(feature.source)
+                    if current_source_hash != metadata.source_hash:
+                        source_changed.append(feature.name)
+                        if not force and not dry_run:
+                            raise errors.SourceDataChangedError(
+                                feature_name=feature.name,
+                                expected_hash=metadata.source_hash,
+                                current_hash=current_source_hash,
+                                source_path=feature.source,
+                            )
+                except FileNotFoundError:
+                    # Source file not found - can't sync
+                    logger.warning(
+                        f"Source file not found for {feature.name}: {feature.source}"
+                    )
+                    continue
+
+        if dry_run:
+            return {
+                "needs_sync": needs_sync,
+                "source_changed": source_changed,
+                "synced": [],
+            }
+
+        # Rebuild features that need syncing
+        for feature_name in needs_sync:
+            if feature_name in source_changed and not force:
+                # Skip - source changed and not forcing
+                continue
+
+            # Get the version from metadata
+            metadata = self.offline_store.read_metadata(feature_name)
+            if metadata is None:
+                continue
+
+            # Rebuild with the same version
+            try:
+                self.build(
+                    feature_names=[feature_name],
+                    feature_version=metadata.version,
+                    force=True,
+                    preview=False,
+                )
+                synced.append(feature_name)
+                logger.info(f"Synced {feature_name} v{metadata.version}")
+            except Exception as e:
+                logger.error(f"Failed to sync {feature_name}: {e}")
+
+        return {
+            "needs_sync": needs_sync,
+            "source_changed": source_changed,
+            "synced": synced,
+        }
 
     def _validate_result(self, feature_name: str, result_df: Any) -> None:
         """
@@ -558,9 +832,17 @@ class Definitions:
     def _build_feature_metadata(
         self,
         feature: Feature,
-        write_metadata: dict,
+        write_metadata: dict[str, Any],
         schema: dict[str, str],
         base_schema: dict[str, str] | None = None,
+        target_version: str = "1.0.0",
+        created_at: str = "",
+        updated_at: str = "",
+        content_hash: str = "",
+        schema_hash: str = "",
+        config_hash: str = "",
+        source_hash: str = "",
+        change_summary: version.ChangeSummary | None = None,
     ) -> manifest.FeatureMetadata:
         """
         Build FeatureMetadata from feature definition and write results.
@@ -570,6 +852,14 @@ class Definitions:
             write_metadata: Metadata returned from store.write()
             schema: Column name to dtype mapping from result (final schema after metrics)
             base_schema: Column name to dtype mapping before metrics were applied
+            target_version: Semantic version string
+            created_at: ISO 8601 timestamp when version was created
+            updated_at: ISO 8601 timestamp of this build
+            content_hash: Hash of parquet file content
+            schema_hash: Hash of column schema
+            config_hash: Hash of feature configuration
+            source_hash: Hash of source data file for reproducibility
+            change_summary: Summary of changes from previous version
 
         Returns:
             FeatureMetadata object ready for persistence
@@ -577,18 +867,28 @@ class Definitions:
         base_columns, feature_columns = manifest.derive_column_metadata(
             feature, schema, base_schema
         )
+
+        now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
         return manifest.FeatureMetadata(
             name=feature.name,
+            version=target_version,
             path=write_metadata["path"],
             entity=feature.keys[0],
             keys=feature.keys,
             source=feature.source,
             row_count=write_metadata["row_count"],
-            last_updated=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            created_at=created_at or now,
+            updated_at=updated_at or now,
+            content_hash=content_hash,
+            schema_hash=schema_hash,
+            config_hash=config_hash,
+            source_hash=source_hash,
             timestamp=feature.timestamp,
             interval=feature.interval,
             columns=base_columns,
             features=feature_columns,
             tags=feature.tags or [],
             description=feature.description,
+            change_summary=change_summary.to_dict() if change_summary else None,
         )
