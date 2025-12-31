@@ -151,6 +151,16 @@ def print_warning(message: str) -> None:
     console.print(f"[yellow]![/yellow] {message}")
 
 
+def print_info(message: str) -> None:
+    """
+    Print an info message with info symbol.
+
+    Args:
+        message: Info message to display
+    """
+    console.print(f"[blue]i[/blue] {message}")
+
+
 def print_feature_metadata(feature_name: str, metadata: "FeatureMetadata") -> None:
     """
     Display detailed feature metadata in a formatted layout.
@@ -170,6 +180,7 @@ def print_feature_metadata(feature_name: str, metadata: "FeatureMetadata") -> No
 
     info_lines.extend(
         [
+            f"[bold]Version:[/bold] {metadata.version}",
             f"[bold]Path:[/bold] {metadata.path}",
             f"[bold]Source:[/bold] {metadata.source}",
             f"[bold]Entity:[/bold] {metadata.entity}",
@@ -178,9 +189,31 @@ def print_feature_metadata(feature_name: str, metadata: "FeatureMetadata") -> No
             f"[bold]Interval:[/bold] {metadata.interval or '-'}",
             f"[bold]Tags:[/bold] {', '.join(metadata.tags) if metadata.tags else '-'}",
             f"[bold]Row Count:[/bold] {metadata.row_count:,}",
-            f"[bold]Last Updated:[/bold] {metadata.last_updated}",
+            f"[bold]Created:[/bold] {metadata.created_at[:19] if metadata.created_at else '-'}",
+            f"[bold]Updated:[/bold] {metadata.updated_at[:19] if metadata.updated_at else '-'}",
         ]
     )
+
+    # Add hash info if available
+    if metadata.schema_hash or metadata.config_hash or metadata.content_hash:
+        info_lines.append("")
+        info_lines.append("[bold]Hashes:[/bold]")
+        if metadata.schema_hash:
+            info_lines.append(f"  Schema: {metadata.schema_hash}")
+        if metadata.config_hash:
+            info_lines.append(f"  Config: {metadata.config_hash}")
+        if metadata.content_hash:
+            info_lines.append(f"  Content: {metadata.content_hash}")
+
+    # Add change summary if available
+    if metadata.change_summary:
+        info_lines.append("")
+        info_lines.append("[bold]Change Summary:[/bold]")
+        info_lines.append(f"  Type: {metadata.change_summary.get('bump_type', '-')}")
+        info_lines.append(f"  Reason: {metadata.change_summary.get('reason', '-')}")
+        details = metadata.change_summary.get("details", [])
+        if details:
+            info_lines.append(f"  Details: {', '.join(details)}")
 
     console.print(Panel("\n".join(info_lines), title=f"Feature: {feature_name}"))
 
@@ -216,18 +249,20 @@ def print_manifest_summary(metadata_list: list["FeatureMetadata"]) -> None:
     """
     table = table_.Table(title="Feature Store Manifest")
     table.add_column("Feature", style="cyan")
+    table.add_column("Version", style="magenta")
     table.add_column("Entity", style="green")
     table.add_column("Rows", justify="right")
     table.add_column("Columns", justify="right")
-    table.add_column("Last Updated", style="dim")
+    table.add_column("Updated", style="dim")
 
     for meta in sorted(metadata_list, key=lambda m: m.name):
         table.add_row(
             meta.name,
+            meta.version,
             meta.entity,
             f"{meta.row_count:,}",
             str(len(meta.columns)),
-            meta.last_updated[:19] if meta.last_updated else "-",
+            meta.updated_at[:19] if meta.updated_at else "-",
         )
 
     console.print(table)
@@ -296,3 +331,31 @@ def print_validation_summary(passed: int, failed: int, skipped: int) -> None:
 
     summary = ", ".join(parts)
     console.print(f"\nValidation: {summary} ({total} total)")
+
+
+def print_versions_table(
+    feature_name: str,
+    versions: list[str],
+    latest: str | None,
+) -> None:
+    """
+    Display all versions of a feature in a formatted table.
+
+    Args:
+        feature_name: Name of the feature
+        versions: List of version strings (sorted oldest to newest)
+        latest: The current latest version (marked with indicator)
+    """
+    table = table_.Table(title=f"Versions: {feature_name}")
+    table.add_column("Version", style="cyan")
+    table.add_column("Status", justify="center")
+
+    for ver in versions:
+        if ver == latest:
+            status = "[green]latest[/green]"
+        else:
+            status = ""
+        table.add_row(ver, status)
+
+    console.print(table)
+    console.print(f"\n[dim]{len(versions)} version(s) total[/dim]")

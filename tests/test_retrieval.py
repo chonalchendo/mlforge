@@ -27,7 +27,9 @@ def test_asof_join_point_in_time():
                 ],
             }
         )
-        store.write("user_spend_mean_30d", PolarsResult(feature_df))
+        store.write(
+            "user_spend_mean_30d", PolarsResult(feature_df), feature_version="1.0.0"
+        )
 
         # Entity data: transactions at various times
         entity_df = pl.DataFrame(
@@ -75,7 +77,7 @@ def test_asof_join_no_future_leakage():
                 "feature_timestamp": [datetime(2024, 1, 15)],
             }
         )
-        store.write("some_feature", PolarsResult(feature_df))
+        store.write("some_feature", PolarsResult(feature_df), feature_version="1.0.0")
 
         # Transaction on Jan 10 - before feature exists
         entity_df = pl.DataFrame(
@@ -108,7 +110,9 @@ def test_standard_join_without_timestamp():
                 "user_total_spend": [500.0, 300.0],
             }
         )
-        store.write("user_total_spend", PolarsResult(feature_df))
+        store.write(
+            "user_total_spend", PolarsResult(feature_df), feature_version="1.0.0"
+        )
 
         entity_df = pl.DataFrame(
             {
