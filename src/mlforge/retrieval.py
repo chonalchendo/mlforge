@@ -4,6 +4,7 @@ from pathlib import Path
 import polars as pl
 
 import mlforge.store as store_
+import mlforge.types as types_
 import mlforge.utils as utils
 
 # Type alias for feature specification: "feature_name" or ("feature_name", "1.0.0")
@@ -131,6 +132,8 @@ def _get_feature_timestamp(df: pl.DataFrame) -> str | None:
     Uses convention-based detection: looks for 'feature_timestamp' column
     first, then falls back to any single datetime/date column.
 
+    Uses canonical types for consistent detection across engines.
+
     Args:
         df: Feature DataFrame to inspect
 
@@ -141,10 +144,13 @@ def _get_feature_timestamp(df: pl.DataFrame) -> str | None:
     if "feature_timestamp" in df.columns:
         return "feature_timestamp"
 
+    # Use canonical types for consistent temporal detection
     datetime_cols = [
         col
         for col, dtype in zip(df.columns, df.dtypes)
-        if dtype in [pl.Datetime, pl.Date]
+        if types_.from_polars(dtype).is_temporal()
+        and types_.from_polars(dtype).kind
+        in (types_.TypeKind.DATETIME, types_.TypeKind.DATE)
     ]
 
     # If exactly one datetime column (besides potential keys), use it
@@ -167,6 +173,9 @@ def _asof_join(
     Joins feature data to entity data using backward-looking temporal joins,
     ensuring features are computed only from data available at event time.
 
+    Uses canonical types for comparison to ensure consistent behavior
+    across different engines (Polars, DuckDB).
+
     Args:
         left: Entity DataFrame (e.g., transactions, predictions)
         right: Feature DataFrame with temporal features
@@ -178,16 +187,20 @@ def _asof_join(
         Entity DataFrame with features joined point-in-time correctly
 
     Raises:
-        ValueError: If timestamp columns have mismatched data types
+        ValueError: If timestamp columns have incompatible canonical types
     """
-
     left_dtype = left.schema[left_timestamp]
     right_dtype = right.schema[right_timestamp]
 
-    if left_dtype != right_dtype:
+    # Use canonical types for comparison to handle cross-engine type differences
+    left_canonical = types_.from_polars(left_dtype)
+    right_canonical = types_.from_polars(right_dtype)
+
+    # Compare canonical types (ignoring timezone differences for now)
+    if left_canonical.kind != right_canonical.kind:
         raise ValueError(
-            f"Timestamp dtype mismatch: entity_df['{left_timestamp}'] is {left_dtype}, "
-            f"but feature has {right_dtype}. "
+            f"Timestamp dtype mismatch: entity_df['{left_timestamp}'] is {left_canonical.to_canonical_string()}, "
+            f"but feature has {right_canonical.to_canonical_string()}. "
             f"Convert entity_df timestamp to datetime before calling get_training_data()."
         )
 

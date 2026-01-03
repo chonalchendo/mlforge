@@ -17,6 +17,8 @@ from typing import TYPE_CHECKING, Any
 
 from loguru import logger
 
+import mlforge.types as types_
+
 if TYPE_CHECKING:
     from mlforge.core import Feature
 
@@ -333,6 +335,7 @@ def _derive_with_base_schema(
     feature: Feature,
     schema: dict[str, str],
     base_schema: dict[str, str],
+    schema_source: str = "polars",
 ) -> tuple[list[ColumnMetadata], list[ColumnMetadata]]:
     """
     Derive column metadata when base schema is available (recommended path).
@@ -342,8 +345,11 @@ def _derive_with_base_schema(
 
     Args:
         feature: The Feature definition object
-        schema: Final schema after metrics are applied
-        base_schema: Schema before metrics were applied
+        schema: Final schema after metrics are applied (engine-specific types)
+        base_schema: Schema before metrics were applied (always Polars types,
+            since user feature functions return Polars DataFrames)
+        schema_source: Engine source for type normalization of final schema
+            ("polars" or "duckdb")
 
     Returns:
         Tuple of (base_columns, feature_columns)
@@ -351,7 +357,15 @@ def _derive_with_base_schema(
     base_columns: list[ColumnMetadata] = []
     feature_columns: list[ColumnMetadata] = []
 
-    # Add all base columns from base_schema
+    # base_schema is always from Polars (user functions return Polars DataFrames)
+    # Final schema uses the engine-specific converter
+    final_schema_converter = (
+        types_.from_polars_string
+        if schema_source == "polars"
+        else types_.from_duckdb
+    )
+
+    # Add all base columns from base_schema (always Polars types)
     for col_name, dtype in base_schema.items():
         # Check if this column has validators and parse them
         validator_specs = None
@@ -361,9 +375,14 @@ def _derive_with_base_schema(
                 for v in feature.validators[col_name]
             ]
 
+        # Convert to canonical type string (base_schema is always Polars)
+        canonical_dtype = types_.from_polars_string(dtype).to_canonical_string()
+
         base_columns.append(
             ColumnMetadata(
-                name=col_name, dtype=dtype, validators=validator_specs
+                name=col_name,
+                dtype=canonical_dtype,
+                validators=validator_specs,
             )
         )
 
@@ -372,6 +391,9 @@ def _derive_with_base_schema(
         # Skip if this is a base column
         if col_name in base_schema:
             continue
+
+        # Convert to canonical type string (use engine-specific converter)
+        canonical_dtype = final_schema_converter(dtype).to_canonical_string()
 
         # Try to parse as Rolling column: {tag}__{column}__{agg}__{interval}__{window}
         match = _ROLLING_COLUMN_PATTERN.match(col_name)
@@ -383,7 +405,7 @@ def _derive_with_base_schema(
             feature_columns.append(
                 ColumnMetadata(
                     name=col_name,
-                    dtype=dtype,
+                    dtype=canonical_dtype,
                     input=input_col,
                     agg=match.group(2),
                     window=match.group(4),
@@ -396,6 +418,7 @@ def _derive_with_base_schema(
 def _derive_legacy(
     feature: Feature,
     schema: dict[str, str],
+    schema_source: str = "polars",
 ) -> tuple[list[ColumnMetadata], list[ColumnMetadata]]:
     """
     Derive column metadata without base schema (legacy path for backward compatibility).
@@ -406,12 +429,20 @@ def _derive_legacy(
     Args:
         feature: The Feature definition object
         schema: Final schema (only available schema)
+        schema_source: Engine source for type normalization ("polars" or "duckdb")
 
     Returns:
         Tuple of (base_columns, feature_columns)
     """
     base_columns: list[ColumnMetadata] = []
     feature_columns: list[ColumnMetadata] = []
+
+    # Normalize types based on engine source
+    converter = (
+        types_.from_polars_string
+        if schema_source == "polars"
+        else types_.from_duckdb
+    )
 
     # Process all columns from schema and categorize them
     for col_name, dtype in schema.items():
@@ -423,6 +454,9 @@ def _derive_legacy(
                 for v in feature.validators[col_name]
             ]
 
+        # Convert to canonical type string
+        canonical_dtype = converter(dtype).to_canonical_string()
+
         # Try to parse as Rolling column: {tag}__{column}__{agg}__{interval}__{window}
         match = _ROLLING_COLUMN_PATTERN.match(col_name)
         if match:
@@ -433,7 +467,7 @@ def _derive_legacy(
             feature_columns.append(
                 ColumnMetadata(
                     name=col_name,
-                    dtype=dtype,
+                    dtype=canonical_dtype,
                     input=input_col,
                     agg=match.group(2),
                     window=match.group(4),
@@ -444,7 +478,9 @@ def _derive_legacy(
             # Not a rolling column, so it's a base column
             base_columns.append(
                 ColumnMetadata(
-                    name=col_name, dtype=dtype, validators=validator_specs
+                    name=col_name,
+                    dtype=canonical_dtype,
+                    validators=validator_specs,
                 )
             )
 
@@ -455,6 +491,7 @@ def derive_column_metadata(
     feature: Feature,
     schema: dict[str, str],
     base_schema: dict[str, str] | None = None,
+    schema_source: str = "polars",
 ) -> tuple[list[ColumnMetadata], list[ColumnMetadata]]:
     """
     Derive column metadata from feature definition and result schema.
@@ -468,6 +505,7 @@ def derive_column_metadata(
         schema: Dictionary mapping column names to dtype strings (final schema after metrics)
         base_schema: Dictionary mapping column names to dtype strings (before metrics).
             When provided, enables accurate column separation. Defaults to None.
+        schema_source: Engine source for type normalization ("polars" or "duckdb")
 
     Returns:
         Tuple of (base_columns, feature_columns) where:
@@ -475,8 +513,10 @@ def derive_column_metadata(
             - feature_columns: Rolling metric columns with aggregation metadata
     """
     if base_schema:
-        return _derive_with_base_schema(feature, schema, base_schema)
-    return _derive_legacy(feature, schema)
+        return _derive_with_base_schema(
+            feature, schema, base_schema, schema_source
+        )
+    return _derive_legacy(feature, schema, schema_source)
 
 
 def _get_rolling_output_columns(feature: Feature) -> set[str]:

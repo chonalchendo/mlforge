@@ -16,6 +16,7 @@ import mlforge.logging as log
 import mlforge.manifest as manifest
 import mlforge.metrics as metrics_
 import mlforge.store as store
+import mlforge.types as types_
 import mlforge.validation as validation_
 import mlforge.validators as validators_
 import mlforge.version as version
@@ -385,10 +386,13 @@ class Definitions:
 
             # Compute hashes for metadata
             # Use base_schema (before metrics) for consistent hash computation
-            base_schema_dict = result.base_schema() or result.schema()
+            # Use canonical types for consistent hashing across engines
+            base_schema_canonical = (
+                result.base_schema_canonical() or result.schema_canonical()
+            )
             schema_columns = [
-                manifest.ColumnMetadata(name=k, dtype=v)
-                for k, v in base_schema_dict.items()
+                manifest.ColumnMetadata(name=k, dtype=v.to_canonical_string())
+                for k, v in base_schema_canonical.items()
             ]
             schema_hash = version.compute_schema_hash(schema_columns)
             config_hash = version.compute_config_hash(
@@ -409,6 +413,7 @@ class Definitions:
                 write_metadata=write_metadata,
                 schema=result.schema(),
                 base_schema=result.base_schema(),
+                schema_source=result._schema_source(),
                 target_version=target_version,
                 created_at=previous_meta.created_at if previous_meta else now,
                 updated_at=now,
@@ -477,9 +482,14 @@ class Definitions:
         current_columns = list(preview_df.columns)
         previous_columns = [c.name for c in previous_meta.columns]
 
-        # Compute current hashes
+        # Compute current hashes using canonical types for cross-engine consistency
         current_schema_columns = [
-            manifest.ColumnMetadata(name=c, dtype=str(preview_df.schema[c]))
+            manifest.ColumnMetadata(
+                name=c,
+                dtype=types_.from_polars(
+                    preview_df.schema[c]
+                ).to_canonical_string(),
+            )
             for c in current_columns
         ]
         current_schema_hash = version.compute_schema_hash(
@@ -932,6 +942,7 @@ class Definitions:
         write_metadata: dict[str, Any],
         schema: dict[str, str],
         base_schema: dict[str, str] | None = None,
+        schema_source: str = "polars",
         target_version: str = "1.0.0",
         created_at: str = "",
         updated_at: str = "",
@@ -949,6 +960,7 @@ class Definitions:
             write_metadata: Metadata returned from store.write()
             schema: Column name to dtype mapping from result (final schema after metrics)
             base_schema: Column name to dtype mapping before metrics were applied
+            schema_source: Engine source for type normalization ("polars" or "duckdb")
             target_version: Semantic version string
             created_at: ISO 8601 timestamp when version was created
             updated_at: ISO 8601 timestamp of this build
@@ -962,7 +974,7 @@ class Definitions:
             FeatureMetadata object ready for persistence
         """
         base_columns, feature_columns = manifest.derive_column_metadata(
-            feature, schema, base_schema
+            feature, schema, base_schema, schema_source
         )
 
         now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
