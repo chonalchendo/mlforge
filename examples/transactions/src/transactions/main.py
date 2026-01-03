@@ -2,7 +2,11 @@ import polars as pl
 import rich
 
 from mlforge import get_training_data
-from transactions.features import with_account_id, with_merchant_id, with_user_id
+from transactions.features import (
+    with_account_id,
+    with_merchant_id,
+    with_user_id,
+)
 
 
 def main() -> None:
@@ -15,7 +19,7 @@ def main() -> None:
     training_df = get_training_data(
         features=[
             "account_spend_7d_interval",
-            "merchant_spend_1d_interval",
+            ("merchant_spend_1d_interval", "1.0.4"),
             "user_spend_30d_interval",
         ],
         entity_df=entity_df,
