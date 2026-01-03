@@ -1,10 +1,18 @@
-from abc import ABC, abstractmethod
+"""
+Polars-based execution engine.
+
+This module provides the PolarsEngine implementation for in-memory
+feature computation using Polars DataFrames.
+"""
+
+import warnings
 from pathlib import Path
 from typing import TYPE_CHECKING, override
 
 import polars as pl
 
 import mlforge.compilers as compilers
+import mlforge.engines.base as base
 import mlforge.errors as errors
 import mlforge.results as results_
 import mlforge.validation as validation
@@ -12,30 +20,12 @@ import mlforge.validation as validation
 if TYPE_CHECKING:
     import mlforge.core as core
 
-
-class Engine(ABC):
-    """
-    Abstract base class for feature computation engines.
-
-    Engines are responsible for loading source data, executing feature
-    transformations, and computing metrics.
-    """
-
-    @abstractmethod
-    def execute(self, feature: "core.Feature") -> results_.ResultKind:
-        """
-        Execute a feature computation.
-
-        Args:
-            feature: Feature definition to execute
-
-        Returns:
-            Engine-specific result wrapper containing computed data
-        """
-        ...
+# Threshold for warning about large dataset performance
+# When row_count * unique_entities exceeds this, warn about using DuckDB
+LARGE_DATASET_THRESHOLD = 10_000_000
 
 
-class PolarsEngine(Engine):
+class PolarsEngine(base.Engine):
     """
     Polars-based execution engine.
 
@@ -77,12 +67,15 @@ class PolarsEngine(Engine):
 
         # Capture base schema before metrics are applied
         base_schema = {
-            name: str(dtype) for name, dtype in processed_df.collect_schema().items()
+            name: str(dtype)
+            for name, dtype in processed_df.collect_schema().items()
         }
 
         missing_keys = [key for key in feature.keys if key not in columns]
         if missing_keys:
-            raise ValueError(f"Entity keys {missing_keys} not found in dataframe")
+            raise ValueError(
+                f"Entity keys {missing_keys} not found in dataframe"
+            )
 
         # run validators on processed dataframe (before metrics)
         if feature.validators:
@@ -100,6 +93,9 @@ class PolarsEngine(Engine):
             raise ValueError(
                 "Aggregation interval is not specified. Please set interval parameter in @feature decorator."
             )
+
+        # Warn if dataset is large - Polars is not optimized for rolling windows on large data
+        self._warn_if_large_dataset(feature.name, processed_df, feature.keys)
 
         # Use first tag if available, otherwise fall back to feature name
         tag = feature.tags[0] if feature.tags else feature.name
@@ -120,7 +116,9 @@ class PolarsEngine(Engine):
             results.append(result)
 
         if len(results) == 1:
-            return results_.PolarsResult(results.pop(0), base_schema=base_schema)
+            return results_.PolarsResult(
+                results.pop(0), base_schema=base_schema
+            )
 
         # join results
         result: pl.DataFrame | pl.LazyFrame = results.pop(0)
@@ -152,6 +150,50 @@ class PolarsEngine(Engine):
             case _:
                 raise ValueError(f"Unsupported source format: {path.suffix}")
 
+    def _warn_if_large_dataset(
+        self,
+        feature_name: str,
+        df: pl.DataFrame | pl.LazyFrame,
+        keys: list[str],
+    ) -> None:
+        """
+        Warn if dataset is large and rolling windows may be slow.
+
+        Polars is not optimized for rolling window aggregations on large datasets
+        because it cannot push filter predicates into joins. DuckDB's SQL optimizer
+        handles this much better.
+
+        Args:
+            feature_name: Name of the feature being processed
+            df: DataFrame to check
+            keys: Entity key columns
+        """
+        # Collect LazyFrame if needed to check size
+        if isinstance(df, pl.LazyFrame):
+            check_df = df.collect()
+        else:
+            check_df = df
+
+        row_count = check_df.height
+
+        # Estimate complexity: rows * unique entities (approximates join explosion)
+        # For a single key, use n_unique; for multiple keys, use the product
+        unique_entities = 1
+        for key in keys:
+            unique_entities *= check_df[key].n_unique()
+
+        estimated_complexity = row_count * unique_entities
+
+        if estimated_complexity > LARGE_DATASET_THRESHOLD:
+            warnings.warn(
+                f"Feature '{feature_name}' has {row_count:,} rows and {unique_entities:,} "
+                f"unique entities. Polars may be slow for rolling window aggregations "
+                f"on large datasets. Consider using engine='duckdb' for better performance. "
+                f"Set default_engine='duckdb' in Definitions or engine='duckdb' in @feature.",
+                UserWarning,
+                stacklevel=4,
+            )
+
     def _run_validators(
         self,
         feature_name: str,
@@ -175,7 +217,11 @@ class PolarsEngine(Engine):
 
         results = validation.validate_dataframe(df, validators)
         failures = [
-            (r.column, r.validator_name, r.result.message or "Validation failed")
+            (
+                r.column,
+                r.validator_name,
+                r.result.message or "Validation failed",
+            )
             for r in results
             if not r.result.passed
         ]
@@ -185,6 +231,3 @@ class PolarsEngine(Engine):
                 feature_name=feature_name,
                 failures=failures,
             )
-
-
-EngineKind = PolarsEngine

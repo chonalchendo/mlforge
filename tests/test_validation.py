@@ -114,7 +114,9 @@ class TestFeatureValidationResult:
                 validation.ColumnValidationResult(
                     column="col2",
                     validator_name="not_null",
-                    result=validators.ValidationResult(passed=False, message="failed"),
+                    result=validators.ValidationResult(
+                        passed=False, message="failed"
+                    ),
                 ),
             ],
         )

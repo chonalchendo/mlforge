@@ -15,7 +15,10 @@ class DefinitionsLoadError(Exception):
     """
 
     def __init__(
-        self, message: str, cause: Exception | None = None, hint: str | None = None
+        self,
+        message: str,
+        cause: Exception | None = None,
+        hint: str | None = None,
     ):
         """
         Initialize definitions load error.
@@ -41,7 +44,9 @@ class DefinitionsLoadError(Exception):
 
         if self.cause:
             # Get the actual traceback for the cause
-            parts.append(f"\nCaused by: {type(self.cause).__name__}: {self.cause}")
+            parts.append(
+                f"\nCaused by: {type(self.cause).__name__}: {self.cause}"
+            )
 
             # Include the relevant part of the traceback
             tb_lines = traceback.format_exception(
@@ -72,7 +77,9 @@ class FeatureMaterializationError(Exception):
         hint: Suggestion for how to fix the error
     """
 
-    def __init__(self, feature_name: str, message: str, hint: str | None = None):
+    def __init__(
+        self, feature_name: str, message: str, hint: str | None = None
+    ):
         """
         Initialize feature materialization error.
 
@@ -210,7 +217,9 @@ class VersionNotFoundError(VersionError):
         self.feature_name = feature_name
         self.version = version
         self.available = available
-        super().__init__(f"Version '{version}' not found for feature '{feature_name}'")
+        super().__init__(
+            f"Version '{version}' not found for feature '{feature_name}'"
+        )
 
     def __str__(self) -> str:
         """
@@ -264,7 +273,9 @@ class SourceDataChangedError(Exception):
         self.expected_hash = expected_hash
         self.current_hash = current_hash
         self.source_path = source_path
-        super().__init__(f"Source data has changed for feature '{feature_name}'")
+        super().__init__(
+            f"Source data has changed for feature '{feature_name}'"
+        )
 
     def __str__(self) -> str:
         """

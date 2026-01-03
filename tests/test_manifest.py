@@ -343,7 +343,9 @@ def test_derive_column_metadata_for_simple_columns():
     schema = {"user_id": "Utf8", "value": "Float64"}
 
     # When deriving column metadata
-    base_columns, feature_columns = derive_column_metadata(simple_feature, schema)
+    base_columns, feature_columns = derive_column_metadata(
+        simple_feature, schema
+    )
 
     # Then it should have basic dtype info in base columns
     assert len(base_columns) == 2
@@ -360,7 +362,9 @@ def test_derive_column_metadata_for_rolling_columns():
         timestamp="event_time",
         interval="1d",
         metrics=[
-            Rolling(windows=["7d", "30d"], aggregations={"amt": ["sum", "count"]})
+            Rolling(
+                windows=["7d", "30d"], aggregations={"amt": ["sum", "count"]}
+            )
         ],
     )
     def rolling_feature(df):
@@ -377,7 +381,9 @@ def test_derive_column_metadata_for_rolling_columns():
     }
 
     # When deriving column metadata
-    base_columns, feature_columns = derive_column_metadata(rolling_feature, schema)
+    base_columns, feature_columns = derive_column_metadata(
+        rolling_feature, schema
+    )
 
     # Then base columns should contain keys and timestamp
     assert len(base_columns) == 2
@@ -387,7 +393,11 @@ def test_derive_column_metadata_for_rolling_columns():
     # And feature columns should contain rolling metrics
     assert len(feature_columns) == 4
     sum_7d = next(
-        (c for c in feature_columns if c.name == "rolling_feature__amt__sum__1d__7d"),
+        (
+            c
+            for c in feature_columns
+            if c.name == "rolling_feature__amt__sum__1d__7d"
+        ),
         None,
     )
     assert sum_7d is not None
@@ -414,7 +424,9 @@ def test_derive_column_metadata_with_validators():
     schema = {"user_id": "Utf8", "amount": "Float64"}
 
     # When deriving column metadata
-    base_columns, feature_columns = derive_column_metadata(validated_feature, schema)
+    base_columns, feature_columns = derive_column_metadata(
+        validated_feature, schema
+    )
 
     # Then base columns should include validators as structured dicts
     assert len(base_columns) == 2
@@ -439,7 +451,11 @@ def test_derive_column_metadata_with_base_schema():
         return df
 
     # Base schema before metrics
-    base_schema = {"user_id": "Utf8", "amount": "Float64", "timestamp": "Datetime"}
+    base_schema = {
+        "user_id": "Utf8",
+        "amount": "Float64",
+        "timestamp": "Datetime",
+    }
 
     # Final schema after Rolling metrics added
     schema = {
@@ -557,12 +573,16 @@ def test_build_creates_metadata_file():
             source_path
         )
 
-        @feature(keys=["id"], source=str(source_path), description="Test feature")
+        @feature(
+            keys=["id"], source=str(source_path), description="Test feature"
+        )
         def test_feature(df):
             return df
 
         store = LocalStore(tmpdir)
-        defs = Definitions(name="test", features=[test_feature], offline_store=store)
+        defs = Definitions(
+            name="test", features=[test_feature], offline_store=store
+        )
 
         # When building
         defs.build(preview=False)
@@ -643,7 +663,9 @@ def test_local_store_list_metadata_returns_all():
         for i in range(3):
             # Write the data first (creates version directory and _latest.json)
             df = pl.DataFrame({"id": list(range(100 * (i + 1)))})
-            store.write(f"feature_{i}", PolarsResult(df), feature_version="1.0.0")
+            store.write(
+                f"feature_{i}", PolarsResult(df), feature_version="1.0.0"
+            )
 
             # Write metadata
             meta = FeatureMetadata(

@@ -149,7 +149,9 @@ def bump_version(current: str, change_type: ChangeType) -> str:
         "2.0.0"
     """
     if change_type == ChangeType.INITIAL:
-        raise ValueError("Cannot bump INITIAL change type. Use '1.0.0' directly.")
+        raise ValueError(
+            "Cannot bump INITIAL change type. Use '1.0.0' directly."
+        )
 
     major, minor, patch = parse_version(current)
 
@@ -199,7 +201,9 @@ def is_valid_version(version_str: str) -> bool:
 # =============================================================================
 
 
-def versioned_data_path(store_root: Path, feature_name: str, version: str) -> Path:
+def versioned_data_path(
+    store_root: Path, feature_name: str, version: str
+) -> Path:
     """
     Get path to versioned feature data file.
 
@@ -218,7 +222,9 @@ def versioned_data_path(store_root: Path, feature_name: str, version: str) -> Pa
     return store_root / feature_name / version / "data.parquet"
 
 
-def versioned_metadata_path(store_root: Path, feature_name: str, version: str) -> Path:
+def versioned_metadata_path(
+    store_root: Path, feature_name: str, version: str
+) -> Path:
     """
     Get path to versioned feature metadata file.
 
@@ -412,7 +418,9 @@ def detect_change_type(
     Example:
         >>> detect_change_type(None, ["a", "b"], None, "abc123", None, "def456")
         ChangeType.INITIAL
-        >>> detect_change_type(["a", "b", "c"], ["a", "b"], "abc", "def", "123", "123")
+        >>> detect_change_type(
+        ...     ["a", "b", "c"], ["a", "b"], "abc", "def", "123", "123"
+        ... )
         ChangeType.MAJOR  # Column removed
     """
     # First build - no previous version
@@ -567,7 +575,9 @@ def get_latest_version(store_root: Path, feature_name: str) -> str | None:
     return data.get("version")
 
 
-def write_latest_pointer(store_root: Path, feature_name: str, version: str) -> None:
+def write_latest_pointer(
+    store_root: Path, feature_name: str, version: str
+) -> None:
     """
     Write _latest.json pointer file.
 

@@ -95,7 +95,9 @@ def test_definitions_init_with_empty_features():
     # Given an empty features list
     with tempfile.TemporaryDirectory() as tmpdir:
         # When creating Definitions
-        defs = Definitions(name="test", features=[], offline_store=LocalStore(tmpdir))
+        defs = Definitions(
+            name="test", features=[], offline_store=LocalStore(tmpdir)
+        )
 
         # Then it should have no features
         assert len(defs.features) == 0
@@ -110,7 +112,9 @@ def test_definitions_register_single_feature():
     # When creating Definitions with that feature
     with tempfile.TemporaryDirectory() as tmpdir:
         defs = Definitions(
-            name="test", features=[test_feature], offline_store=LocalStore(tmpdir)
+            name="test",
+            features=[test_feature],
+            offline_store=LocalStore(tmpdir),
         )
 
         # Then the feature should be registered
@@ -158,7 +162,9 @@ def test_definitions_register_rejects_duplicate_names():
 
     # When/Then registering should raise ValueError
     with tempfile.TemporaryDirectory() as tmpdir:
-        with pytest.raises(ValueError, match="Duplicate feature name: duplicate"):
+        with pytest.raises(
+            ValueError, match="Duplicate feature name: duplicate"
+        ):
             Definitions(
                 name="test",
                 features=[duplicate, duplicate],
@@ -279,7 +285,9 @@ def test_materialize_executes_feature_function():
 
         # When materializing with source data
         defs = Definitions(
-            name="test", features=[add_constant], offline_store=LocalStore(tmpdir)
+            name="test",
+            features=[add_constant],
+            offline_store=LocalStore(tmpdir),
         )
         defs.build(preview=False)
 
@@ -301,7 +309,9 @@ def test_materialize_writes_to_store():
             return df
 
         store = LocalStore(tmpdir)
-        defs = Definitions(name="test", features=[simple_feature], offline_store=store)
+        defs = Definitions(
+            name="test", features=[simple_feature], offline_store=store
+        )
 
         # When materializing
         results = defs.build(preview=False)
@@ -360,7 +370,9 @@ def test_materialize_overwrites_with_force():
         defs = Definitions(
             name="test", features=[versioned_feature], offline_store=store
         )
-        defs.build(feature_names=["versioned_feature"], force=True, preview=False)
+        defs.build(
+            feature_names=["versioned_feature"], force=True, preview=False
+        )
 
         # Then it should overwrite with new version
         result = store.read("versioned_feature")
@@ -375,7 +387,9 @@ def test_materialize_raises_on_unknown_feature():
 
     with tempfile.TemporaryDirectory() as tmpdir:
         defs = Definitions(
-            name="test", features=[known_feature], offline_store=LocalStore(tmpdir)
+            name="test",
+            features=[known_feature],
+            offline_store=LocalStore(tmpdir),
         )
 
         # When/Then requesting unknown feature should raise
@@ -391,7 +405,9 @@ def test_materialize_raises_on_unknown_tag():
 
     with tempfile.TemporaryDirectory() as tmpdir:
         defs = Definitions(
-            name="test", features=[tagged_feature], offline_store=LocalStore(tmpdir)
+            name="test",
+            features=[tagged_feature],
+            offline_store=LocalStore(tmpdir),
         )
 
         # When/Then requesting unknown tag should raise
@@ -441,7 +457,9 @@ def test_materialize_raises_on_none_return():
             return None  # type: ignore[return-value]
 
         defs = Definitions(
-            name="test", features=[returns_none], offline_store=LocalStore(tmpdir)
+            name="test",
+            features=[returns_none],
+            offline_store=LocalStore(tmpdir),
         )
 
         # When/Then materializing should raise AttributeError (from engine trying to access schema)
@@ -460,7 +478,9 @@ def test_materialize_raises_on_wrong_return_type():
             return "not a dataframe"  # type: ignore[return-value]
 
         defs = Definitions(
-            name="test", features=[returns_string], offline_store=LocalStore(tmpdir)
+            name="test",
+            features=[returns_string],
+            offline_store=LocalStore(tmpdir),
         )
 
         # When/Then materializing should raise AttributeError (from engine trying to access schema)
@@ -504,7 +524,9 @@ def test_sync_returns_empty_when_all_features_have_data():
             return df
 
         store = LocalStore(tmpdir)
-        defs = Definitions(name="test", features=[synced_feature], offline_store=store)
+        defs = Definitions(
+            name="test", features=[synced_feature], offline_store=store
+        )
 
         # Build the feature first
         defs.build(preview=False)
@@ -536,7 +558,9 @@ def test_sync_identifies_missing_data():
         defs.build(preview=False)
 
         # Delete the data file (simulate git pulling metadata without data)
-        data_path = Path(tmpdir) / "missing_data_feature" / "1.0.0" / "data.parquet"
+        data_path = (
+            Path(tmpdir) / "missing_data_feature" / "1.0.0" / "data.parquet"
+        )
         data_path.unlink()
 
         # When syncing with dry_run
@@ -558,7 +582,9 @@ def test_sync_rebuilds_missing_data():
             return df
 
         store = LocalStore(tmpdir)
-        defs = Definitions(name="test", features=[rebuild_feature], offline_store=store)
+        defs = Definitions(
+            name="test", features=[rebuild_feature], offline_store=store
+        )
 
         # Build the feature first
         defs.build(preview=False)
@@ -595,7 +621,9 @@ def test_sync_detects_source_data_change():
         defs.build(preview=False)
 
         # Delete data file
-        data_path = Path(tmpdir) / "source_change_feature" / "1.0.0" / "data.parquet"
+        data_path = (
+            Path(tmpdir) / "source_change_feature" / "1.0.0" / "data.parquet"
+        )
         data_path.unlink()
 
         # Change the source data
@@ -628,7 +656,9 @@ def test_sync_force_rebuilds_despite_source_change():
         defs.build(preview=False)
 
         # Delete data file
-        data_path = Path(tmpdir) / "force_rebuild_feature" / "1.0.0" / "data.parquet"
+        data_path = (
+            Path(tmpdir) / "force_rebuild_feature" / "1.0.0" / "data.parquet"
+        )
         data_path.unlink()
 
         # Change the source data
