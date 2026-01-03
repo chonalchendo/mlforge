@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, override
 import polars as pl
 
 import mlforge.compilers as compilers
+import mlforge.engines as engines
 import mlforge.errors as errors
 import mlforge.results as results_
 import mlforge.validation as validation
@@ -21,27 +22,6 @@ if TYPE_CHECKING:
     import duckdb
 
     import mlforge.core as core
-
-
-def _import_duckdb_connect() -> "duckdb.DuckDBPyConnection":
-    """
-    Import DuckDB with helpful error message if not installed.
-
-    Returns:
-        The duckdb connect module
-
-    Raises:
-        ImportError: If duckdb is not installed
-    """
-    try:
-        import duckdb
-
-        return duckdb.connect()
-    except ImportError:
-        raise ImportError(
-            "DuckDB is required for the duckdb engine. "
-            "Install with: pip install mlforge[duckdb]"
-        ) from None
 
 
 class DuckDBEngine(Engine):
@@ -64,7 +44,9 @@ class DuckDBEngine(Engine):
     def __init__(self) -> None:
         """Initialize DuckDB engine with compiler and connection."""
         self._compiler = compilers.DuckDBCompiler()
-        self._conn: "duckdb.DuckDBPyConnection" = _import_duckdb_connect()
+        self._conn: "duckdb.DuckDBPyConnection" = (
+            engines.get_duckdb_connection()
+        )
 
     @override
     def execute(self, feature: "core.Feature") -> results_.ResultKind:
@@ -84,7 +66,7 @@ class DuckDBEngine(Engine):
         Raises:
             ValueError: If entity keys or timestamp columns are missing
         """
-        _import_duckdb_connect()  # Ensure DuckDB is available
+        engines.get_duckdb_connection()  # Ensure DuckDB is available
 
         # Load data from source using DuckDB
         source_relation = self._load_source(feature.source)

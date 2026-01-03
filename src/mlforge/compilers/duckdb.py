@@ -13,31 +13,11 @@ from typing import TYPE_CHECKING, Callable
 
 from loguru import logger
 
+import mlforge.engines as engines
 import mlforge.metrics as metrics
 
 if TYPE_CHECKING:
     import duckdb
-
-
-def _import_duckdb_connect() -> "duckdb.DuckDBPyConnection":
-    """
-    Import DuckDB with helpful error message if not installed.
-
-    Returns:
-        The duckdb connect method
-
-    Raises:
-        ImportError: If duckdb is not installed
-    """
-    try:
-        import duckdb
-
-        return duckdb.connect()
-    except ImportError:
-        raise ImportError(
-            "DuckDB is required for the duckdb engine. "
-            "Install with: pip install mlforge[duckdb]"
-        ) from None
 
 
 class DuckDBComputeContext:
@@ -147,7 +127,7 @@ class DuckDBCompiler:
             conn = ctx.connection
         else:
             # Fallback: create new connection and convert relation to Arrow
-            conn = _import_duckdb_connect()
+            conn = engines.get_duckdb_connection()
             # Convert relation to Arrow table and register
             arrow_table = ctx.relation.arrow()
             conn.register("__feature_data__", arrow_table)

@@ -16,6 +16,8 @@ Usage:
     result = engine.execute(feature)
 """
 
+import duckdb as duckdb_
+
 from mlforge.engines.base import Engine
 from mlforge.engines.duckdb import DuckDBEngine
 from mlforge.engines.polars import PolarsEngine
@@ -23,9 +25,24 @@ from mlforge.engines.polars import PolarsEngine
 # Type alias for all supported engines
 EngineKind = PolarsEngine | DuckDBEngine
 
+
+def get_duckdb_connection() -> duckdb_.DuckDBPyConnection:
+    """
+    Create a DuckDB connection with helpful error message if not installed.
+
+    Returns:
+        A new DuckDB connection instance
+
+    Raises:
+        ImportError: If duckdb is not installed
+    """
+    return duckdb_.connect()
+
+
 __all__ = [
     "DuckDBEngine",
     "Engine",
     "EngineKind",
     "PolarsEngine",
+    "get_duckdb_connection",
 ]
