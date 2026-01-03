@@ -2,7 +2,8 @@
 Parity tests comparing Polars and DuckDB engine results.
 
 These tests verify that both engines produce equivalent results for
-the same feature definitions.
+the same feature definitions, including consistent schema hashing
+via the unified type system.
 """
 
 from datetime import datetime
@@ -12,6 +13,7 @@ import polars as pl
 import pytest
 
 from mlforge import Definitions, LocalStore, Rolling, feature
+import mlforge.types as types_
 
 
 # =============================================================================
@@ -401,3 +403,165 @@ class TestEngineParity:
 
         assert polars_df[polars_sum_col].dtype.is_numeric()
         assert duckdb_df[duckdb_sum_col].dtype.is_numeric()
+
+    def test_canonical_type_consistency(
+        self, sample_transactions_parquet: Path, tmp_path: Path
+    ):
+        """
+        Schema metadata should use canonical types for cross-engine consistency.
+
+        This verifies that the unified type system produces consistent
+        type representations regardless of which engine was used to build
+        the feature, ensuring:
+        - Schema hashes are the same for logically equivalent features
+        - Metadata stores canonical types, not engine-specific types
+        """
+
+        @feature(
+            keys=["user_id"],
+            source=str(sample_transactions_parquet),
+            engine="polars",
+        )
+        def polars_types(df: pl.DataFrame) -> pl.DataFrame:
+            return df.select("user_id", "amount")
+
+        @feature(
+            keys=["user_id"],
+            source=str(sample_transactions_parquet),
+            engine="duckdb",
+        )
+        def duckdb_types(df: pl.DataFrame) -> pl.DataFrame:
+            return df.select("user_id", "amount")
+
+        store = LocalStore(str(tmp_path / "store"))
+        defs = Definitions(
+            name="test",
+            features=[polars_types, duckdb_types],
+            offline_store=store,
+        )
+
+        defs.build(preview=False)
+
+        # Read metadata for both features
+        polars_meta = store.read_metadata("polars_types")
+        duckdb_meta = store.read_metadata("duckdb_types")
+
+        assert polars_meta is not None
+        assert duckdb_meta is not None
+
+        # Both should have the same schema hash (canonical types)
+        assert polars_meta.schema_hash == duckdb_meta.schema_hash, (
+            f"Schema hashes should match: "
+            f"Polars={polars_meta.schema_hash}, DuckDB={duckdb_meta.schema_hash}"
+        )
+
+        # Verify column dtypes are stored as canonical strings
+        polars_columns = {c.name: c.dtype for c in polars_meta.columns}
+        duckdb_columns = {c.name: c.dtype for c in duckdb_meta.columns}
+
+        # Both should have canonical type strings, not engine-specific
+        assert polars_columns["user_id"] == "string"  # Not "Utf8" or "VARCHAR"
+        assert duckdb_columns["user_id"] == "string"
+        assert (
+            polars_columns["amount"] == "float64"
+        )  # Not "Float64" or "DOUBLE"
+        assert duckdb_columns["amount"] == "float64"
+
+
+class TestUnifiedTypeSystemIntegration:
+    """Tests for unified type system integration with engines."""
+
+    def test_result_schema_canonical_polars(
+        self, sample_transactions_parquet: Path, tmp_path: Path
+    ):
+        """PolarsResult.schema_canonical() returns canonical types."""
+        import mlforge.engines.polars as polars_engine
+
+        @feature(
+            keys=["user_id"],
+            source=str(sample_transactions_parquet),
+        )
+        def test_feature(df: pl.DataFrame) -> pl.DataFrame:
+            return df.select("user_id", "amount")
+
+        engine = polars_engine.PolarsEngine()
+        result = engine.execute(test_feature)
+
+        # Get canonical schema
+        canonical = result.schema_canonical()
+
+        # Verify types are canonical DataType objects
+        assert isinstance(canonical["user_id"], types_.DataType)
+        assert isinstance(canonical["amount"], types_.DataType)
+
+        # Verify correct kinds
+        assert canonical["user_id"].kind == types_.TypeKind.STRING
+        assert canonical["amount"].kind == types_.TypeKind.FLOAT64
+
+    def test_result_schema_canonical_duckdb(
+        self, sample_transactions_parquet: Path, tmp_path: Path
+    ):
+        """DuckDBResult.schema_canonical() returns canonical types."""
+        import mlforge.engines.duckdb as duckdb_engine
+
+        @feature(
+            keys=["user_id"],
+            source=str(sample_transactions_parquet),
+            engine="duckdb",
+        )
+        def test_feature(df: pl.DataFrame) -> pl.DataFrame:
+            return df.select("user_id", "amount")
+
+        engine = duckdb_engine.DuckDBEngine()
+        result = engine.execute(test_feature)
+
+        # Get canonical schema
+        canonical = result.schema_canonical()
+
+        # Verify types are canonical DataType objects
+        assert isinstance(canonical["user_id"], types_.DataType)
+        assert isinstance(canonical["amount"], types_.DataType)
+
+        # Verify correct kinds
+        assert canonical["user_id"].kind == types_.TypeKind.STRING
+        assert canonical["amount"].kind == types_.TypeKind.FLOAT64
+
+    def test_cross_engine_canonical_equivalence(
+        self, sample_transactions_parquet: Path, tmp_path: Path
+    ):
+        """Both engines produce equivalent canonical schemas."""
+        import mlforge.engines.polars as polars_engine
+        import mlforge.engines.duckdb as duckdb_engine
+
+        @feature(
+            keys=["user_id"],
+            source=str(sample_transactions_parquet),
+        )
+        def test_polars(df: pl.DataFrame) -> pl.DataFrame:
+            return df.select("user_id", "amount")
+
+        @feature(
+            keys=["user_id"],
+            source=str(sample_transactions_parquet),
+            engine="duckdb",
+        )
+        def test_duckdb(df: pl.DataFrame) -> pl.DataFrame:
+            return df.select("user_id", "amount")
+
+        polars_eng = polars_engine.PolarsEngine()
+        duckdb_eng = duckdb_engine.DuckDBEngine()
+
+        polars_result = polars_eng.execute(test_polars)
+        duckdb_result = duckdb_eng.execute(test_duckdb)
+
+        # Get canonical schemas
+        polars_canonical = polars_result.schema_canonical()
+        duckdb_canonical = duckdb_result.schema_canonical()
+
+        # Same columns with same canonical types
+        assert set(polars_canonical.keys()) == set(duckdb_canonical.keys())
+        for col in polars_canonical:
+            assert polars_canonical[col] == duckdb_canonical[col], (
+                f"Column '{col}' type mismatch: "
+                f"Polars={polars_canonical[col]}, DuckDB={duckdb_canonical[col]}"
+            )
