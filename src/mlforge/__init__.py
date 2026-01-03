@@ -38,6 +38,7 @@ from mlforge.core import Definitions, Feature, feature
 from mlforge.metrics import Rolling
 from mlforge.retrieval import get_training_data
 from mlforge.store import LocalStore, S3Store
+from mlforge.types import DataType, TypeKind
 from mlforge.utils import entity_key, surrogate_key
 from mlforge.validators import (
     greater_than,
@@ -62,6 +63,8 @@ __all__ = [
     "surrogate_key",
     "get_training_data",
     "Rolling",
+    "DataType",
+    "TypeKind",
     "greater_than",
     "greater_than_or_equal",
     "less_than",
