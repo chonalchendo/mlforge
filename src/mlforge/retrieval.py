@@ -64,7 +64,9 @@ def get_training_data(
             )
 
         required_columns = entity_fn._entity_key_columns
-        missing_columns = [c for c in required_columns if c not in result.columns]
+        missing_columns = [
+            c for c in required_columns if c not in result.columns
+        ]
 
         if missing_columns:
             raise ValueError(
@@ -83,10 +85,11 @@ def get_training_data(
             feature_version = None  # Use latest
 
         if not store.exists(feature_name, feature_version):
-            version_str = f" version '{feature_version}'" if feature_version else ""
+            version_str = (
+                f" version '{feature_version}'" if feature_version else ""
+            )
             raise ValueError(
-                f"Feature '{feature_name}'{version_str} not found. "
-                f"Run `mlforge build` first."
+                f"Feature '{feature_name}'{version_str} not found. Run `mlforge build` first."
             )
 
         feature_df = store.read(feature_name, feature_version)
@@ -191,7 +194,9 @@ def _asof_join(
     left_sorted = left.sort(left_timestamp)
     right_sorted = right.sort(right_timestamp)
 
-    right_renamed = right_sorted.rename({right_timestamp: f"__{right_timestamp}"})
+    right_renamed = right_sorted.rename(
+        {right_timestamp: f"__{right_timestamp}"}
+    )
 
     with warnings.catch_warnings():
         warnings.filterwarnings(

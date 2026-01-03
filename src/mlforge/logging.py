@@ -161,7 +161,9 @@ def print_info(message: str) -> None:
     console.print(f"[blue]i[/blue] {message}")
 
 
-def print_feature_metadata(feature_name: str, metadata: "FeatureMetadata") -> None:
+def print_feature_metadata(
+    feature_name: str, metadata: "FeatureMetadata"
+) -> None:
     """
     Display detailed feature metadata in a formatted layout.
 
@@ -209,13 +211,19 @@ def print_feature_metadata(feature_name: str, metadata: "FeatureMetadata") -> No
     if metadata.change_summary:
         info_lines.append("")
         info_lines.append("[bold]Change Summary:[/bold]")
-        info_lines.append(f"  Type: {metadata.change_summary.get('bump_type', '-')}")
-        info_lines.append(f"  Reason: {metadata.change_summary.get('reason', '-')}")
+        info_lines.append(
+            f"  Type: {metadata.change_summary.get('bump_type', '-')}"
+        )
+        info_lines.append(
+            f"  Reason: {metadata.change_summary.get('reason', '-')}"
+        )
         details = metadata.change_summary.get("details", [])
         if details:
             info_lines.append(f"  Details: {', '.join(details)}")
 
-    console.print(Panel("\n".join(info_lines), title=f"Feature: {feature_name}"))
+    console.print(
+        Panel("\n".join(info_lines), title=f"Feature: {feature_name}")
+    )
 
     # Display columns table if available
     if metadata.columns:

@@ -240,7 +240,9 @@ class LocalStore(Store):
         Returns:
             Path to the feature's parquet file
         """
-        resolved = version.resolve_version(self.path, feature_name, feature_version)
+        resolved = version.resolve_version(
+            self.path, feature_name, feature_version
+        )
 
         if resolved is None:
             # No versions exist yet - return path for hypothetical 1.0.0
@@ -266,7 +268,9 @@ class LocalStore(Store):
         Returns:
             Metadata dictionary with path, row count, and schema
         """
-        path = version.versioned_data_path(self.path, feature_name, feature_version)
+        path = version.versioned_data_path(
+            self.path, feature_name, feature_version
+        )
         path.parent.mkdir(parents=True, exist_ok=True)
 
         result.write_parquet(path)
@@ -302,7 +306,9 @@ class LocalStore(Store):
         Raises:
             FileNotFoundError: If the feature/version doesn't exist
         """
-        resolved = version.resolve_version(self.path, feature_name, feature_version)
+        resolved = version.resolve_version(
+            self.path, feature_name, feature_version
+        )
 
         if resolved is None:
             raise FileNotFoundError(
@@ -338,7 +344,9 @@ class LocalStore(Store):
             # Check if any version exists
             return len(self.list_versions(feature_name)) > 0
 
-        path = version.versioned_data_path(self.path, feature_name, feature_version)
+        path = version.versioned_data_path(
+            self.path, feature_name, feature_version
+        )
         return path.exists()
 
     @override
@@ -383,13 +391,19 @@ class LocalStore(Store):
         Returns:
             Path to the feature's .meta.json file
         """
-        resolved = version.resolve_version(self.path, feature_name, feature_version)
+        resolved = version.resolve_version(
+            self.path, feature_name, feature_version
+        )
 
         if resolved is None:
             # No versions exist yet
-            return version.versioned_metadata_path(self.path, feature_name, "1.0.0")
+            return version.versioned_metadata_path(
+                self.path, feature_name, "1.0.0"
+            )
 
-        return version.versioned_metadata_path(self.path, feature_name, resolved)
+        return version.versioned_metadata_path(
+            self.path, feature_name, resolved
+        )
 
     @override
     def write_metadata(
@@ -428,12 +442,16 @@ class LocalStore(Store):
         Returns:
             FeatureMetadata if exists and valid, None otherwise
         """
-        resolved = version.resolve_version(self.path, feature_name, feature_version)
+        resolved = version.resolve_version(
+            self.path, feature_name, feature_version
+        )
 
         if resolved is None:
             return None
 
-        path = version.versioned_metadata_path(self.path, feature_name, resolved)
+        path = version.versioned_metadata_path(
+            self.path, feature_name, resolved
+        )
         return manifest.read_metadata_file(path)
 
     @override
@@ -521,13 +539,21 @@ class S3Store(Store):
             return f"s3://{self.bucket}/{self.prefix}"
         return f"s3://{self.bucket}"
 
-    def _versioned_data_path(self, feature_name: str, feature_version: str) -> str:
+    def _versioned_data_path(
+        self, feature_name: str, feature_version: str
+    ) -> str:
         """Get S3 path for versioned feature data."""
-        return f"{self._base_path()}/{feature_name}/{feature_version}/data.parquet"
+        return (
+            f"{self._base_path()}/{feature_name}/{feature_version}/data.parquet"
+        )
 
-    def _versioned_metadata_path(self, feature_name: str, feature_version: str) -> str:
+    def _versioned_metadata_path(
+        self, feature_name: str, feature_version: str
+    ) -> str:
         """Get S3 path for versioned feature metadata."""
-        return f"{self._base_path()}/{feature_name}/{feature_version}/.meta.json"
+        return (
+            f"{self._base_path()}/{feature_name}/{feature_version}/.meta.json"
+        )
 
     def _latest_pointer_path(self, feature_name: str) -> str:
         """Get S3 path for _latest.json pointer."""
@@ -537,7 +563,9 @@ class S3Store(Store):
         """Get S3 path for feature directory."""
         return f"{self._base_path()}/{feature_name}"
 
-    def _write_latest_pointer(self, feature_name: str, feature_version: str) -> None:
+    def _write_latest_pointer(
+        self, feature_name: str, feature_version: str
+    ) -> None:
         """Write _latest.json pointer to S3."""
         path = self._latest_pointer_path(feature_name)
         with self._s3.open(path, "w") as f:

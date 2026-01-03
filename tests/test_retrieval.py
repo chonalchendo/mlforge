@@ -28,7 +28,9 @@ def test_asof_join_point_in_time():
             }
         )
         store.write(
-            "user_spend_mean_30d", PolarsResult(feature_df), feature_version="1.0.0"
+            "user_spend_mean_30d",
+            PolarsResult(feature_df),
+            feature_version="1.0.0",
         )
 
         # Entity data: transactions at various times
@@ -38,9 +40,13 @@ def test_asof_join_point_in_time():
                 "transaction_id": ["t1", "t2", "t3", "t4"],
                 "event_time": [
                     datetime(2024, 1, 5),  # should get 100 (Jan 1 value)
-                    datetime(2024, 1, 15),  # should get 200 (Jan 15 value, exact match)
+                    datetime(
+                        2024, 1, 15
+                    ),  # should get 200 (Jan 15 value, exact match)
                     datetime(2024, 1, 20),  # should get 200 (Jan 15 value)
-                    datetime(2024, 1, 5),  # should get null (no data before Jan 10)
+                    datetime(
+                        2024, 1, 5
+                    ),  # should get null (no data before Jan 10)
                 ],
             }
         )
@@ -77,7 +83,9 @@ def test_asof_join_no_future_leakage():
                 "feature_timestamp": [datetime(2024, 1, 15)],
             }
         )
-        store.write("some_feature", PolarsResult(feature_df), feature_version="1.0.0")
+        store.write(
+            "some_feature", PolarsResult(feature_df), feature_version="1.0.0"
+        )
 
         # Transaction on Jan 10 - before feature exists
         entity_df = pl.DataFrame(
@@ -111,7 +119,9 @@ def test_standard_join_without_timestamp():
             }
         )
         store.write(
-            "user_total_spend", PolarsResult(feature_df), feature_version="1.0.0"
+            "user_total_spend",
+            PolarsResult(feature_df),
+            feature_version="1.0.0",
         )
 
         entity_df = pl.DataFrame(

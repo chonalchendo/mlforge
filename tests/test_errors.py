@@ -181,7 +181,9 @@ def test_definitions_load_error_can_be_raised_and_caught():
 def test_feature_materialization_error_can_be_raised_and_caught():
     # Given a function that raises FeatureMaterializationError
     def failing_function():
-        raise FeatureMaterializationError(feature_name="test", message="Test error")
+        raise FeatureMaterializationError(
+            feature_name="test", message="Test error"
+        )
 
     # When/Then it should be catchable
     with pytest.raises(FeatureMaterializationError, match="Test error"):
@@ -219,7 +221,9 @@ def test_feature_validation_error_stores_attributes():
     from mlforge.errors import FeatureValidationError
 
     failures = [("col", "validator", "message")]
-    error = FeatureValidationError(feature_name="test_feature", failures=failures)
+    error = FeatureValidationError(
+        feature_name="test_feature", failures=failures
+    )
 
     # When checking attributes
     # Then they should be stored

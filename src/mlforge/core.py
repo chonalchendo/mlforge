@@ -6,6 +6,7 @@ from pathlib import Path
 from types import ModuleType
 from typing import Any, Callable, Literal, Protocol
 
+import duckdb
 import polars as pl
 from loguru import logger
 
@@ -47,12 +48,17 @@ class Feature:
         description: Human-readable feature description
         interval: Time interval for rolling aggregations (e.g., "1h", "1d")
         metrics: Aggregation metrics to compute over rolling windows
+        engine: Compute engine to use for this feature ("polars" or "duckdb")
         fn: The transformation function that computes the feature
 
     Example:
         @feature(keys=["user_id"], source="data/users.parquet")
         def user_age(df):
             return df.with_columns(...)
+
+        @feature(keys=["user_id"], source="data/transactions.parquet", engine="duckdb")
+        def user_spend(df):
+            return df.select("user_id", "amount")
     """
 
     fn: FeatureFunction
@@ -65,6 +71,7 @@ class Feature:
     interval: str | None
     metrics: list[metrics_.MetricKind] | None
     validators: dict[str, list[validators_.Validator]] | None
+    engine: str | None
 
     def __call__(self, *args, **kwargs) -> pl.DataFrame:
         """
@@ -87,6 +94,7 @@ def feature(
     interval: str | timedelta | None = None,
     metrics: list[metrics_.MetricKind] | None = None,
     validators: dict[str, list[validators_.Validator]] | None = None,
+    engine: Literal["polars", "duckdb"] | None = None,
 ) -> Callable[[FeatureFunction], Feature]:
     """
     Decorator that marks a function as a feature definition.
@@ -104,6 +112,8 @@ def feature(
         metrics: Aggregation metrics like Rolling for time-based features. Defaults to None.
         validators: Column validators to run before metrics are computed. Defaults to None.
             Mapping of column names to lists of validator functions.
+        engine: Compute engine to use for this feature. Defaults to None (uses Definitions default).
+            Options: "polars" (default), "duckdb" (for large datasets).
 
     Returns:
         Decorator function that converts a function into a Feature
@@ -125,6 +135,15 @@ def feature(
             return df.group_by("user_id").agg(
                 pl.col("amount").mean().alias("avg_spend")
             )
+
+        # Use DuckDB for large dataset processing
+        @feature(
+            keys=["user_id"],
+            source="data/large_transactions.parquet",
+            engine="duckdb",
+        )
+        def user_large_spend(df):
+            return df.select("user_id", "amount")
     """
     # Convert timedelta to string if provided
     interval_str = (
@@ -145,6 +164,7 @@ def feature(
             interval=interval_str,
             metrics=metrics,
             validators=validators,
+            engine=engine,
         )
 
     return decorator
@@ -162,6 +182,7 @@ class Definitions:
         name: Project identifier
         offline_store: Storage backend instance for persisting features
         features: Dictionary mapping feature names to Feature objects
+        default_engine: Default compute engine for features without explicit engine. Defaults to duckdb.
 
     Example:
         from mlforge import Definitions, LocalStore
@@ -172,6 +193,14 @@ class Definitions:
             features=[my_features],
             offline_store=LocalStore("./feature_store")
         )
+
+        # With Polars engine (for small datasets)
+        defs = Definitions(
+            name="my-project",
+            features=[my_features],
+            offline_store=LocalStore("./feature_store"),
+            default_engine="polars"
+        )
     """
 
     def __init__(
@@ -179,7 +208,7 @@ class Definitions:
         name: str,
         features: list[Feature | ModuleType],
         offline_store: store.OfflineStoreKind,
-        engine: Literal["polars"] = "polars",
+        default_engine: Literal["polars", "duckdb"] = "duckdb",
     ) -> None:
         """
         Initialize a feature store registry.
@@ -188,7 +217,11 @@ class Definitions:
             name: Project name
             features: List of Feature objects or modules containing features
             offline_store: Storage backend for materialized features
-            engine: Execution engine for feature computation. Defaults to "polars".
+            default_engine: Default execution engine for features without explicit engine.
+                Defaults to "duckdb" which is optimized for large datasets with rolling
+                windows. Use "polars" for small datasets or when you prefer staying in
+                the Polars ecosystem. Individual features can override this via the
+                engine parameter in the @feature decorator.
 
         Example:
             defs = Definitions(
@@ -196,21 +229,32 @@ class Definitions:
                 features=[user_features, transaction_features],
                 offline_store=LocalStore("./features")
             )
+
+            # Use Polars for small datasets
+            defs = Definitions(
+                name="fraud-detection",
+                features=[user_features],
+                offline_store=LocalStore("./features"),
+                default_engine="polars"
+            )
         """
         self.name = name
         self.offline_store = offline_store
         self.features: dict[str, Feature] = {}
-        self._engine: engines.EngineKind = self._get_engine(engine)
+        self.default_engine = default_engine
+        self._engines: dict[str, engines.EngineKind] = {}
 
         for item in features or []:
             self._register(item)
 
     def _get_engine(self, engine: str) -> engines.EngineKind:
         """
-        Resolve engine name to engine instance.
+        Get or create an engine instance by name.
+
+        Engines are cached to avoid recreating them for each feature.
 
         Args:
-            engine: Engine identifier string
+            engine: Engine identifier string ("polars" or "duckdb")
 
         Returns:
             Initialized engine instance
@@ -218,13 +262,38 @@ class Definitions:
         Raises:
             ValueError: If engine name is not recognized
         """
+        if engine in self._engines:
+            return self._engines[engine]
+
         match engine:
             case "polars":
                 from mlforge.engines import PolarsEngine
 
-                return PolarsEngine()
+                self._engines[engine] = PolarsEngine()
+            case "duckdb":
+                from mlforge.engines import DuckDBEngine
+
+                self._engines[engine] = DuckDBEngine()
             case _:
                 raise ValueError(f"Unknown engine: {engine}")
+
+        return self._engines[engine]
+
+    def _get_engine_for_feature(self, feature: Feature) -> engines.EngineKind:
+        """
+        Get the appropriate engine for a feature.
+
+        Uses the feature's engine if specified, otherwise falls back to
+        the Definitions default engine.
+
+        Args:
+            feature: Feature to get engine for
+
+        Returns:
+            Engine instance for the feature
+        """
+        engine_name = feature.engine or self.default_engine
+        return self._get_engine(engine_name)
 
     def build(
         self,
@@ -264,7 +333,9 @@ class Definitions:
             # Explicit version
             paths = defs.build(feature_names=["user_spend"], feature_version="2.0.0")
         """
-        selected_features = self._resolve_features_to_build(feature_names, tag_names)
+        selected_features = self._resolve_features_to_build(
+            feature_names, tag_names
+        )
         results: dict[str, Path | str] = {}
         failed_features: list[str] = []
 
@@ -288,14 +359,17 @@ class Definitions:
                 )
 
             # Check if this version already exists (unless force)
-            if not force and self.offline_store.exists(feature.name, target_version):
+            if not force and self.offline_store.exists(
+                feature.name, target_version
+            ):
                 logger.debug(
                     f"Skipping {feature.name} v{target_version} (already exists)"
                 )
                 continue
 
             try:
-                result = self._engine.execute(feature)
+                engine = self._get_engine_for_feature(feature)
+                result = engine.execute(feature)
             except errors.FeatureValidationError as e:
                 logger.error(str(e))
                 failed_features.append(feature.name)
@@ -323,7 +397,9 @@ class Definitions:
                 interval=feature.interval,
                 metrics_config=self._serialize_metrics_config(feature.metrics),
             )
-            content_hash = version.compute_content_hash(Path(write_metadata["path"]))
+            content_hash = version.compute_content_hash(
+                Path(write_metadata["path"])
+            )
             source_hash = version.compute_source_hash(feature.source)
 
             # Build and write feature metadata
@@ -344,7 +420,9 @@ class Definitions:
             )
             self.offline_store.write_metadata(feature.name, feature_metadata)
 
-            result_path = self.offline_store.path_for(feature.name, target_version)
+            result_path = self.offline_store.path_for(
+                feature.name, target_version
+            )
 
             if preview:
                 log.print_feature_preview(
@@ -384,7 +462,13 @@ class Definitions:
             )
 
         # Load and process to get current schema (before metrics)
-        source_df = self._engine._load_source(feature.source)
+        engine = self._get_engine_for_feature(feature)
+        source_df = engine._load_source(feature.source)
+
+        if isinstance(source_df, duckdb.DuckDBPyRelation):
+            source_df_ = source_df.to_arrow_table()
+            source_df = pl.from_arrow(source_df_)
+
         preview_df = feature(source_df)
 
         if isinstance(preview_df, pl.LazyFrame):
@@ -398,7 +482,9 @@ class Definitions:
             manifest.ColumnMetadata(name=c, dtype=str(preview_df.schema[c]))
             for c in current_columns
         ]
-        current_schema_hash = version.compute_schema_hash(current_schema_columns)
+        current_schema_hash = version.compute_schema_hash(
+            current_schema_columns
+        )
         current_config_hash = version.compute_config_hash(
             keys=feature.keys,
             timestamp=feature.timestamp,
@@ -420,7 +506,9 @@ class Definitions:
         if change_type == version.ChangeType.INITIAL:
             target_version = "1.0.0"
         else:
-            target_version = version.bump_version(previous_meta.version, change_type)
+            target_version = version.bump_version(
+                previous_meta.version, change_type
+            )
 
         change_summary = version.build_change_summary(
             change_type, previous_columns, current_columns
@@ -480,7 +568,9 @@ class Definitions:
                 if not result.passed:
                     print(f"{result.feature_name} failed validation")
         """
-        selected_features = self._resolve_features_to_build(feature_names, tag_names)
+        selected_features = self._resolve_features_to_build(
+            feature_names, tag_names
+        )
         results: list[validation_.FeatureValidationResult] = []
 
         for feature in selected_features:
@@ -490,7 +580,8 @@ class Definitions:
 
             try:
                 # Load and process data (without metrics)
-                source_df = self._engine._load_source(feature.source)
+                engine = self._get_engine_for_feature(feature)
+                source_df = engine._load_source(feature.source)
                 processed_df = feature(source_df)
 
                 # Collect if LazyFrame
@@ -597,7 +688,9 @@ class Definitions:
             # Check source hash
             if metadata.source_hash:
                 try:
-                    current_source_hash = version.compute_source_hash(feature.source)
+                    current_source_hash = version.compute_source_hash(
+                        feature.source
+                    )
                     if current_source_hash != metadata.source_hash:
                         source_changed.append(feature.name)
                         if not force and not dry_run:
@@ -721,7 +814,9 @@ class Definitions:
         available_tags = set(self.list_tags())
         invalid_tags = [t for t in tag_names if t not in available_tags]
         if invalid_tags:
-            logger.debug(f"Invalid tags: {invalid_tags}. Available: {available_tags}")
+            logger.debug(
+                f"Invalid tags: {invalid_tags}. Available: {available_tags}"
+            )
             raise ValueError(
                 f"Unknown tags: {invalid_tags}. Available: {sorted(available_tags)}"
             )
@@ -794,7 +889,9 @@ class Definitions:
         elif isinstance(obj, ModuleType):
             self._register_module(obj)
         else:
-            raise TypeError(f"Expected Feature or module, got {type(obj).__name__}")
+            raise TypeError(
+                f"Expected Feature or module, got {type(obj).__name__}"
+            )
 
     def _add_feature(self, feature: Feature) -> None:
         """

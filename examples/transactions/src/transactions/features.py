@@ -1,7 +1,8 @@
 from datetime import timedelta
 
-import mlforge as mlf
 import polars as pl
+
+import mlforge as mlf
 
 SOURCE = "data/transactions.parquet"
 
@@ -33,6 +34,7 @@ spend_metrics = mlf.Rolling(
     interval=timedelta(days=1),
     metrics=[spend_metrics],
     validators={"amt": [mlf.greater_than_or_equal(value=0)]},
+    # engine="duckdb",
 )
 def merchant_spend_1d_interval(df: pl.DataFrame) -> pl.DataFrame:
     return df.pipe(with_merchant_id).select(

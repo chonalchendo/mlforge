@@ -32,7 +32,9 @@ defs = Definitions(
     return definitions_file
 
 
-def test_build_command_with_default_target(definitions_file, temp_dir, monkeypatch):
+def test_build_command_with_default_target(
+    definitions_file, temp_dir, monkeypatch
+):
     # Given a definitions file in the working directory
     monkeypatch.chdir(temp_dir)
     (temp_dir / "definitions.py").write_text(definitions_file.read_text())
@@ -240,7 +242,9 @@ defs = Definitions(
     assert "2" in call_args
 
 
-def test_list_command_with_default_target(definitions_file, temp_dir, monkeypatch):
+def test_list_command_with_default_target(
+    definitions_file, temp_dir, monkeypatch
+):
     # Given a definitions file in the working directory
     monkeypatch.chdir(temp_dir)
     (temp_dir / "definitions.py").write_text(definitions_file.read_text())
@@ -283,7 +287,10 @@ def test_list_command_displays_all_features(definitions_file):
 def test_launcher_sets_up_logging_with_verbose_flag():
     # Given verbose flag is enabled
     # When launching with verbose
-    with patch("mlforge.logging.setup_logging") as mock_setup, patch("mlforge.cli.app"):
+    with (
+        patch("mlforge.logging.setup_logging") as mock_setup,
+        patch("mlforge.cli.app"),
+    ):
         from mlforge.cli import launcher
 
         launcher(verbose=True)
@@ -295,7 +302,10 @@ def test_launcher_sets_up_logging_with_verbose_flag():
 def test_launcher_sets_up_logging_without_verbose_flag():
     # Given verbose flag is disabled
     # When launching without verbose
-    with patch("mlforge.logging.setup_logging") as mock_setup, patch("mlforge.cli.app"):
+    with (
+        patch("mlforge.logging.setup_logging") as mock_setup,
+        patch("mlforge.cli.app"),
+    ):
         from mlforge.cli import launcher
 
         launcher(verbose=False)
@@ -309,7 +319,10 @@ def test_launcher_dispatches_tokens_to_app():
     tokens = ("build", "--target", "definitions.py")
 
     # When launching with tokens
-    with patch("mlforge.logging.setup_logging"), patch("mlforge.cli.app") as mock_app:
+    with (
+        patch("mlforge.logging.setup_logging"),
+        patch("mlforge.cli.app") as mock_app,
+    ):
         from mlforge.cli import launcher
 
         launcher(*tokens, verbose=False)
@@ -364,7 +377,9 @@ defs = Definitions(
 def test_build_command_raises_on_tags_and_features_both_specified():
     # Given both tags and features specified
     # When/Then calling build should raise ValueError
-    with pytest.raises(ValueError, match="Tags and features cannot be specified"):
+    with pytest.raises(
+        ValueError, match="Tags and features cannot be specified"
+    ):
         build(
             target=None,
             features="feature1",

@@ -8,7 +8,6 @@ import pytest
 from mlforge import LocalStore, S3Store
 from mlforge.results import PolarsResult
 
-
 # =============================================================================
 # LocalStore Tests
 # =============================================================================
@@ -151,7 +150,9 @@ def test_local_store_exists_returns_true_for_existing():
 
     with tempfile.TemporaryDirectory() as tmpdir:
         store = LocalStore(tmpdir)
-        store.write("existing_feature", PolarsResult(df), feature_version="1.0.0")
+        store.write(
+            "existing_feature", PolarsResult(df), feature_version="1.0.0"
+        )
 
         # When checking existence (any version)
         exists = store.exists("existing_feature")
@@ -433,7 +434,9 @@ def test_s3_store_write_calls_polars_write_parquet(mocker, sample_dataframe):
     store = S3Store(bucket="test-bucket", prefix="features")
 
     # When writing a feature with version
-    store.write("test_feature", PolarsResult(sample_dataframe), feature_version="1.0.0")
+    store.write(
+        "test_feature", PolarsResult(sample_dataframe), feature_version="1.0.0"
+    )
 
     # Then it should call write_parquet with correct versioned S3 path
     expected_path = "s3://test-bucket/features/test_feature/1.0.0/data.parquet"

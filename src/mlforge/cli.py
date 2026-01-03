@@ -33,12 +33,15 @@ def build(
     target: Annotated[
         str | None,
         cyclopts.Parameter(
-            name="--target", help="Path to definitions.py file. Automatically handled."
+            name="--target",
+            help="Path to definitions.py file. Automatically handled.",
         ),
     ] = None,
     features: Annotated[
         str | None,
-        cyclopts.Parameter(name="--features", help="Comma-separated feature names"),
+        cyclopts.Parameter(
+            name="--features", help="Comma-separated feature names"
+        ),
     ] = None,
     tags: Annotated[
         str | None,
@@ -53,11 +56,15 @@ def build(
     ] = None,
     force: Annotated[
         bool,
-        cyclopts.Parameter(name=["--force", "-f"], help="Overwrite existing features."),
+        cyclopts.Parameter(
+            name=["--force", "-f"], help="Overwrite existing features."
+        ),
     ] = False,
     no_preview: Annotated[
         bool,
-        cyclopts.Parameter(name="--no-preview", help="Disable feature preview output"),
+        cyclopts.Parameter(
+            name="--no-preview", help="Disable feature preview output"
+        ),
     ] = False,
     preview_rows: Annotated[
         int,
@@ -93,7 +100,9 @@ def build(
 
     try:
         defs = loader.load_definitions(target)
-        feature_names = [f.strip() for f in features.split(",")] if features else None
+        feature_names = (
+            [f.strip() for f in features.split(",")] if features else None
+        )
         tag_names = [t.strip() for t in tags.split(",")] if tags else None
 
         results = defs.build(
@@ -108,7 +117,10 @@ def build(
         log.print_build_results(results)
         log.print_success(f"Built {len(results)} features")
 
-    except (errors.DefinitionsLoadError, errors.FeatureMaterializationError) as e:
+    except (
+        errors.DefinitionsLoadError,
+        errors.FeatureMaterializationError,
+    ) as e:
         log.print_error(str(e))
         raise SystemExit(1)
 
@@ -118,12 +130,15 @@ def validate(
     target: Annotated[
         str | None,
         cyclopts.Parameter(
-            name="--target", help="Path to definitions.py file. Automatically handled."
+            name="--target",
+            help="Path to definitions.py file. Automatically handled.",
         ),
     ] = None,
     features: Annotated[
         str | None,
-        cyclopts.Parameter(name="--features", help="Comma-separated feature names"),
+        cyclopts.Parameter(
+            name="--features", help="Comma-separated feature names"
+        ),
     ] = None,
     tags: Annotated[
         str | None,
@@ -151,7 +166,9 @@ def validate(
 
     try:
         defs = loader.load_definitions(target)
-        feature_names = [f.strip() for f in features.split(",")] if features else None
+        feature_names = (
+            [f.strip() for f in features.split(",")] if features else None
+        )
         tag_names = [t.strip() for t in tags.split(",")] if tags else None
 
         results = defs.validate(
@@ -185,10 +202,13 @@ def validate(
 def list_(
     target: Annotated[
         str | None,
-        cyclopts.Parameter(help="Path to definitions.py file - automatically handled."),
+        cyclopts.Parameter(
+            help="Path to definitions.py file - automatically handled."
+        ),
     ] = None,
     tags: Annotated[
-        str | None, cyclopts.Parameter(help="Comma-separated list of feature tags.")
+        str | None,
+        cyclopts.Parameter(help="Comma-separated list of feature tags."),
     ] = None,
 ):
     """
@@ -294,7 +314,9 @@ def versions(
         version_list = defs.offline_store.list_versions(feature_name)
 
         if not version_list:
-            log.print_warning(f"No versions found for feature '{feature_name}'.")
+            log.print_warning(
+                f"No versions found for feature '{feature_name}'."
+            )
             return
 
         latest = defs.offline_store.get_latest_version(feature_name)
@@ -337,7 +359,9 @@ def manifest(
         metadata_list = defs.offline_store.list_metadata()
 
         if not metadata_list:
-            log.print_warning("No feature metadata found. Run 'mlforge build' first.")
+            log.print_warning(
+                "No feature metadata found. Run 'mlforge build' first."
+            )
             return
 
         if regenerate:
@@ -381,12 +405,15 @@ def sync(
     target: Annotated[
         str | None,
         cyclopts.Parameter(
-            name="--target", help="Path to definitions.py file. Automatically handled."
+            name="--target",
+            help="Path to definitions.py file. Automatically handled.",
         ),
     ] = None,
     features: Annotated[
         str | None,
-        cyclopts.Parameter(name="--features", help="Comma-separated feature names"),
+        cyclopts.Parameter(
+            name="--features", help="Comma-separated feature names"
+        ),
     ] = None,
     dry_run: Annotated[
         bool,
@@ -432,7 +459,9 @@ def sync(
             )
             raise SystemExit(1)
 
-        feature_names = [f.strip() for f in features.split(",")] if features else None
+        feature_names = (
+            [f.strip() for f in features.split(",")] if features else None
+        )
 
         results = defs.sync(
             feature_names=feature_names,

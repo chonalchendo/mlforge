@@ -102,19 +102,29 @@ class TestVersionBumping:
     """Tests for version bumping."""
 
     def test_bump_version_major(self):
-        assert version.bump_version("1.2.3", version.ChangeType.MAJOR) == "2.0.0"
+        assert (
+            version.bump_version("1.2.3", version.ChangeType.MAJOR) == "2.0.0"
+        )
 
     def test_bump_version_minor(self):
-        assert version.bump_version("1.2.3", version.ChangeType.MINOR) == "1.3.0"
+        assert (
+            version.bump_version("1.2.3", version.ChangeType.MINOR) == "1.3.0"
+        )
 
     def test_bump_version_patch(self):
-        assert version.bump_version("1.2.3", version.ChangeType.PATCH) == "1.2.4"
+        assert (
+            version.bump_version("1.2.3", version.ChangeType.PATCH) == "1.2.4"
+        )
 
     def test_bump_version_major_resets_minor_patch(self):
-        assert version.bump_version("1.5.9", version.ChangeType.MAJOR) == "2.0.0"
+        assert (
+            version.bump_version("1.5.9", version.ChangeType.MAJOR) == "2.0.0"
+        )
 
     def test_bump_version_minor_resets_patch(self):
-        assert version.bump_version("1.5.9", version.ChangeType.MINOR) == "1.6.0"
+        assert (
+            version.bump_version("1.5.9", version.ChangeType.MINOR) == "1.6.0"
+        )
 
     def test_bump_version_initial_raises(self):
         with pytest.raises(ValueError, match="Cannot bump INITIAL"):
@@ -145,11 +155,15 @@ class TestPathConstruction:
     """Tests for path construction functions."""
 
     def test_versioned_data_path(self):
-        path = version.versioned_data_path(Path("/store"), "user_spend", "1.0.0")
+        path = version.versioned_data_path(
+            Path("/store"), "user_spend", "1.0.0"
+        )
         assert path == Path("/store/user_spend/1.0.0/data.parquet")
 
     def test_versioned_metadata_path(self):
-        path = version.versioned_metadata_path(Path("/store"), "user_spend", "1.0.0")
+        path = version.versioned_metadata_path(
+            Path("/store"), "user_spend", "1.0.0"
+        )
         assert path == Path("/store/user_spend/1.0.0/.meta.json")
 
     def test_latest_pointer_path(self):
@@ -182,17 +196,23 @@ class TestHashComputation:
             ColumnMetadata(name="b", dtype="Float64"),
             ColumnMetadata(name="a", dtype="Int64"),
         ]
-        assert version.compute_schema_hash(cols1) == version.compute_schema_hash(cols2)
+        assert version.compute_schema_hash(
+            cols1
+        ) == version.compute_schema_hash(cols2)
 
     def test_compute_schema_hash_differs_on_dtype_change(self):
         cols1 = [ColumnMetadata(name="id", dtype="Int64")]
         cols2 = [ColumnMetadata(name="id", dtype="Int32")]
-        assert version.compute_schema_hash(cols1) != version.compute_schema_hash(cols2)
+        assert version.compute_schema_hash(
+            cols1
+        ) != version.compute_schema_hash(cols2)
 
     def test_compute_schema_hash_differs_on_column_change(self):
         cols1 = [ColumnMetadata(name="a", dtype="Int64")]
         cols2 = [ColumnMetadata(name="b", dtype="Int64")]
-        assert version.compute_schema_hash(cols1) != version.compute_schema_hash(cols2)
+        assert version.compute_schema_hash(
+            cols1
+        ) != version.compute_schema_hash(cols2)
 
     def test_compute_config_hash_deterministic(self):
         hash1 = version.compute_config_hash(

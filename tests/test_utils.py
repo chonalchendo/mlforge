@@ -70,7 +70,9 @@ def test_surrogate_key_requires_at_least_one_column():
     df = pl.DataFrame({"a": [1]})
 
     # When/Then it should raise ValueError
-    with pytest.raises(ValueError, match="surrogate_key requires at least one column"):
+    with pytest.raises(
+        ValueError, match="surrogate_key requires at least one column"
+    ):
         df.with_columns(surrogate_key().alias("key"))
 
 
@@ -130,7 +132,9 @@ def test_entity_key_has_metadata():
 def test_entity_key_requires_at_least_one_column():
     # Given no columns
     # When/Then creating entity_key should raise ValueError
-    with pytest.raises(ValueError, match="entity_key requires at least one column"):
+    with pytest.raises(
+        ValueError, match="entity_key requires at least one column"
+    ):
         entity_key(alias="key")
 
 

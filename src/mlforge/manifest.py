@@ -158,7 +158,9 @@ class FeatureMetadata:
     def from_dict(cls, data: dict[str, Any]) -> FeatureMetadata:
         """Create from dictionary."""
         columns = [ColumnMetadata.from_dict(c) for c in data.get("columns", [])]
-        features = [ColumnMetadata.from_dict(c) for c in data.get("features", [])]
+        features = [
+            ColumnMetadata.from_dict(c) for c in data.get("features", [])
+        ]
 
         # Handle backward compatibility: last_updated → updated_at
         updated_at = data.get("updated_at") or data.get("last_updated", "")
@@ -214,7 +216,9 @@ class Manifest:
         return {
             "version": self.version,
             "generated_at": self.generated_at,
-            "features": {name: meta.to_dict() for name, meta in self.features.items()},
+            "features": {
+                name: meta.to_dict() for name, meta in self.features.items()
+            },
         }
 
     @classmethod
@@ -244,7 +248,9 @@ class Manifest:
 
 
 # Regex pattern to parse Rolling column names: {tag}__{column}__{agg}__{interval}__{window}
-_ROLLING_COLUMN_PATTERN = re.compile(r"^(.+)__(\w+)__(\d+[dhmsw])__(\d+[dhmsw])$")
+_ROLLING_COLUMN_PATTERN = re.compile(
+    r"^(.+)__(\w+)__(\d+[dhmsw])__(\d+[dhmsw])$"
+)
 
 # Regex pattern to parse validator names with parameters
 _VALIDATOR_PATTERN = re.compile(r"^(\w+)(?:\((.*)\))?$")
@@ -351,11 +357,14 @@ def _derive_with_base_schema(
         validator_specs = None
         if feature.validators and col_name in feature.validators:
             validator_specs = [
-                _parse_validator_name(v.name) for v in feature.validators[col_name]
+                _parse_validator_name(v.name)
+                for v in feature.validators[col_name]
             ]
 
         base_columns.append(
-            ColumnMetadata(name=col_name, dtype=dtype, validators=validator_specs)
+            ColumnMetadata(
+                name=col_name, dtype=dtype, validators=validator_specs
+            )
         )
 
     # Add generated feature columns from final schema (only columns not in base_schema)
@@ -410,7 +419,8 @@ def _derive_legacy(
         validator_specs = None
         if feature.validators and col_name in feature.validators:
             validator_specs = [
-                _parse_validator_name(v.name) for v in feature.validators[col_name]
+                _parse_validator_name(v.name)
+                for v in feature.validators[col_name]
             ]
 
         # Try to parse as Rolling column: {tag}__{column}__{agg}__{interval}__{window}
@@ -433,7 +443,9 @@ def _derive_legacy(
         else:
             # Not a rolling column, so it's a base column
             base_columns.append(
-                ColumnMetadata(name=col_name, dtype=dtype, validators=validator_specs)
+                ColumnMetadata(
+                    name=col_name, dtype=dtype, validators=validator_specs
+                )
             )
 
     return base_columns, feature_columns
