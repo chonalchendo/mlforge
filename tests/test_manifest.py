@@ -347,11 +347,14 @@ def test_derive_column_metadata_for_simple_columns():
         simple_feature, schema
     )
 
-    # Then it should have basic dtype info in base columns
+    # Then it should have basic dtype info in base columns (canonical types)
     assert len(base_columns) == 2
     assert len(feature_columns) == 0
-    assert any(c.name == "user_id" and c.dtype == "Utf8" for c in base_columns)
-    assert any(c.name == "value" and c.dtype == "Float64" for c in base_columns)
+    # Types are now canonical strings (e.g., "string" instead of "Utf8")
+    assert any(
+        c.name == "user_id" and c.dtype == "string" for c in base_columns
+    )
+    assert any(c.name == "value" and c.dtype == "float64" for c in base_columns)
 
 
 def test_derive_column_metadata_for_rolling_columns():
