@@ -519,19 +519,6 @@ def derive_column_metadata(
     return _derive_legacy(feature, schema, schema_source)
 
 
-def _get_rolling_output_columns(feature: Feature) -> set[str]:
-    """Get all expected output columns from Rolling metrics."""
-    columns: set[str] = set()
-    if not feature.metrics:
-        return columns
-
-    for metric in feature.metrics:
-        # Currently only Rolling is supported
-        if hasattr(metric, "output_columns"):
-            columns.update(metric.output_columns())
-    return columns
-
-
 def write_metadata_file(path: Path, metadata: FeatureMetadata) -> None:
     """
     Write feature metadata to a JSON file.

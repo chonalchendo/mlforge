@@ -196,27 +196,6 @@ class PolarsResult(EngineResult):
         return "polars"
 
 
-def _import_duckdb():
-    """
-    Import DuckDB with helpful error message if not installed.
-
-    Returns:
-        The duckdb module
-
-    Raises:
-        ImportError: If duckdb is not installed
-    """
-    try:
-        import duckdb
-
-        return duckdb
-    except ImportError:
-        raise ImportError(
-            "DuckDB is required for the duckdb engine. "
-            "Install with: pip install mlforge[duckdb]"
-        ) from None
-
-
 class DuckDBResult(EngineResult):
     """
     DuckDB-based result wrapper.
