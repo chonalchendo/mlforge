@@ -28,6 +28,7 @@ Public API:
     entity_key: Create reusable entity key transforms
     surrogate_key: Generate surrogate keys from columns
     get_training_data: Retrieve features with point-in-time correctness
+    get_online_features: Retrieve features from online store for inference
     Validators: not_null, unique, greater_than, less_than, in_range, etc.
 """
 
@@ -38,7 +39,7 @@ __version__ = _get_version("mlforge-sdk")
 from mlforge.core import Definitions, Feature, feature
 from mlforge.metrics import Rolling
 from mlforge.online import OnlineStore, RedisStore
-from mlforge.retrieval import get_training_data
+from mlforge.retrieval import get_online_features, get_training_data
 from mlforge.store import LocalStore, S3Store
 from mlforge.types import DataType, TypeKind
 from mlforge.utils import entity_key, surrogate_key
@@ -66,6 +67,7 @@ __all__ = [
     "entity_key",
     "surrogate_key",
     "get_training_data",
+    "get_online_features",
     "Rolling",
     "DataType",
     "TypeKind",
