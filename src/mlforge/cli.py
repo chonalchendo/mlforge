@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import Annotated
 
 import cyclopts
@@ -73,6 +74,13 @@ def build(
             help="Number of preview rows to display. Defaults to 5.",
         ),
     ] = 5,
+    online: Annotated[
+        bool,
+        cyclopts.Parameter(
+            name="--online",
+            help="Write to online store instead of offline store.",
+        ),
+    ] = False,
 ):
     """
     Materialize features to offline storage with versioning.
@@ -80,6 +88,10 @@ def build(
     Loads feature definitions, computes features from source data,
     and persists results to the configured storage backend. Automatically
     determines version based on schema and configuration changes.
+
+    With --online flag, writes to the online store (e.g., Redis) instead
+    of the offline store. Extracts the latest value per entity for
+    real-time feature serving.
 
     Args:
         target: Path to definitions file. Defaults to "definitions.py".
@@ -89,6 +101,7 @@ def build(
         force: Overwrite existing features. Defaults to False.
         no_preview: Disable feature preview output. Defaults to False.
         preview_rows: Number of preview rows to display. Defaults to 5.
+        online: Write to online store instead of offline. Defaults to False.
 
     Raises:
         SystemExit: If loading definitions or materialization fails
@@ -112,10 +125,26 @@ def build(
             force=force,
             preview=not no_preview,
             preview_rows=preview_rows,
+            online=online,
         )
 
-        log.print_build_results(results)
-        log.print_success(f"Built {len(results)} features")
+        if online:
+            # Online build returns int counts
+            total_records = sum(
+                int(v) if isinstance(v, int) else 0 for v in results.values()
+            )
+            log.print_success(
+                f"Wrote {total_records} records to online store "
+                f"({len(results)} features)"
+            )
+        else:
+            # Offline build returns paths - convert to dict[str, Path | str]
+            offline_results: dict[str, Path | str] = {
+                k: v if isinstance(v, (Path, str)) else str(v)
+                for k, v in results.items()
+            }
+            log.print_build_results(offline_results)
+            log.print_success(f"Built {len(results)} features")
 
     except (
         errors.DefinitionsLoadError,

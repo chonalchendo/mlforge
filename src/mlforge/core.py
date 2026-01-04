@@ -15,6 +15,7 @@ import mlforge.errors as errors
 import mlforge.logging as log
 import mlforge.manifest as manifest
 import mlforge.metrics as metrics_
+import mlforge.online as online
 import mlforge.store as store
 import mlforge.types as types_
 import mlforge.validation as validation_
@@ -182,26 +183,27 @@ class Definitions:
     Attributes:
         name: Project identifier
         offline_store: Storage backend instance for persisting features
+        online_store: Optional online store for real-time feature serving
         features: Dictionary mapping feature names to Feature objects
         default_engine: Default compute engine for features without explicit engine. Defaults to duckdb.
 
     Example:
         from mlforge import Definitions, LocalStore
+        from mlforge.online import RedisStore
         import my_features
 
         defs = Definitions(
             name="my-project",
             features=[my_features],
-            offline_store=LocalStore("./feature_store")
+            offline_store=LocalStore("./feature_store"),
+            online_store=RedisStore(host="localhost"),
         )
 
-        # With Polars engine (for small datasets)
-        defs = Definitions(
-            name="my-project",
-            features=[my_features],
-            offline_store=LocalStore("./feature_store"),
-            default_engine="polars"
-        )
+        # Build to offline store (default)
+        defs.build(feature_names=["user_spend"])
+
+        # Build to online store
+        defs.build(feature_names=["user_spend"], online=True)
     """
 
     def __init__(
@@ -209,6 +211,7 @@ class Definitions:
         name: str,
         features: list[Feature | ModuleType],
         offline_store: store.OfflineStoreKind,
+        online_store: online.OnlineStoreKind | None = None,
         default_engine: Literal["polars", "duckdb"] = "duckdb",
     ) -> None:
         """
@@ -218,6 +221,7 @@ class Definitions:
             name: Project name
             features: List of Feature objects or modules containing features
             offline_store: Storage backend for materialized features
+            online_store: Optional online store for real-time serving. Defaults to None.
             default_engine: Default execution engine for features without explicit engine.
                 Defaults to "duckdb" which is optimized for large datasets with rolling
                 windows. Use "polars" for small datasets or when you prefer staying in
@@ -228,7 +232,8 @@ class Definitions:
             defs = Definitions(
                 name="fraud-detection",
                 features=[user_features, transaction_features],
-                offline_store=LocalStore("./features")
+                offline_store=LocalStore("./features"),
+                online_store=RedisStore(host="localhost"),
             )
 
             # Use Polars for small datasets
@@ -241,6 +246,7 @@ class Definitions:
         """
         self.name = name
         self.offline_store = offline_store
+        self.online_store = online_store
         self.features: dict[str, Feature] = {}
         self.default_engine = default_engine
         self._engines: dict[str, engines.EngineKind] = {}
@@ -304,7 +310,8 @@ class Definitions:
         force: bool = False,
         preview: bool = True,
         preview_rows: int = 5,
-    ) -> dict[str, Path | str]:
+        online: bool = False,
+    ) -> dict[str, Path | str | int]:
         """
         Compute and persist features to offline storage with versioning.
 
@@ -319,12 +326,17 @@ class Definitions:
             force: Overwrite existing features. Defaults to False.
             preview: Display preview of materialized data. Defaults to True.
             preview_rows: Number of preview rows to show. Defaults to 5.
+            online: Write to online store instead of offline. Defaults to False.
+                Requires online_store to be configured. Extracts latest values
+                per entity and writes to the online store.
 
         Returns:
-            Dictionary mapping feature names to their storage file paths
+            Dictionary mapping feature names to their storage file paths (offline)
+            or record counts (online)
 
         Raises:
-            ValueError: If specified feature name is not registered
+            ValueError: If specified feature name is not registered, or if
+                online=True but no online_store is configured
             FeatureMaterializationError: If feature function fails or returns invalid data
 
         Example:
@@ -333,11 +345,21 @@ class Definitions:
 
             # Explicit version
             paths = defs.build(feature_names=["user_spend"], feature_version="2.0.0")
+
+            # Build to online store
+            counts = defs.build(feature_names=["user_spend"], online=True)
         """
+        if online:
+            online_results = self._build_online(
+                feature_names, tag_names, preview, preview_rows
+            )
+            # Cast int to Path | str | int union for consistent return type
+            return {k: v for k, v in online_results.items()}
+
         selected_features = self._resolve_features_to_build(
             feature_names, tag_names
         )
-        results: dict[str, Path | str] = {}
+        results: dict[str, Path | str | int] = {}
         failed_features: list[str] = []
 
         for feature in selected_features:
@@ -444,6 +466,108 @@ class Definitions:
             )
 
         return results
+
+    def _build_online(
+        self,
+        feature_names: list[str] | None,
+        tag_names: list[str] | None,
+        preview: bool,
+        preview_rows: int,
+    ) -> dict[str, int]:
+        """
+        Build features to the online store.
+
+        Extracts the latest value per entity from each feature and writes
+        to the configured online store. Requires timestamp column to determine
+        "latest" values.
+
+        Args:
+            feature_names: Specific features to materialize
+            tag_names: Specific features to materialize by tag
+            preview: Display preview of data being written
+            preview_rows: Number of preview rows to show
+
+        Returns:
+            Dictionary mapping feature names to record counts written
+
+        Raises:
+            ValueError: If no online_store is configured
+        """
+        if self.online_store is None:
+            raise ValueError(
+                "Cannot build to online store: no online_store configured. "
+                "Pass online_store=RedisStore(...) to Definitions()."
+            )
+
+        selected_features = self._resolve_features_to_build(
+            feature_names, tag_names
+        )
+        results: dict[str, int] = {}
+
+        for feature in selected_features:
+            # Execute feature computation
+            engine = self._get_engine_for_feature(feature)
+            result = engine.execute(feature)
+            result_df = result.to_polars()
+
+            # Extract latest values per entity
+            latest_df = self._extract_latest_per_entity(feature, result_df)
+
+            if preview:
+                log.print_feature_preview(
+                    f"{feature.name} (online)",
+                    latest_df,
+                    max_rows=preview_rows,
+                )
+
+            # Write to online store
+            records = latest_df.to_dicts()
+            count = self.online_store.write_batch(
+                feature_name=feature.name,
+                records=records,
+                entity_key_columns=feature.keys,
+            )
+
+            logger.info(
+                f"Wrote {count} records to online store: {feature.name}"
+            )
+            results[feature.name] = count
+
+        return results
+
+    def _extract_latest_per_entity(
+        self,
+        feature: Feature,
+        df: pl.DataFrame,
+    ) -> pl.DataFrame:
+        """
+        Extract the latest row per entity from a feature DataFrame.
+
+        If the feature has a timestamp column, sorts by timestamp descending
+        and takes the first row per entity key combination. The timestamp
+        column is dropped from the output since online stores only need
+        entity keys and feature values.
+
+        Args:
+            feature: Feature definition with keys and timestamp info
+            df: Feature DataFrame with computed values
+
+        Returns:
+            DataFrame with one row per unique entity (without timestamp)
+        """
+        if feature.timestamp:
+            # Sort by timestamp descending, take first per entity
+            result = (
+                df.sort(feature.timestamp, descending=True)
+                .group_by(feature.keys)
+                .first()
+                .drop(feature.timestamp)
+            )
+        else:
+            # No timestamp - take last row per entity
+            result = df.group_by(feature.keys).last()
+
+        return result
 
     def _determine_version(
         self,
