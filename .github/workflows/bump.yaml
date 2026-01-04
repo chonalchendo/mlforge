@@ -6,7 +6,7 @@ jobs:
   bump-version:
     if: "!startsWith(github.event.head_commit.message, 'bump:')"
     runs-on: ubuntu-latest
-    name: Bump version and create changelog
+    name: Bump version and create tag
     steps:
       - uses: actions/checkout@v4
         with:
@@ -17,9 +17,9 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-      - name: Bump version and create changelog
+      - name: Bump version
         run: |
-          uv run cz bump --yes --changelog --changelog-to-stdout > body.md || exit_code=$?
+          uv run cz bump --yes || exit_code=$?
           if [ "${exit_code:-0}" -eq 21 ]; then
             echo "No commits to bump - skipping"
             exit 0

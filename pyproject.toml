@@ -92,7 +92,7 @@ name = "cz_gitmoji"
 tag_format = "v$version"
 version_scheme = "pep440"
 version_provider = "uv"
-update_changelog_on_bump = true
+update_changelog_on_bump = false
 major_version_zero = true
 bump_map = { "feat" = "MINOR", "fix" = "PATCH", "refactor" = "PATCH", "perf" = "PATCH" }
 bump_pattern = "^(feat|fix|refactor|perf)(\\(.+\\))?(!)?:"
