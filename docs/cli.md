@@ -29,6 +29,7 @@ mlforge build [TARGET] [OPTIONS]
 - `--features NAMES`: Comma-separated list of feature names to build. Defaults to all features.
 - `--tags TAGS`: Comma-separated list of feature tags to build. Mutually exclusive with `--features`.
 - `--force`, `-f`: Overwrite existing features. Defaults to `False`.
+- `--online`: Build to online store (e.g., Redis) instead of offline store. Defaults to `False`.
 - `--no-preview`: Disable feature preview output. Defaults to `False` (preview enabled).
 - `--preview-rows N`: Number of preview rows to display. Defaults to `5`.
 - `--verbose`, `-v`: Enable debug logging. Defaults to `False`.
@@ -82,6 +83,14 @@ Custom preview size:
 ```bash
 mlforge build definitions.py --preview-rows 10
 ```
+
+Build to online store (Redis):
+
+```bash
+mlforge build --online
+```
+
+This extracts the latest value per entity and writes to the configured online store.
 
 #### Output
 
@@ -349,6 +358,212 @@ Exit code: 1
 ```
 
 The command exits with code 1 if any validations fail, making it suitable for CI/CD pipelines.
+
+### sync
+
+Rebuild features from metadata files (for Git-based collaboration).
+
+```bash
+mlforge sync [TARGET] [OPTIONS]
+```
+
+!!! info "LocalStore Only"
+    The sync command only works with `LocalStore`. Cloud stores (S3, etc.) already share data between teammates, so syncing is not needed.
+
+#### Arguments
+
+- `TARGET` (optional): Path to definitions file. Auto-discovers `definitions.py` if not specified.
+
+#### Options
+
+- `--features NAMES`: Comma-separated list of feature names to sync. Defaults to all features with missing data.
+- `--dry-run`: Show what would be synced without actually rebuilding. Defaults to `False`.
+- `--force`: Rebuild even if source data hash differs. Defaults to `False`.
+- `--verbose`, `-v`: Enable debug logging. Defaults to `False`.
+
+#### How It Works
+
+The sync command helps teams collaborate on feature definitions via Git:
+
+1. **Metadata is committed to Git**: `.meta.json` and `_latest.json` files
+2. **Data files are ignored**: `data.parquet` files are excluded via auto-generated `.gitignore`
+3. **Teammates rebuild locally**: Run `mlforge sync` to recreate data from metadata
+
+For each feature, sync will:
+
+1. Check if metadata exists but data file is missing
+2. Compute hash of current source data file
+3. Compare with `source_hash` stored in metadata
+4. If hashes match → rebuild data from feature function
+5. If hashes differ → error (use `--force` to override)
+
+#### Examples
+
+Preview what would be synced:
+
+```bash
+mlforge sync --dry-run
+```
+
+Sync all features with missing data:
+
+```bash
+mlforge sync
+```
+
+Sync specific features:
+
+```bash
+mlforge sync --features user_spend,merchant_spend
+```
+
+Force sync even if source data changed:
+
+```bash
+mlforge sync --force
+```
+
+With custom definitions file:
+
+```bash
+mlforge sync definitions.py --features user_spend
+```
+
+#### Output
+
+**Dry-run mode** - Shows what would be synced:
+
+```
+[Dry Run] Would sync 2 features:
+  - user_spend (v1.2.0)
+  - merchant_spend (v2.0.1)
+
+Run without --dry-run to sync
+```
+
+**Normal mode** - Rebuilds features and shows progress:
+
+```
+Syncing user_spend (v1.2.0)...
+✓ Source hash matches (abc123def456)
+✓ Rebuilt user_spend
+
+Syncing merchant_spend (v2.0.1)...
+✓ Source hash matches (789abc012def)
+✓ Rebuilt merchant_spend
+
+Synced 2 features
+```
+
+**No features to sync**:
+
+```
+No features need syncing
+```
+
+#### Error Handling
+
+**Source data changed**: If source hash differs from metadata:
+
+```bash
+$ mlforge sync --features user_spend
+Error: Source data has changed for feature 'user_spend' (v1.2.0)
+
+Expected hash: abc123def456
+Current hash:  xyz789abc012
+
+This means the source data file has been modified since this version
+was built. Rebuilding with different source data may produce different
+results.
+
+Options:
+  - Restore the original source data file
+  - Use --force to rebuild anyway (creates new version)
+  - Check with your team if source data should have changed
+```
+
+**Not a LocalStore**: If using S3Store or other cloud storage:
+
+```bash
+$ mlforge sync
+Error: Sync only works with LocalStore.
+Cloud stores (S3Store) already share data between teammates.
+```
+
+**Missing source file**: If the source data file doesn't exist:
+
+```bash
+$ mlforge sync --features user_spend
+Error: Source file not found: data/transactions.parquet
+Cannot verify source hash or rebuild feature.
+```
+
+#### Use Cases
+
+**After pulling changes from Git**:
+
+```bash
+git pull
+mlforge sync
+```
+
+**Setting up new development environment**:
+
+```bash
+git clone https://github.com/team/ml-features.git
+cd ml-features
+mlforge sync
+```
+
+**Checking if features are out of sync**:
+
+```bash
+mlforge sync --dry-run
+```
+
+#### When NOT to Use Sync
+
+- **Cloud stores**: Data is already shared via S3/GCS
+- **Source data changed intentionally**: Use `mlforge build --force` to create a new version
+- **Initial setup**: Use `mlforge build` for first-time feature creation
+
+### versions
+
+List all versions of a feature.
+
+```bash
+mlforge versions FEATURE_NAME [TARGET]
+```
+
+#### Arguments
+
+- `FEATURE_NAME` (required): Name of the feature to list versions for
+- `TARGET` (optional): Path to definitions file. Auto-discovers `definitions.py` if not specified.
+
+#### Examples
+
+List versions of a feature:
+
+```bash
+mlforge versions user_spend
+```
+
+#### Output
+
+Displays a table of all versions:
+
+```
+Versions of user_spend
+┌─────────┬─────────────────────┬─────────────────────┬────────────┐
+│ Version │ Created             │ Updated             │ Rows       │
+├─────────┼─────────────────────┼─────────────────────┼────────────┤
+│ 1.0.0   │ 2024-01-10T08:00:00│ 2024-01-10T08:00:00│ 50,000     │
+│ 1.1.0   │ 2024-01-15T10:30:00│ 2024-01-15T10:30:00│ 52,500     │
+│ 2.0.0   │ 2024-01-20T14:00:00│ 2024-01-20T14:00:00│ 55,000     │
+└─────────┴─────────────────────┴─────────────────────┴────────────┘
+
+Latest: 2.0.0
+```
 
 ### list
 

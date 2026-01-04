@@ -95,7 +95,9 @@ def test_definitions_init_with_empty_features():
     # Given an empty features list
     with tempfile.TemporaryDirectory() as tmpdir:
         # When creating Definitions
-        defs = Definitions(name="test", features=[], offline_store=LocalStore(tmpdir))
+        defs = Definitions(
+            name="test", features=[], offline_store=LocalStore(tmpdir)
+        )
 
         # Then it should have no features
         assert len(defs.features) == 0
@@ -110,7 +112,9 @@ def test_definitions_register_single_feature():
     # When creating Definitions with that feature
     with tempfile.TemporaryDirectory() as tmpdir:
         defs = Definitions(
-            name="test", features=[test_feature], offline_store=LocalStore(tmpdir)
+            name="test",
+            features=[test_feature],
+            offline_store=LocalStore(tmpdir),
         )
 
         # Then the feature should be registered
@@ -158,7 +162,9 @@ def test_definitions_register_rejects_duplicate_names():
 
     # When/Then registering should raise ValueError
     with tempfile.TemporaryDirectory() as tmpdir:
-        with pytest.raises(ValueError, match="Duplicate feature name: duplicate"):
+        with pytest.raises(
+            ValueError, match="Duplicate feature name: duplicate"
+        ):
             Definitions(
                 name="test",
                 features=[duplicate, duplicate],
@@ -279,7 +285,9 @@ def test_materialize_executes_feature_function():
 
         # When materializing with source data
         defs = Definitions(
-            name="test", features=[add_constant], offline_store=LocalStore(tmpdir)
+            name="test",
+            features=[add_constant],
+            offline_store=LocalStore(tmpdir),
         )
         defs.build(preview=False)
 
@@ -301,7 +309,9 @@ def test_materialize_writes_to_store():
             return df
 
         store = LocalStore(tmpdir)
-        defs = Definitions(name="test", features=[simple_feature], offline_store=store)
+        defs = Definitions(
+            name="test", features=[simple_feature], offline_store=store
+        )
 
         # When materializing
         results = defs.build(preview=False)
@@ -353,13 +363,16 @@ def test_materialize_overwrites_with_force():
         store.write(
             "versioned_feature",
             PolarsResult(pl.DataFrame({"id": [1], "version": [1]})),
+            feature_version="1.0.0",
         )
 
         # When materializing with force=True
         defs = Definitions(
             name="test", features=[versioned_feature], offline_store=store
         )
-        defs.build(feature_names=["versioned_feature"], force=True, preview=False)
+        defs.build(
+            feature_names=["versioned_feature"], force=True, preview=False
+        )
 
         # Then it should overwrite with new version
         result = store.read("versioned_feature")
@@ -374,7 +387,9 @@ def test_materialize_raises_on_unknown_feature():
 
     with tempfile.TemporaryDirectory() as tmpdir:
         defs = Definitions(
-            name="test", features=[known_feature], offline_store=LocalStore(tmpdir)
+            name="test",
+            features=[known_feature],
+            offline_store=LocalStore(tmpdir),
         )
 
         # When/Then requesting unknown feature should raise
@@ -390,7 +405,9 @@ def test_materialize_raises_on_unknown_tag():
 
     with tempfile.TemporaryDirectory() as tmpdir:
         defs = Definitions(
-            name="test", features=[tagged_feature], offline_store=LocalStore(tmpdir)
+            name="test",
+            features=[tagged_feature],
+            offline_store=LocalStore(tmpdir),
         )
 
         # When/Then requesting unknown tag should raise
@@ -440,7 +457,9 @@ def test_materialize_raises_on_none_return():
             return None  # type: ignore[return-value]
 
         defs = Definitions(
-            name="test", features=[returns_none], offline_store=LocalStore(tmpdir)
+            name="test",
+            features=[returns_none],
+            offline_store=LocalStore(tmpdir),
         )
 
         # When/Then materializing should raise AttributeError (from engine trying to access schema)
@@ -459,7 +478,9 @@ def test_materialize_raises_on_wrong_return_type():
             return "not a dataframe"  # type: ignore[return-value]
 
         defs = Definitions(
-            name="test", features=[returns_string], offline_store=LocalStore(tmpdir)
+            name="test",
+            features=[returns_string],
+            offline_store=LocalStore(tmpdir),
         )
 
         # When/Then materializing should raise AttributeError (from engine trying to access schema)
@@ -485,3 +506,202 @@ def test_polars_result_base_schema():
 
     # Then base_schema should return None
     assert result_without_schema.base_schema() is None
+
+
+# =============================================================================
+# Sync Tests
+# =============================================================================
+
+
+def test_sync_returns_empty_when_all_features_have_data():
+    # Given a feature that has been built (data exists)
+    with tempfile.TemporaryDirectory() as tmpdir:
+        source_path = Path(tmpdir) / "data.parquet"
+        pl.DataFrame({"id": [1, 2]}).write_parquet(source_path)
+
+        @feature(keys=["id"], source=str(source_path))
+        def synced_feature(df):
+            return df
+
+        store = LocalStore(tmpdir)
+        defs = Definitions(
+            name="test", features=[synced_feature], offline_store=store
+        )
+
+        # Build the feature first
+        defs.build(preview=False)
+
+        # When syncing
+        result = defs.sync()
+
+        # Then nothing needs syncing
+        assert result["needs_sync"] == []
+        assert result["synced"] == []
+
+
+def test_sync_identifies_missing_data():
+    # Given a feature with metadata but no data file
+    with tempfile.TemporaryDirectory() as tmpdir:
+        source_path = Path(tmpdir) / "data.parquet"
+        pl.DataFrame({"id": [1, 2]}).write_parquet(source_path)
+
+        @feature(keys=["id"], source=str(source_path))
+        def missing_data_feature(df):
+            return df
+
+        store = LocalStore(tmpdir)
+        defs = Definitions(
+            name="test", features=[missing_data_feature], offline_store=store
+        )
+
+        # Build the feature first
+        defs.build(preview=False)
+
+        # Delete the data file (simulate git pulling metadata without data)
+        data_path = (
+            Path(tmpdir) / "missing_data_feature" / "1.0.0" / "data.parquet"
+        )
+        data_path.unlink()
+
+        # When syncing with dry_run
+        result = defs.sync(dry_run=True)
+
+        # Then it should identify the feature as needing sync
+        assert "missing_data_feature" in result["needs_sync"]
+        assert result["synced"] == []  # dry_run doesn't sync
+
+
+def test_sync_rebuilds_missing_data():
+    # Given a feature with metadata but no data file
+    with tempfile.TemporaryDirectory() as tmpdir:
+        source_path = Path(tmpdir) / "data.parquet"
+        pl.DataFrame({"id": [1, 2]}).write_parquet(source_path)
+
+        @feature(keys=["id"], source=str(source_path))
+        def rebuild_feature(df):
+            return df
+
+        store = LocalStore(tmpdir)
+        defs = Definitions(
+            name="test", features=[rebuild_feature], offline_store=store
+        )
+
+        # Build the feature first
+        defs.build(preview=False)
+
+        # Delete the data file
+        data_path = Path(tmpdir) / "rebuild_feature" / "1.0.0" / "data.parquet"
+        data_path.unlink()
+
+        # When syncing (not dry_run)
+        result = defs.sync()
+
+        # Then it should rebuild the feature
+        assert "rebuild_feature" in result["needs_sync"]
+        assert "rebuild_feature" in result["synced"]
+        assert data_path.exists()
+
+
+def test_sync_detects_source_data_change():
+    # Given a feature built with original source data
+    with tempfile.TemporaryDirectory() as tmpdir:
+        source_path = Path(tmpdir) / "data.parquet"
+        pl.DataFrame({"id": [1, 2]}).write_parquet(source_path)
+
+        @feature(keys=["id"], source=str(source_path))
+        def source_change_feature(df):
+            return df
+
+        store = LocalStore(tmpdir)
+        defs = Definitions(
+            name="test", features=[source_change_feature], offline_store=store
+        )
+
+        # Build the feature
+        defs.build(preview=False)
+
+        # Delete data file
+        data_path = (
+            Path(tmpdir) / "source_change_feature" / "1.0.0" / "data.parquet"
+        )
+        data_path.unlink()
+
+        # Change the source data
+        pl.DataFrame({"id": [1, 2, 3, 4]}).write_parquet(source_path)
+
+        # When syncing with dry_run
+        result = defs.sync(dry_run=True)
+
+        # Then it should detect the source change
+        assert "source_change_feature" in result["needs_sync"]
+        assert "source_change_feature" in result["source_changed"]
+
+
+def test_sync_force_rebuilds_despite_source_change():
+    # Given a feature with changed source data
+    with tempfile.TemporaryDirectory() as tmpdir:
+        source_path = Path(tmpdir) / "data.parquet"
+        pl.DataFrame({"id": [1, 2]}).write_parquet(source_path)
+
+        @feature(keys=["id"], source=str(source_path))
+        def force_rebuild_feature(df):
+            return df
+
+        store = LocalStore(tmpdir)
+        defs = Definitions(
+            name="test", features=[force_rebuild_feature], offline_store=store
+        )
+
+        # Build the feature
+        defs.build(preview=False)
+
+        # Delete data file
+        data_path = (
+            Path(tmpdir) / "force_rebuild_feature" / "1.0.0" / "data.parquet"
+        )
+        data_path.unlink()
+
+        # Change the source data
+        pl.DataFrame({"id": [1, 2, 3, 4]}).write_parquet(source_path)
+
+        # When syncing with force=True
+        result = defs.sync(force=True)
+
+        # Then it should rebuild despite source change
+        assert "force_rebuild_feature" in result["synced"]
+        assert data_path.exists()
+
+
+def test_sync_with_specific_feature_names():
+    # Given multiple features
+    with tempfile.TemporaryDirectory() as tmpdir:
+        source_path = Path(tmpdir) / "data.parquet"
+        pl.DataFrame({"id": [1, 2]}).write_parquet(source_path)
+
+        @feature(keys=["id"], source=str(source_path))
+        def feature_a(df):
+            return df
+
+        @feature(keys=["id"], source=str(source_path))
+        def feature_b(df):
+            return df
+
+        store = LocalStore(tmpdir)
+        defs = Definitions(
+            name="test", features=[feature_a, feature_b], offline_store=store
+        )
+
+        # Build both features
+        defs.build(preview=False)
+
+        # Delete data for both
+        for name in ["feature_a", "feature_b"]:
+            data_path = Path(tmpdir) / name / "1.0.0" / "data.parquet"
+            data_path.unlink()
+
+        # When syncing only feature_a
+        result = defs.sync(feature_names=["feature_a"])
+
+        # Then only feature_a should be synced
+        assert "feature_a" in result["synced"]
+        assert "feature_b" not in result["synced"]

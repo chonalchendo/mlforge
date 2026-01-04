@@ -1,89 +1,95 @@
 {
   "name": "account_spend_7d_interval",
-  "path": "feature_store/account_spend_7d_interval.parquet",
+  "version": "1.0.0",
+  "path": "feature_store/account_spend_7d_interval/1.0.0/data.parquet",
   "entity": "account_id",
   "keys": [
     "account_id"
   ],
   "source": "data/transactions.parquet",
-  "row_count": 96211,
-  "last_updated": "2025-12-27T11:30:50.788077Z",
+  "row_count": 95387,
+  "created_at": "2026-01-03T19:33:08.804900Z",
+  "updated_at": "2026-01-03T19:33:08.804900Z",
+  "content_hash": "f420559f3323",
+  "schema_hash": "5fa15fffc76a",
+  "config_hash": "2152a4627909",
+  "source_hash": "da9aef320198",
   "timestamp": "transaction_date",
   "interval": "7d",
   "columns": [
     {
       "name": "account_id",
-      "dtype": "String"
+      "dtype": "string"
     },
     {
       "name": "transaction_date",
-      "dtype": "Datetime(time_unit='us', time_zone=None)"
+      "dtype": "datetime"
     },
     {
       "name": "amt",
-      "dtype": "Float64"
+      "dtype": "float64"
     }
   ],
   "features": [
     {
       "name": "accounts__amt__count__7d__7d",
-      "dtype": "UInt32",
+      "dtype": "int64",
       "input": "amt",
       "agg": "count",
       "window": "7d"
     },
     {
       "name": "accounts__amt__mean__7d__7d",
-      "dtype": "Float64",
+      "dtype": "float64",
       "input": "amt",
       "agg": "mean",
       "window": "7d"
     },
     {
       "name": "accounts__amt__sum__7d__7d",
-      "dtype": "Float64",
+      "dtype": "float64",
       "input": "amt",
       "agg": "sum",
       "window": "7d"
     },
     {
       "name": "accounts__amt__count__7d__30d",
-      "dtype": "UInt32",
+      "dtype": "int64",
       "input": "amt",
       "agg": "count",
       "window": "30d"
     },
     {
       "name": "accounts__amt__mean__7d__30d",
-      "dtype": "Float64",
+      "dtype": "float64",
       "input": "amt",
       "agg": "mean",
       "window": "30d"
     },
     {
       "name": "accounts__amt__sum__7d__30d",
-      "dtype": "Float64",
+      "dtype": "float64",
       "input": "amt",
       "agg": "sum",
       "window": "30d"
     },
     {
       "name": "accounts__amt__count__7d__90d",
-      "dtype": "UInt32",
+      "dtype": "int64",
       "input": "amt",
       "agg": "count",
       "window": "90d"
     },
     {
       "name": "accounts__amt__mean__7d__90d",
-      "dtype": "Float64",
+      "dtype": "float64",
       "input": "amt",
       "agg": "mean",
       "window": "90d"
     },
     {
       "name": "accounts__amt__sum__7d__90d",
-      "dtype": "Float64",
+      "dtype": "float64",
       "input": "amt",
       "agg": "sum",
       "window": "90d"
@@ -92,5 +98,10 @@
   "tags": [
     "accounts"
   ],
-  "description": "Total spend by account ID"
+  "description": "Total spend by account ID",
+  "change_summary": {
+    "bump_type": "initial",
+    "reason": "first_build",
+    "details": []
+  }
 }

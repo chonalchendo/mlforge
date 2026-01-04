@@ -77,7 +77,13 @@ def test_feature_metadata_to_dict_includes_required_fields():
         keys=["user_id"],
         source="data/transactions.parquet",
         row_count=1000,
-        last_updated="2024-01-16T08:30:00Z",
+        updated_at="2024-01-16T08:30:00Z",
+        version="1.0.0",
+        created_at="2024-01-16T08:30:00Z",
+        content_hash="abc123",
+        schema_hash="def456",
+        config_hash="ghi789",
+        source_hash="jkl012",
     )
 
     # When converting to dict
@@ -85,11 +91,18 @@ def test_feature_metadata_to_dict_includes_required_fields():
 
     # Then required fields should be present
     assert result["name"] == "user_spend"
+    assert result["version"] == "1.0.0"
     assert result["path"] == "/store/user_spend.parquet"
     assert result["entity"] == "user_id"
     assert result["keys"] == ["user_id"]
     assert result["source"] == "data/transactions.parquet"
     assert result["row_count"] == 1000
+    assert result["updated_at"] == "2024-01-16T08:30:00Z"
+    assert result["created_at"] == "2024-01-16T08:30:00Z"
+    assert result["content_hash"] == "abc123"
+    assert result["schema_hash"] == "def456"
+    assert result["config_hash"] == "ghi789"
+    assert result["source_hash"] == "jkl012"
 
 
 def test_feature_metadata_to_dict_excludes_none_optional_fields():
@@ -101,7 +114,13 @@ def test_feature_metadata_to_dict_excludes_none_optional_fields():
         keys=["id"],
         source="data.parquet",
         row_count=100,
-        last_updated="2024-01-01T00:00:00Z",
+        updated_at="2024-01-01T00:00:00Z",
+        version="1.0.0",
+        created_at="2024-01-01T00:00:00Z",
+        content_hash="abc123",
+        schema_hash="def456",
+        config_hash="ghi789",
+        source_hash="jkl012",
     )
 
     # When converting to dict
@@ -111,6 +130,7 @@ def test_feature_metadata_to_dict_excludes_none_optional_fields():
     assert "timestamp" not in result
     assert "interval" not in result
     assert "description" not in result
+    assert "change_summary" not in result
 
 
 def test_feature_metadata_from_dict_roundtrip():
@@ -122,12 +142,23 @@ def test_feature_metadata_from_dict_roundtrip():
         keys=["user_id", "merchant_id"],
         source="data/transactions.parquet",
         row_count=5000,
-        last_updated="2024-01-16T08:30:00Z",
+        updated_at="2024-01-16T08:30:00Z",
+        version="1.2.3",
+        created_at="2024-01-10T00:00:00Z",
+        content_hash="abc123",
+        schema_hash="def456",
+        config_hash="ghi789",
+        source_hash="jkl012",
         timestamp="transaction_date",
         interval="1d",
         columns=[ColumnMetadata(name="amt", dtype="Float64")],
         tags=["users", "spending"],
         description="User spending features",
+        change_summary={
+            "bump_type": "minor",
+            "reason": "columns_added",
+            "details": ["new_col"],
+        },
     )
 
     # When converting to dict and back
@@ -136,9 +167,16 @@ def test_feature_metadata_from_dict_roundtrip():
 
     # Then it should match the original
     assert restored.name == original.name
+    assert restored.version == original.version
     assert restored.keys == original.keys
     assert restored.timestamp == original.timestamp
     assert restored.tags == original.tags
+    assert restored.created_at == original.created_at
+    assert restored.content_hash == original.content_hash
+    assert restored.schema_hash == original.schema_hash
+    assert restored.config_hash == original.config_hash
+    assert restored.source_hash == original.source_hash
+    assert restored.change_summary == original.change_summary
     assert len(restored.columns) == 1
 
 
@@ -154,7 +192,13 @@ def test_manifest_add_feature():
         keys=["id"],
         source="data.parquet",
         row_count=100,
-        last_updated="2024-01-01T00:00:00Z",
+        updated_at="2024-01-01T00:00:00Z",
+        version="1.0.0",
+        created_at="2024-01-01T00:00:00Z",
+        content_hash="abc123",
+        schema_hash="def456",
+        config_hash="ghi789",
+        source_hash="jkl012",
     )
     manifest.add_feature(meta)
 
@@ -173,7 +217,13 @@ def test_manifest_remove_feature():
         keys=["id"],
         source="data.parquet",
         row_count=100,
-        last_updated="2024-01-01T00:00:00Z",
+        updated_at="2024-01-01T00:00:00Z",
+        version="1.0.0",
+        created_at="2024-01-01T00:00:00Z",
+        content_hash="abc123",
+        schema_hash="def456",
+        config_hash="ghi789",
+        source_hash="jkl012",
     )
     manifest.add_feature(meta)
 
@@ -195,7 +245,13 @@ def test_manifest_to_dict_roundtrip():
             keys=["id"],
             source="data.parquet",
             row_count=100,
-            last_updated="2024-01-01T00:00:00Z",
+            updated_at="2024-01-01T00:00:00Z",
+            version="1.0.0",
+            created_at="2024-01-01T00:00:00Z",
+            content_hash="abc123",
+            schema_hash="def456",
+            config_hash="ghi789",
+            source_hash="jkl012",
         )
     )
 
@@ -217,7 +273,13 @@ def test_write_and_read_metadata_file():
         keys=["id"],
         source="data.parquet",
         row_count=100,
-        last_updated="2024-01-01T00:00:00Z",
+        updated_at="2024-01-01T00:00:00Z",
+        version="1.0.0",
+        created_at="2024-01-01T00:00:00Z",
+        content_hash="abc123",
+        schema_hash="def456",
+        config_hash="ghi789",
+        source_hash="jkl012",
         tags=["test"],
     )
 
@@ -231,6 +293,7 @@ def test_write_and_read_metadata_file():
         # Then it should match
         assert restored is not None
         assert restored.name == meta.name
+        assert restored.version == meta.version
         assert restored.tags == meta.tags
 
 
@@ -280,13 +343,18 @@ def test_derive_column_metadata_for_simple_columns():
     schema = {"user_id": "Utf8", "value": "Float64"}
 
     # When deriving column metadata
-    base_columns, feature_columns = derive_column_metadata(simple_feature, schema)
+    base_columns, feature_columns = derive_column_metadata(
+        simple_feature, schema
+    )
 
-    # Then it should have basic dtype info in base columns
+    # Then it should have basic dtype info in base columns (canonical types)
     assert len(base_columns) == 2
     assert len(feature_columns) == 0
-    assert any(c.name == "user_id" and c.dtype == "Utf8" for c in base_columns)
-    assert any(c.name == "value" and c.dtype == "Float64" for c in base_columns)
+    # Types are now canonical strings (e.g., "string" instead of "Utf8")
+    assert any(
+        c.name == "user_id" and c.dtype == "string" for c in base_columns
+    )
+    assert any(c.name == "value" and c.dtype == "float64" for c in base_columns)
 
 
 def test_derive_column_metadata_for_rolling_columns():
@@ -297,7 +365,9 @@ def test_derive_column_metadata_for_rolling_columns():
         timestamp="event_time",
         interval="1d",
         metrics=[
-            Rolling(windows=["7d", "30d"], aggregations={"amt": ["sum", "count"]})
+            Rolling(
+                windows=["7d", "30d"], aggregations={"amt": ["sum", "count"]}
+            )
         ],
     )
     def rolling_feature(df):
@@ -314,7 +384,9 @@ def test_derive_column_metadata_for_rolling_columns():
     }
 
     # When deriving column metadata
-    base_columns, feature_columns = derive_column_metadata(rolling_feature, schema)
+    base_columns, feature_columns = derive_column_metadata(
+        rolling_feature, schema
+    )
 
     # Then base columns should contain keys and timestamp
     assert len(base_columns) == 2
@@ -324,7 +396,11 @@ def test_derive_column_metadata_for_rolling_columns():
     # And feature columns should contain rolling metrics
     assert len(feature_columns) == 4
     sum_7d = next(
-        (c for c in feature_columns if c.name == "rolling_feature__amt__sum__1d__7d"),
+        (
+            c
+            for c in feature_columns
+            if c.name == "rolling_feature__amt__sum__1d__7d"
+        ),
         None,
     )
     assert sum_7d is not None
@@ -351,7 +427,9 @@ def test_derive_column_metadata_with_validators():
     schema = {"user_id": "Utf8", "amount": "Float64"}
 
     # When deriving column metadata
-    base_columns, feature_columns = derive_column_metadata(validated_feature, schema)
+    base_columns, feature_columns = derive_column_metadata(
+        validated_feature, schema
+    )
 
     # Then base columns should include validators as structured dicts
     assert len(base_columns) == 2
@@ -376,7 +454,11 @@ def test_derive_column_metadata_with_base_schema():
         return df
 
     # Base schema before metrics
-    base_schema = {"user_id": "Utf8", "amount": "Float64", "timestamp": "Datetime"}
+    base_schema = {
+        "user_id": "Utf8",
+        "amount": "Float64",
+        "timestamp": "Datetime",
+    }
 
     # Final schema after Rolling metrics added
     schema = {
@@ -448,7 +530,13 @@ def test_feature_metadata_serializes_columns_and_features():
         keys=["user_id"],
         source="data.parquet",
         row_count=100,
-        last_updated="2024-01-01T00:00:00Z",
+        updated_at="2024-01-01T00:00:00Z",
+        version="1.0.0",
+        created_at="2024-01-01T00:00:00Z",
+        content_hash="abc123",
+        schema_hash="def456",
+        config_hash="ghi789",
+        source_hash="jkl012",
         columns=[
             ColumnMetadata(name="user_id", dtype="Utf8"),
             ColumnMetadata(
@@ -488,24 +576,29 @@ def test_build_creates_metadata_file():
             source_path
         )
 
-        @feature(keys=["id"], source=str(source_path), description="Test feature")
+        @feature(
+            keys=["id"], source=str(source_path), description="Test feature"
+        )
         def test_feature(df):
             return df
 
         store = LocalStore(tmpdir)
-        defs = Definitions(name="test", features=[test_feature], offline_store=store)
+        defs = Definitions(
+            name="test", features=[test_feature], offline_store=store
+        )
 
         # When building
         defs.build(preview=False)
 
-        # Then metadata file should exist
-        meta_path = Path(tmpdir) / "_metadata" / "test_feature.meta.json"
+        # Then metadata file should exist in versioned directory
+        meta_path = Path(tmpdir) / "test_feature" / "1.0.0" / ".meta.json"
         assert meta_path.exists()
 
         # And contain correct data
         with open(meta_path) as f:
             data = json.load(f)
         assert data["name"] == "test_feature"
+        assert data["version"] == "1.0.0"
         assert data["row_count"] == 3
         assert data["description"] == "Test feature"
         assert "columns" in data
@@ -542,39 +635,63 @@ def test_build_updates_metadata_on_rebuild():
 
 
 def test_local_store_metadata_path_for():
-    # Given a LocalStore
+    # Given a LocalStore with a feature
     with tempfile.TemporaryDirectory() as tmpdir:
         store = LocalStore(tmpdir)
 
-        # When getting metadata path
+        # Write a feature first to set up version
+        from mlforge.results import PolarsResult
+
+        df = pl.DataFrame({"id": [1]})
+        store.write("my_feature", PolarsResult(df), feature_version="1.0.0")
+
+        # When getting metadata path (defaults to latest version)
         path = store.metadata_path_for("my_feature")
 
-        # Then it should return correct path
-        assert path == Path(tmpdir) / "_metadata" / "my_feature.meta.json"
+        # Then it should return versioned path
+        assert path == Path(tmpdir) / "my_feature" / "1.0.0" / ".meta.json"
+
+        # When getting metadata path for specific version
+        path_v1 = store.metadata_path_for("my_feature", feature_version="1.0.0")
+        assert path_v1 == Path(tmpdir) / "my_feature" / "1.0.0" / ".meta.json"
 
 
 def test_local_store_list_metadata_returns_all():
-    # Given a store with multiple metadata files
+    # Given a store with multiple features (versioned)
     with tempfile.TemporaryDirectory() as tmpdir:
         store = LocalStore(tmpdir)
+        from mlforge.results import PolarsResult
 
-        # Create some metadata files
+        # Create some features with metadata
         for i in range(3):
+            # Write the data first (creates version directory and _latest.json)
+            df = pl.DataFrame({"id": list(range(100 * (i + 1)))})
+            store.write(
+                f"feature_{i}", PolarsResult(df), feature_version="1.0.0"
+            )
+
+            # Write metadata
             meta = FeatureMetadata(
                 name=f"feature_{i}",
-                path=f"/store/feature_{i}.parquet",
+                path=f"/store/feature_{i}/1.0.0/data.parquet",
                 entity="id",
                 keys=["id"],
                 source="data.parquet",
                 row_count=100 * (i + 1),
-                last_updated="2024-01-01T00:00:00Z",
+                updated_at="2024-01-01T00:00:00Z",
+                version="1.0.0",
+                created_at="2024-01-01T00:00:00Z",
+                content_hash="abc123",
+                schema_hash="def456",
+                config_hash="ghi789",
+                source_hash="jkl012",
             )
             store.write_metadata(f"feature_{i}", meta)
 
         # When listing metadata
         metadata_list = store.list_metadata()
 
-        # Then all should be returned
+        # Then all should be returned (latest versions only)
         assert len(metadata_list) == 3
         names = {m.name for m in metadata_list}
         assert names == {"feature_0", "feature_1", "feature_2"}

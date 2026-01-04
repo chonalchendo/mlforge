@@ -8,9 +8,11 @@ mlforge provides a lightweight, Python-first approach to feature engineering and
 
 - **Simple API** - Define features with a decorator, build with one command
 - **Point-in-time correctness** - Automatic temporal joins prevent data leakage
-- **Local-first** - Run entirely on your machine with Parquet storage
-- **Type-safe** - Built on Polars for fast, type-checked transformations
-- **CLI included** - Build and list features from the command line
+- **Feature versioning** - Automatic semantic versioning with content-hash tracking
+- **Multiple compute engines** - Choose Polars or DuckDB based on your needs
+- **Online & offline stores** - Redis for real-time serving, Parquet for batch
+- **Type-safe** - Built on Polars with unified type system across engines
+- **CLI included** - Build, list, sync, and manage features from the command line
 
 ## Quick Example
 
@@ -50,11 +52,31 @@ import polars as pl
 # Load your entity data
 entities = pl.read_parquet("data/labels.parquet")
 
-# Get features joined correctly
+# Get features joined correctly (supports versioning)
 training_data = get_training_data(
-    features=["user_spend_stats"],
+    features=[
+        "user_spend_stats",           # Latest version
+        ("merchant_risk", "1.0.0"),   # Pinned version
+    ],
     entity_df=entities,
     timestamp="event_time"
+)
+```
+
+Real-time inference with Redis:
+
+```python
+from mlforge import get_online_features
+from mlforge.online import RedisStore
+
+store = RedisStore(host="localhost")
+
+# Retrieve features for inference
+features_df = get_online_features(
+    features=["user_spend_stats"],
+    entity_df=request_df,
+    store=store,
+    entities=[with_user_id],
 )
 ```
 

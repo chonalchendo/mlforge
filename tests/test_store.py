@@ -8,6 +8,10 @@ import pytest
 from mlforge import LocalStore, S3Store
 from mlforge.results import PolarsResult
 
+# =============================================================================
+# LocalStore Tests
+# =============================================================================
+
 
 def test_local_store_creates_directory():
     # Given a non-existent directory path
@@ -32,32 +36,70 @@ def test_local_store_accepts_existing_directory():
         assert store.path == Path(tmpdir)
 
 
-def test_local_store_path_for_returns_parquet_path():
-    # Given a LocalStore
+def test_local_store_path_for_returns_versioned_parquet_path():
+    # Given a LocalStore with a feature
     with tempfile.TemporaryDirectory() as tmpdir:
         store = LocalStore(tmpdir)
 
-        # When getting path for a feature
+        # Write a feature first to set up the version
+        df = pl.DataFrame({"id": [1]})
+        store.write("my_feature", PolarsResult(df), feature_version="1.0.0")
+
+        # When getting path for a feature (latest)
         path = store.path_for("my_feature")
 
-        # Then it should return parquet file path
-        assert path == Path(tmpdir) / "my_feature.parquet"
+        # Then it should return versioned parquet file path
+        assert path == Path(tmpdir) / "my_feature" / "1.0.0" / "data.parquet"
         assert path.suffix == ".parquet"
 
 
-def test_local_store_write_creates_parquet_file():
+def test_local_store_path_for_specific_version():
+    # Given a LocalStore with a feature
+    with tempfile.TemporaryDirectory() as tmpdir:
+        store = LocalStore(tmpdir)
+
+        # Write a feature
+        df = pl.DataFrame({"id": [1]})
+        store.write("my_feature", PolarsResult(df), feature_version="1.0.0")
+
+        # When getting path for specific version
+        path = store.path_for("my_feature", feature_version="1.0.0")
+
+        # Then it should return that version's path
+        assert path == Path(tmpdir) / "my_feature" / "1.0.0" / "data.parquet"
+
+
+def test_local_store_write_creates_versioned_parquet_file():
     # Given a DataFrame to store
     df = pl.DataFrame({"id": [1, 2, 3], "value": [10, 20, 30]})
 
     with tempfile.TemporaryDirectory() as tmpdir:
         store = LocalStore(tmpdir)
 
-        # When writing the feature
-        store.write("test_feature", PolarsResult(df))
+        # When writing the feature with version
+        store.write("test_feature", PolarsResult(df), feature_version="1.0.0")
 
-        # Then the parquet file should exist
-        expected_path = Path(tmpdir) / "test_feature.parquet"
+        # Then the parquet file should exist in versioned directory
+        expected_path = Path(tmpdir) / "test_feature" / "1.0.0" / "data.parquet"
         assert expected_path.exists()
+
+
+def test_local_store_write_creates_latest_pointer():
+    # Given a DataFrame to store
+    df = pl.DataFrame({"id": [1]})
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        store = LocalStore(tmpdir)
+
+        # When writing the feature
+        store.write("test_feature", PolarsResult(df), feature_version="1.0.0")
+
+        # Then the _latest.json pointer should exist
+        pointer_path = Path(tmpdir) / "test_feature" / "_latest.json"
+        assert pointer_path.exists()
+
+        # And latest version should be correct
+        assert store.get_latest_version("test_feature") == "1.0.0"
 
 
 def test_local_store_read_returns_dataframe():
@@ -66,13 +108,30 @@ def test_local_store_read_returns_dataframe():
 
     with tempfile.TemporaryDirectory() as tmpdir:
         store = LocalStore(tmpdir)
-        store.write("stored_feature", PolarsResult(df))
+        store.write("stored_feature", PolarsResult(df), feature_version="1.0.0")
 
-        # When reading the feature
+        # When reading the feature (latest)
         result = store.read("stored_feature")
 
         # Then it should return the same DataFrame
         assert result.equals(df)
+
+
+def test_local_store_read_specific_version():
+    # Given a feature with multiple versions
+    df_v1 = pl.DataFrame({"id": [1], "version": [1]})
+    df_v2 = pl.DataFrame({"id": [1], "version": [2]})
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        store = LocalStore(tmpdir)
+        store.write("feature", PolarsResult(df_v1), feature_version="1.0.0")
+        store.write("feature", PolarsResult(df_v2), feature_version="2.0.0")
+
+        # When reading specific version
+        result = store.read("feature", feature_version="1.0.0")
+
+        # Then it should return that version
+        assert result["version"][0] == 1
 
 
 def test_local_store_read_raises_on_missing_feature():
@@ -91,13 +150,28 @@ def test_local_store_exists_returns_true_for_existing():
 
     with tempfile.TemporaryDirectory() as tmpdir:
         store = LocalStore(tmpdir)
-        store.write("existing_feature", PolarsResult(df))
+        store.write(
+            "existing_feature", PolarsResult(df), feature_version="1.0.0"
+        )
 
-        # When checking existence
+        # When checking existence (any version)
         exists = store.exists("existing_feature")
 
         # Then it should return True
         assert exists is True
+
+
+def test_local_store_exists_with_specific_version():
+    # Given a stored feature
+    df = pl.DataFrame({"id": [1]})
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        store = LocalStore(tmpdir)
+        store.write("feature", PolarsResult(df), feature_version="1.0.0")
+
+        # When checking specific version
+        assert store.exists("feature", feature_version="1.0.0") is True
+        assert store.exists("feature", feature_version="2.0.0") is False
 
 
 def test_local_store_exists_returns_false_for_missing():
@@ -112,21 +186,74 @@ def test_local_store_exists_returns_false_for_missing():
         assert exists is False
 
 
-def test_local_store_write_overwrites_existing():
-    # Given an existing feature
-    df_v1 = pl.DataFrame({"id": [1], "version": [1]})
-    df_v2 = pl.DataFrame({"id": [1], "version": [2]})
+def test_local_store_list_versions():
+    # Given a feature with multiple versions
+    df = pl.DataFrame({"id": [1]})
 
     with tempfile.TemporaryDirectory() as tmpdir:
         store = LocalStore(tmpdir)
+        store.write("feature", PolarsResult(df), feature_version="1.0.0")
+        store.write("feature", PolarsResult(df), feature_version="1.1.0")
+        store.write("feature", PolarsResult(df), feature_version="2.0.0")
 
-        # When writing twice to the same feature
-        store.write("versioned", PolarsResult(df_v1))
-        store.write("versioned", PolarsResult(df_v2))
+        # When listing versions
+        versions = store.list_versions("feature")
 
-        # Then it should overwrite with latest version
-        result = store.read("versioned")
-        assert result["version"][0] == 2
+        # Then it should return sorted versions
+        assert versions == ["1.0.0", "1.1.0", "2.0.0"]
+
+
+def test_local_store_get_latest_version():
+    # Given a feature with multiple versions
+    df = pl.DataFrame({"id": [1]})
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        store = LocalStore(tmpdir)
+        store.write("feature", PolarsResult(df), feature_version="1.0.0")
+        store.write("feature", PolarsResult(df), feature_version="2.0.0")
+
+        # When getting latest version
+        latest = store.get_latest_version("feature")
+
+        # Then it should return the latest (most recently written)
+        assert latest == "2.0.0"
+
+
+def test_local_store_write_creates_gitignore():
+    # Given a LocalStore
+    with tempfile.TemporaryDirectory() as tmpdir:
+        store = LocalStore(tmpdir)
+        df = pl.DataFrame({"id": [1]})
+
+        # When writing a feature
+        store.write("my_feature", PolarsResult(df), feature_version="1.0.0")
+
+        # Then .gitignore should be created in feature directory
+        gitignore_path = Path(tmpdir) / "my_feature" / ".gitignore"
+        assert gitignore_path.exists()
+
+        # And content should ignore data.parquet
+        content = gitignore_path.read_text()
+        assert "*/data.parquet" in content
+
+
+def test_local_store_write_does_not_overwrite_gitignore():
+    # Given a LocalStore with existing .gitignore
+    with tempfile.TemporaryDirectory() as tmpdir:
+        store = LocalStore(tmpdir)
+        df = pl.DataFrame({"id": [1]})
+
+        # Create feature directory with custom .gitignore
+        feature_dir = Path(tmpdir) / "my_feature"
+        feature_dir.mkdir(parents=True)
+        gitignore_path = feature_dir / ".gitignore"
+        gitignore_path.write_text("custom content")
+
+        # When writing a feature
+        store.write("my_feature", PolarsResult(df), feature_version="1.0.0")
+
+        # Then .gitignore should not be overwritten
+        assert gitignore_path.read_text() == "custom content"
 
 
 def test_local_store_handles_nested_directory_path():
@@ -157,7 +284,7 @@ def test_local_store_preserves_dataframe_schema():
         store = LocalStore(tmpdir)
 
         # When writing and reading
-        store.write("schema_test", PolarsResult(df))
+        store.write("schema_test", PolarsResult(df), feature_version="1.0.0")
         result = store.read("schema_test")
 
         # Then schema should be preserved
@@ -174,7 +301,7 @@ def test_local_store_handles_empty_dataframe():
         store = LocalStore(tmpdir)
 
         # When writing and reading
-        store.write("empty", PolarsResult(df))
+        store.write("empty", PolarsResult(df), feature_version="1.0.0")
         result = store.read("empty")
 
         # Then it should preserve the empty DataFrame
@@ -204,7 +331,9 @@ def test_local_store_accepts_path_object():
         assert store.path == path_obj
 
 
+# =============================================================================
 # S3Store Tests
+# =============================================================================
 
 
 def test_s3_store_initialization_success(mocker):
@@ -262,18 +391,23 @@ def test_s3_store_initialization_with_empty_prefix(mocker):
     assert store.prefix == ""
 
 
-def test_s3_store_path_for_returns_s3_uri(mocker):
-    # Given an S3Store
+def test_s3_store_path_for_returns_versioned_s3_uri(mocker):
+    # Given an S3Store with a feature
     mock_s3 = MagicMock()
     mock_s3.exists.return_value = True
     mocker.patch("mlforge.store.s3fs.S3FileSystem", return_value=mock_s3)
     store = S3Store(bucket="my-bucket", prefix="prod/features")
 
-    # When getting path for a feature
-    path = store.path_for("user_age")
+    # Mock the latest pointer read
+    mock_s3.open.return_value.__enter__ = lambda s: s
+    mock_s3.open.return_value.__exit__ = MagicMock(return_value=False)
+    mock_s3.open.return_value.read.return_value = '{"version": "1.0.0"}'
 
-    # Then it should return S3 URI as str
-    assert str(path) == "s3://my-bucket/prod/features/user_age.parquet"
+    # When getting path for a feature
+    path = store.path_for("user_age", feature_version="1.0.0")
+
+    # Then it should return versioned S3 URI
+    assert path == "s3://my-bucket/prod/features/user_age/1.0.0/data.parquet"
     assert isinstance(path, str)
 
 
@@ -284,11 +418,11 @@ def test_s3_store_path_for_with_empty_prefix(mocker):
     mocker.patch("mlforge.store.s3fs.S3FileSystem", return_value=mock_s3)
     store = S3Store(bucket="my-bucket", prefix="")
 
-    # When getting path for a feature
-    path = store.path_for("user_age")
+    # When getting path for specific version
+    path = store.path_for("user_age", feature_version="1.0.0")
 
-    # Then it should return S3 URI (Path normalizes // to /)
-    assert str(path) == "s3://my-bucket/user_age.parquet"
+    # Then it should return versioned S3 URI
+    assert path == "s3://my-bucket/user_age/1.0.0/data.parquet"
 
 
 def test_s3_store_write_calls_polars_write_parquet(mocker, sample_dataframe):
@@ -299,59 +433,34 @@ def test_s3_store_write_calls_polars_write_parquet(mocker, sample_dataframe):
     mock_write = mocker.patch.object(pl.DataFrame, "write_parquet")
     store = S3Store(bucket="test-bucket", prefix="features")
 
-    # When writing a feature
-    store.write("test_feature", PolarsResult(sample_dataframe))
+    # When writing a feature with version
+    store.write(
+        "test_feature", PolarsResult(sample_dataframe), feature_version="1.0.0"
+    )
 
-    # Then it should call write_parquet with correct S3 path
-    expected_path = "s3://test-bucket/features/test_feature.parquet"
+    # Then it should call write_parquet with correct versioned S3 path
+    expected_path = "s3://test-bucket/features/test_feature/1.0.0/data.parquet"
     mock_write.assert_called_once_with(expected_path)
 
 
-def test_s3_store_read_calls_polars_read_parquet(mocker, sample_dataframe):
-    # Given an S3Store and mock read_parquet
+def test_s3_store_list_versions(mocker):
+    # Given an S3Store with multiple versions
     mock_s3 = MagicMock()
     mock_s3.exists.return_value = True
-    mocker.patch("mlforge.store.s3fs.S3FileSystem", return_value=mock_s3)
-    mock_read = mocker.patch(
-        "mlforge.store.pl.read_parquet", return_value=sample_dataframe
-    )
-    store = S3Store(bucket="test-bucket", prefix="features")
-
-    # When reading a feature
-    result = store.read("test_feature")
-
-    # Then it should call read_parquet with correct S3 path
-    mock_read.assert_called_once_with("s3://test-bucket/features/test_feature.parquet")
-    assert result.equals(sample_dataframe)
-
-
-def test_s3_store_exists_returns_true_when_file_exists(mocker):
-    # Given an S3Store with a feature that exists
-    mock_s3 = MagicMock()
-    mock_s3.exists.side_effect = [True, True]  # First for bucket, second for file
+    mock_s3.ls.return_value = [
+        "test-bucket/features/feature/1.0.0",
+        "test-bucket/features/feature/1.1.0",
+        "test-bucket/features/feature/2.0.0",
+        "test-bucket/features/feature/_latest.json",
+    ]
     mocker.patch("mlforge.store.s3fs.S3FileSystem", return_value=mock_s3)
     store = S3Store(bucket="test-bucket", prefix="features")
 
-    # When checking existence
-    exists = store.exists("existing_feature")
+    # When listing versions
+    versions = store.list_versions("feature")
 
-    # Then it should return True
-    assert exists is True
-    assert mock_s3.exists.call_count == 2
-
-
-def test_s3_store_exists_returns_false_when_file_missing(mocker):
-    # Given an S3Store with a feature that doesn't exist
-    mock_s3 = MagicMock()
-    mock_s3.exists.side_effect = [True, False]  # First for bucket, second for file
-    mocker.patch("mlforge.store.s3fs.S3FileSystem", return_value=mock_s3)
-    store = S3Store(bucket="test-bucket", prefix="features")
-
-    # When checking existence
-    exists = store.exists("missing_feature")
-
-    # Then it should return False
-    assert exists is False
+    # Then it should return sorted versions (excluding _latest.json)
+    assert versions == ["1.0.0", "1.1.0", "2.0.0"]
 
 
 def test_s3_store_stores_region_attribute(mocker):

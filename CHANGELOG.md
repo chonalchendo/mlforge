@@ -1,3 +1,58 @@
+## v0.5.0 (2025-01-04)
+
+### 💥 Breaking Changes
+
+- **Storage layout**: Features now stored in versioned directories (`feature_store/user_spend/1.0.0/data.parquet`)
+- **Metadata schema**: `last_updated` renamed to `updated_at`, new required fields (`version`, `created_at`, `content_hash`, `schema_hash`, `config_hash`)
+- **get_training_data()**: Now accepts version tuples `("feature_name", "1.0.0")` for pinned versions
+
+### ✨ Features
+
+- **Feature Versioning**: Automatic semantic versioning with content-hash tracking
+  - New version created when feature config, schema, or data changes
+  - `mlforge versions <feature>` command to list versions
+  - `mlforge sync` command for Git-based collaboration
+  - Version pinning in `get_training_data()`
+
+- **DuckDB Compute Engine**: Alternative to Polars for large datasets
+  - Pluggable engine architecture (`engine="duckdb"` or `engine="polars"`)
+  - SQL-based rolling window aggregations
+  - Consistent results across engines
+
+- **Unified Type System**: Canonical types for cross-engine consistency
+  - `DataType` and `TypeKind` classes for type representation
+  - Consistent schema hashing regardless of engine
+  - Type conversion between Polars and DuckDB
+
+- **Redis Online Store**: Real-time feature serving
+  - `RedisStore` for low-latency feature lookups
+  - `mlforge build --online` to populate Redis
+  - `get_online_features()` for inference workloads
+  - Batch read/write with Redis pipelines
+
+- **Online Feature Retrieval**: High-level API for inference
+  - `get_online_features()` function mirrors `get_training_data()` API
+  - Entity key transform support
+  - Batch retrieval with automatic joins
+
+### ♻️ Refactorings
+
+- Consolidate DuckDB connection helper into engines module
+- Remove unused helper functions
+- Restructure compilers into separate module
+
+### 📝💡 Documentation
+
+- Add online stores user guide
+- Add versioning documentation
+- Update CLI reference with new commands
+- Add API docs for online and types modules
+
+### 📌➕⬇️➖⬆️ Dependencies
+
+- Add optional `duckdb>=1.0.0` dependency
+- Add optional `redis>=7.1.0` dependency
+
 ## v0.4.0 (2025-12-28)
 
 ### ✨ Features

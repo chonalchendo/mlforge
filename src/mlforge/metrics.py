@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from datetime import timedelta
-from typing import Literal
+from typing import Any, Literal
 
 AggregationType = Literal["count", "mean", "sum", "min", "max", "std", "median"]
 
@@ -104,6 +104,22 @@ class Rolling:
                 raise ValueError(
                     f"Rolling spec references column '{col}' but it's not in the dataframe. Available: {available_columns}"
                 )
+
+    def to_dict(self) -> dict[str, Any]:
+        """
+        Serialize metrics configuration for hashing.
+
+        Used by version.compute_config_hash() to detect configuration changes.
+
+        Returns:
+            Dictionary representation of metric configuration
+        """
+        return {
+            "type": "Rolling",
+            "windows": self.converted_windows,
+            "aggregations": {k: list(v) for k, v in self.aggregations.items()},
+            "closed": self.closed,
+        }
 
 
 MetricKind = Rolling

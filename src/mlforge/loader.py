@@ -60,7 +60,9 @@ def load_definitions(target: str | None = None) -> core.Definitions:
     # Load module from file path
     spec = importlib.util.spec_from_file_location(path.stem, path)
     if spec is None or spec.loader is None:
-        raise errors.DefinitionsLoadError(f"Failed to create module spec for {path}")
+        raise errors.DefinitionsLoadError(
+            f"Failed to create module spec for {path}"
+        )
 
     module = importlib.util.module_from_spec(spec)
 
@@ -74,7 +76,9 @@ def load_definitions(target: str | None = None) -> core.Definitions:
 
     # Find all Definitions instances in module
     definitions = [
-        obj for obj in vars(module).values() if isinstance(obj, core.Definitions)
+        obj
+        for obj in vars(module).values()
+        if isinstance(obj, core.Definitions)
     ]
 
     if not definitions:

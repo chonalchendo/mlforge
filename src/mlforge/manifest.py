@@ -17,6 +17,8 @@ from typing import TYPE_CHECKING, Any
 
 from loguru import logger
 
+import mlforge.types as types_
+
 if TYPE_CHECKING:
     from mlforge.core import Feature
 
@@ -78,13 +80,20 @@ class FeatureMetadata:
         keys: All entity key columns
         source: Source data file path
         row_count: Number of rows in materialized feature
-        last_updated: ISO 8601 timestamp of last build
+        updated_at: ISO 8601 timestamp of last build (renamed from last_updated in v0.5.0)
+        version: Semantic version string (v0.5.0)
+        created_at: ISO 8601 timestamp when version was first created (v0.5.0)
+        content_hash: Hash of data.parquet for integrity verification (v0.5.0)
+        schema_hash: Hash of column names + dtypes for change detection (v0.5.0)
+        config_hash: Hash of keys, timestamp, interval, metrics config (v0.5.0)
+        source_hash: Hash of source data file for reproducibility verification (v0.5.0)
         timestamp: Timestamp column for temporal features
         interval: Time interval for rolling aggregations
         columns: Base column metadata (from feature function before metrics)
         features: Generated feature column metadata (from metrics)
         tags: Feature grouping tags
         description: Human-readable description
+        change_summary: Documents why version was bumped (v0.5.0)
     """
 
     name: str
@@ -93,7 +102,17 @@ class FeatureMetadata:
     keys: list[str]
     source: str
     row_count: int
-    last_updated: str
+    updated_at: str
+
+    # v0.5.0: New required fields for versioning
+    version: str = "1.0.0"
+    created_at: str = ""
+    content_hash: str = ""
+    schema_hash: str = ""
+    config_hash: str = ""
+    source_hash: str = ""
+
+    # Existing optional fields
     timestamp: str | None = None
     interval: str | None = None
     columns: list[ColumnMetadata] = field(default_factory=list)
@@ -101,16 +120,25 @@ class FeatureMetadata:
     tags: list[str] = field(default_factory=list)
     description: str | None = None
 
+    # v0.5.0: New optional field
+    change_summary: dict[str, Any] | None = None
+
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
-        result = {
+        result: dict[str, Any] = {
             "name": self.name,
+            "version": self.version,
             "path": self.path,
             "entity": self.entity,
             "keys": self.keys,
             "source": self.source,
             "row_count": self.row_count,
-            "last_updated": self.last_updated,
+            "created_at": self.created_at,
+            "updated_at": self.updated_at,
+            "content_hash": self.content_hash,
+            "schema_hash": self.schema_hash,
+            "config_hash": self.config_hash,
+            "source_hash": self.source_hash,
         }
         if self.timestamp:
             result["timestamp"] = self.timestamp
@@ -124,27 +152,42 @@ class FeatureMetadata:
             result["tags"] = self.tags
         if self.description:
             result["description"] = self.description
+        if self.change_summary:
+            result["change_summary"] = self.change_summary
         return result
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> FeatureMetadata:
         """Create from dictionary."""
         columns = [ColumnMetadata.from_dict(c) for c in data.get("columns", [])]
-        features = [ColumnMetadata.from_dict(c) for c in data.get("features", [])]
+        features = [
+            ColumnMetadata.from_dict(c) for c in data.get("features", [])
+        ]
+
+        # Handle backward compatibility: last_updated → updated_at
+        updated_at = data.get("updated_at") or data.get("last_updated", "")
+
         return cls(
             name=data["name"],
+            version=data.get("version", "1.0.0"),
             path=data["path"],
             entity=data["entity"],
             keys=data["keys"],
             source=data["source"],
             row_count=data["row_count"],
-            last_updated=data["last_updated"],
+            created_at=data.get("created_at", ""),
+            updated_at=updated_at,
+            content_hash=data.get("content_hash", ""),
+            schema_hash=data.get("schema_hash", ""),
+            config_hash=data.get("config_hash", ""),
+            source_hash=data.get("source_hash", ""),
             timestamp=data.get("timestamp"),
             interval=data.get("interval"),
             columns=columns,
             features=features,
             tags=data.get("tags", []),
             description=data.get("description"),
+            change_summary=data.get("change_summary"),
         )
 
 
@@ -175,7 +218,9 @@ class Manifest:
         return {
             "version": self.version,
             "generated_at": self.generated_at,
-            "features": {name: meta.to_dict() for name, meta in self.features.items()},
+            "features": {
+                name: meta.to_dict() for name, meta in self.features.items()
+            },
         }
 
     @classmethod
@@ -205,7 +250,9 @@ class Manifest:
 
 
 # Regex pattern to parse Rolling column names: {tag}__{column}__{agg}__{interval}__{window}
-_ROLLING_COLUMN_PATTERN = re.compile(r"^(.+)__(\w+)__(\d+[dhmsw])__(\d+[dhmsw])$")
+_ROLLING_COLUMN_PATTERN = re.compile(
+    r"^(.+)__(\w+)__(\d+[dhmsw])__(\d+[dhmsw])$"
+)
 
 # Regex pattern to parse validator names with parameters
 _VALIDATOR_PATTERN = re.compile(r"^(\w+)(?:\((.*)\))?$")
@@ -288,6 +335,7 @@ def _derive_with_base_schema(
     feature: Feature,
     schema: dict[str, str],
     base_schema: dict[str, str],
+    schema_source: str = "polars",
 ) -> tuple[list[ColumnMetadata], list[ColumnMetadata]]:
     """
     Derive column metadata when base schema is available (recommended path).
@@ -297,8 +345,11 @@ def _derive_with_base_schema(
 
     Args:
         feature: The Feature definition object
-        schema: Final schema after metrics are applied
-        base_schema: Schema before metrics were applied
+        schema: Final schema after metrics are applied (engine-specific types)
+        base_schema: Schema before metrics were applied (always Polars types,
+            since user feature functions return Polars DataFrames)
+        schema_source: Engine source for type normalization of final schema
+            ("polars" or "duckdb")
 
     Returns:
         Tuple of (base_columns, feature_columns)
@@ -306,17 +357,33 @@ def _derive_with_base_schema(
     base_columns: list[ColumnMetadata] = []
     feature_columns: list[ColumnMetadata] = []
 
-    # Add all base columns from base_schema
+    # base_schema is always from Polars (user functions return Polars DataFrames)
+    # Final schema uses the engine-specific converter
+    final_schema_converter = (
+        types_.from_polars_string
+        if schema_source == "polars"
+        else types_.from_duckdb
+    )
+
+    # Add all base columns from base_schema (always Polars types)
     for col_name, dtype in base_schema.items():
         # Check if this column has validators and parse them
         validator_specs = None
         if feature.validators and col_name in feature.validators:
             validator_specs = [
-                _parse_validator_name(v.name) for v in feature.validators[col_name]
+                _parse_validator_name(v.name)
+                for v in feature.validators[col_name]
             ]
 
+        # Convert to canonical type string (base_schema is always Polars)
+        canonical_dtype = types_.from_polars_string(dtype).to_canonical_string()
+
         base_columns.append(
-            ColumnMetadata(name=col_name, dtype=dtype, validators=validator_specs)
+            ColumnMetadata(
+                name=col_name,
+                dtype=canonical_dtype,
+                validators=validator_specs,
+            )
         )
 
     # Add generated feature columns from final schema (only columns not in base_schema)
@@ -324,6 +391,9 @@ def _derive_with_base_schema(
         # Skip if this is a base column
         if col_name in base_schema:
             continue
+
+        # Convert to canonical type string (use engine-specific converter)
+        canonical_dtype = final_schema_converter(dtype).to_canonical_string()
 
         # Try to parse as Rolling column: {tag}__{column}__{agg}__{interval}__{window}
         match = _ROLLING_COLUMN_PATTERN.match(col_name)
@@ -335,7 +405,7 @@ def _derive_with_base_schema(
             feature_columns.append(
                 ColumnMetadata(
                     name=col_name,
-                    dtype=dtype,
+                    dtype=canonical_dtype,
                     input=input_col,
                     agg=match.group(2),
                     window=match.group(4),
@@ -348,6 +418,7 @@ def _derive_with_base_schema(
 def _derive_legacy(
     feature: Feature,
     schema: dict[str, str],
+    schema_source: str = "polars",
 ) -> tuple[list[ColumnMetadata], list[ColumnMetadata]]:
     """
     Derive column metadata without base schema (legacy path for backward compatibility).
@@ -358,6 +429,7 @@ def _derive_legacy(
     Args:
         feature: The Feature definition object
         schema: Final schema (only available schema)
+        schema_source: Engine source for type normalization ("polars" or "duckdb")
 
     Returns:
         Tuple of (base_columns, feature_columns)
@@ -365,14 +437,25 @@ def _derive_legacy(
     base_columns: list[ColumnMetadata] = []
     feature_columns: list[ColumnMetadata] = []
 
+    # Normalize types based on engine source
+    converter = (
+        types_.from_polars_string
+        if schema_source == "polars"
+        else types_.from_duckdb
+    )
+
     # Process all columns from schema and categorize them
     for col_name, dtype in schema.items():
         # Check if this column has validators and parse them
         validator_specs = None
         if feature.validators and col_name in feature.validators:
             validator_specs = [
-                _parse_validator_name(v.name) for v in feature.validators[col_name]
+                _parse_validator_name(v.name)
+                for v in feature.validators[col_name]
             ]
+
+        # Convert to canonical type string
+        canonical_dtype = converter(dtype).to_canonical_string()
 
         # Try to parse as Rolling column: {tag}__{column}__{agg}__{interval}__{window}
         match = _ROLLING_COLUMN_PATTERN.match(col_name)
@@ -384,7 +467,7 @@ def _derive_legacy(
             feature_columns.append(
                 ColumnMetadata(
                     name=col_name,
-                    dtype=dtype,
+                    dtype=canonical_dtype,
                     input=input_col,
                     agg=match.group(2),
                     window=match.group(4),
@@ -394,7 +477,11 @@ def _derive_legacy(
         else:
             # Not a rolling column, so it's a base column
             base_columns.append(
-                ColumnMetadata(name=col_name, dtype=dtype, validators=validator_specs)
+                ColumnMetadata(
+                    name=col_name,
+                    dtype=canonical_dtype,
+                    validators=validator_specs,
+                )
             )
 
     return base_columns, feature_columns
@@ -404,6 +491,7 @@ def derive_column_metadata(
     feature: Feature,
     schema: dict[str, str],
     base_schema: dict[str, str] | None = None,
+    schema_source: str = "polars",
 ) -> tuple[list[ColumnMetadata], list[ColumnMetadata]]:
     """
     Derive column metadata from feature definition and result schema.
@@ -417,6 +505,7 @@ def derive_column_metadata(
         schema: Dictionary mapping column names to dtype strings (final schema after metrics)
         base_schema: Dictionary mapping column names to dtype strings (before metrics).
             When provided, enables accurate column separation. Defaults to None.
+        schema_source: Engine source for type normalization ("polars" or "duckdb")
 
     Returns:
         Tuple of (base_columns, feature_columns) where:
@@ -424,21 +513,10 @@ def derive_column_metadata(
             - feature_columns: Rolling metric columns with aggregation metadata
     """
     if base_schema:
-        return _derive_with_base_schema(feature, schema, base_schema)
-    return _derive_legacy(feature, schema)
-
-
-def _get_rolling_output_columns(feature: Feature) -> set[str]:
-    """Get all expected output columns from Rolling metrics."""
-    columns: set[str] = set()
-    if not feature.metrics:
-        return columns
-
-    for metric in feature.metrics:
-        # Currently only Rolling is supported
-        if hasattr(metric, "output_columns"):
-            columns.update(metric.output_columns())
-    return columns
+        return _derive_with_base_schema(
+            feature, schema, base_schema, schema_source
+        )
+    return _derive_legacy(feature, schema, schema_source)
 
 
 def write_metadata_file(path: Path, metadata: FeatureMetadata) -> None:

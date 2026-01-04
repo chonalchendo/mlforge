@@ -1,5 +1,7 @@
 # AGENTS.md
 
+IMPORTANT: This project is still in development so no need to worry about introducing backward-compatability when implementing new features. v0.Y.Z will all be development, v1.0.0 will be the first production ready version of Mlforge.
+
 Instructions for AI coding agents working on the mlforge codebase.
 
 ## Project Overview
