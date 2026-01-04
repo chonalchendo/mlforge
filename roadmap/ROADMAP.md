@@ -14,12 +14,11 @@ mlforge is a Python feature store SDK focused on simplicity and developer experi
 | v0.2.0 | Tags, S3Store, Rolling metrics, metadata, validators | ✅ Complete |
 | v0.3.0 | Validation CLI, manifest command | ✅ Complete |
 | v0.4.0 | Rolling metrics, interval support, build enhancements | ✅ Complete |
-| v0.5.0 | Feature versioning, DuckDB engine, Redis online store | Planned |
-| v0.6.0 | PySpark engine, Source/Entity/Timestamp abstractions, GCS | Planned |
-| v0.7.0 | DynamoDB online store, REST API (`mlforge serve`) | Planned |
-| v0.8.0 | Databricks integration (Unity Catalog, Online Tables) | Planned |
-| v0.9.0 | Data quality metrics, drift detection (PSI), catalog/search | Planned |
-| v0.10.0+ | Documentation, testing, community, polish | Planned |
+| v0.5.0 | Feature versioning, DuckDB engine, Redis online store | ✅ Complete |
+| v0.6.0 | Developer ergonomics, Source/Entity/Timestamp, GCS, CLI init | Planned |
+| v0.7.0 | Serving & Integration - REST API, MLflow, FeatureSpec | Planned |
+| v0.8.0 | Enterprise - Databricks, PySpark, Iceberg | Planned |
+| v0.9.0 | Quality & Monitoring - Metrics, drift, Prometheus, embeddings | Planned |
 | v1.0.0 | Production ready | Planned |
 
 ---
@@ -72,38 +71,43 @@ mlforge is a Python feature store SDK focused on simplicity and developer experi
 
 See [v0.5.0.md](./v0.5.0.md) for detailed design.
 
-### v0.6.0 - Developer Ergonomics, PySpark & Source Abstraction
+### v0.6.0 - Developer Ergonomics & Source Abstraction
 
 **Target:** Q2 2025
 
 | Feature | Description |
 |---------|-------------|
-| PySpark Engine | Distributed compute for production-scale datasets |
 | Source Abstraction | `Source` class with format auto-detection (Parquet, CSV, Delta) |
 | Entity Definition | `Entity` class with automatic surrogate key generation |
 | Timestamp Handling | Auto-detect datetime formats, `Timestamp` class |
 | GCS Storage | Google Cloud Storage support for sources |
+| CLI `init` Command | Initialize new mlforge project with boilerplate structure |
 | CLI Enhancements | Subcommands for list (features, entities, sources, versions) |
+| Detailed Examples | Fraud detection, recommendation system examples |
 
 See [v0.6.0.md](./v0.6.0.md) for detailed design.
 
-### v0.7.0 - Serving & Cloud
+### v0.7.0 - Serving & Integration
 
 **Target:** Q3 2025
 
 | Feature | Description |
 |---------|-------------|
-| DynamoDB Online Store | AWS-managed online store for production deployments |
 | REST API | `mlforge serve` - FastAPI-based feature serving |
+| DynamoDB Online Store | AWS-managed online store for production deployments |
+| FeatureSpec | Column-level feature selection in `get_training_data()` |
+| MLflow Integration | Log feature versions and schemas to MLflow experiments |
 
-### v0.8.0 - Databricks Integration
+### v0.8.0 - Enterprise & Scale
 
 **Target:** Q4 2025
 
 | Feature | Description |
 |---------|-------------|
+| PySpark Engine | Distributed compute for production-scale datasets |
 | Unity Catalog | Databricks-native offline store with Delta Lake |
 | Databricks Online Tables | Databricks-native online serving |
+| Apache Iceberg | Iceberg format support for sources and stores |
 
 ### v0.9.0 - Quality & Monitoring
 
@@ -113,19 +117,10 @@ See [v0.6.0.md](./v0.6.0.md) for detailed design.
 |---------|-------------|
 | Data Quality Metrics | Null rates, cardinality, distributions |
 | Drift Detection | Population Stability Index (PSI) for distribution monitoring |
+| Prometheus Metrics | Export metrics for Grafana dashboards |
+| Text Embeddings | Built-in support for text embedding features |
 | Catalog Generation | `mlforge catalog` for human-readable feature documentation |
 | Manifest Search | `defs.search_features()` for programmatic discovery in notebooks |
-
-### v0.10.0+ - Polish & Documentation
-
-**Target:** Q1-Q2 2026
-
-| Feature | Description |
-|---------|-------------|
-| Documentation | Comprehensive guides, API reference, tutorials |
-| Testing | 85%+ coverage, integration tests, performance benchmarks |
-| Community | CONTRIBUTING.md, issue templates, release automation |
-| Performance | Optimization, benchmarks |
 
 ### v1.0.0 - Production Ready
 
@@ -144,12 +139,26 @@ See [v1.0.0.md](./v1.0.0.md) for complete definition of done.
 
 Features under consideration for future releases:
 
-- **Streaming/real-time features** - Kafka, Kinesis integration (v1.1.0+)
-- **Feature dependencies** - Feature A depends on Feature B
-- **Lineage tracking** - Source → Feature → Model tracking
-- **Airflow/Dagster operators** - Native orchestration integration
-- **Web UI** - Visual feature catalog and monitoring
-- **ClickHouse online store** - High-performance analytics store
+| Feature | Description | Potential Version |
+|---------|-------------|-------------------|
+| Streaming Features | Kafka, Kinesis integration for real-time pipelines | v1.1.0 |
+| Feature Dependencies | Feature A depends on Feature B, DAG execution | v1.2.0 |
+| Lineage Tracking | Source → Feature → Model tracking | v1.2.0 |
+| Vector DB Integration | HelixDB or similar for embedding similarity search | v1.2.0 |
+| Airflow/Dagster Operators | Native orchestration integration | v1.3.0 |
+| Web UI | Visual feature catalog and monitoring dashboard | v1.4.0 |
+| AI Feature Assistance | AI-powered feature suggestions and optimization | v1.5.0+ |
+| SAAS Platform | Managed mlforge platform (like dbt Cloud) | Strategic |
+
+### Ideas Not Planned
+
+The following ideas were evaluated and deferred indefinitely:
+
+- **Unified DataFrame API** - Wrapper mimicking Polars across engines (too complex, Polars is sufficient)
+- **Custom Rust Engine** - Custom data transformation engine (premature, Polars/DuckDB already Rust-based)
+- **CLI `apply` Command** - Infrastructure provisioning (belongs in Terraform/Pulumi)
+- **AI Data Labeling** - LLM-based data labeling (outside core scope, use specialized tools)
+- **Great Expectations Integration** - Built-in validators are sufficient for most cases
 
 ---
 
