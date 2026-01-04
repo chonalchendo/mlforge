@@ -27,7 +27,8 @@ keywords = ["feature-store", "mlops", "machine-learning", "polars"]
 
 [project.optional-dependencies]
 duckdb = ["duckdb>=1.4.3"]
-all = ["duckdb>=1.4.3"]
+redis = ["redis>=7.1.0"]
+all = ["duckdb>=1.4.3", "redis>=7.1.0"]
 
 [project.urls]
 Homepage = "https://github.com/chonalchendo/mlforge"
@@ -62,6 +63,7 @@ check = [
     "pytest-cov>=7.0.0",
     "pytest-mock>=3.15.1",
     "pytest-xdist>=3.8.0",
+    "redis>=7.1.0",
     "ruff>=0.14.4",
     "ty>=0.0.1a25",
 ]
@@ -82,6 +84,7 @@ default-groups = ["check", "commit", "dev"]
 [tool.uv.workspace]
 members = [
     "examples/transactions",
+    "examples/transactions-online",
 ]
 
 [tool.commitizen]

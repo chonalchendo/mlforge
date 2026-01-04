@@ -23,6 +23,7 @@ Public API:
     Definitions: Central registry for features
     LocalStore: Local filesystem storage backend
     S3Store: Amazon S3 storage backend
+    RedisStore: Redis online store for real-time serving
     Rolling: Rolling window aggregation metric
     entity_key: Create reusable entity key transforms
     surrogate_key: Generate surrogate keys from columns
@@ -36,6 +37,7 @@ __version__ = _get_version("mlforge-sdk")
 
 from mlforge.core import Definitions, Feature, feature
 from mlforge.metrics import Rolling
+from mlforge.online import OnlineStore, RedisStore
 from mlforge.retrieval import get_training_data
 from mlforge.store import LocalStore, S3Store
 from mlforge.types import DataType, TypeKind
@@ -59,6 +61,8 @@ __all__ = [
     "Definitions",
     "LocalStore",
     "S3Store",
+    "OnlineStore",
+    "RedisStore",
     "entity_key",
     "surrogate_key",
     "get_training_data",

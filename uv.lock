@@ -1,5 +1,5 @@
 version = 1
-requires-python = ">=3.13"
+requires-python = ">=3.13.0"
 resolution-markers = [
     "python_full_version < '3.14'",
     "python_full_version >= '3.14'",
@@ -9,6 +9,7 @@ resolution-markers = [
 members = [
     "mlforge-sdk",
     "transactions",
+    "transactions-online",
 ]
 
 [[package]]
@@ -860,9 +861,13 @@ dependencies = [
 [package.optional-dependencies]
 all = [
     { name = "duckdb" },
+    { name = "redis" },
 ]
 duckdb = [
     { name = "duckdb" },
+]
+redis = [
+    { name = "redis" },
 ]
 
 [package.dev-dependencies]
@@ -873,6 +878,7 @@ check = [
     { name = "pytest-cov" },
     { name = "pytest-mock" },
     { name = "pytest-xdist" },
+    { name = "redis" },
     { name = "ruff" },
     { name = "ty" },
 ]
@@ -900,6 +906,8 @@ requires-dist = [
     { name = "polars", specifier = ">=1.35.2" },
     { name = "pyarrow", specifier = ">=22.0.0" },
     { name = "pydantic", specifier = ">=2.12.4" },
+    { name = "redis", marker = "extra == 'all'", specifier = ">=7.1.0" },
+    { name = "redis", marker = "extra == 'redis'", specifier = ">=7.1.0" },
     { name = "s3fs", specifier = ">=2025.12.0" },
     { name = "setuptools", specifier = ">=80.9.0" },
 ]
@@ -912,6 +920,7 @@ check = [
     { name = "pytest-cov", specifier = ">=7.0.0" },
     { name = "pytest-mock", specifier = ">=3.15.1" },
     { name = "pytest-xdist", specifier = ">=3.8.0" },
+    { name = "redis", specifier = ">=7.1.0" },
     { name = "ruff", specifier = ">=0.14.4" },
     { name = "ty", specifier = ">=0.0.1a25" },
 ]
@@ -1448,6 +1457,15 @@ wheels = [
 ]
 
 [[package]]
+name = "redis"
+version = "7.1.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/43/c8/983d5c6579a411d8a99bc5823cc5712768859b5ce2c8afe1a65b37832c81/redis-7.1.0.tar.gz", hash = "sha256:b1cc3cfa5a2cb9c2ab3ba700864fb0ad75617b41f01352ce5779dabf6d5f9c3c", size = 4796669 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/89/f0/8956f8a86b20d7bb9d6ac0187cf4cd54d8065bc9a1a09eb8011d4d326596/redis-7.1.0-py3-none-any.whl", hash = "sha256:23c52b208f92b56103e17c5d06bdc1a6c2c0b3106583985a76a18f83b265de2b", size = 354159 },
+]
+
+[[package]]
 name = "requests"
 version = "2.32.5"
 source = { registry = "https://pypi.org/simple" }
@@ -1613,6 +1631,17 @@ requires-dist = [{ name = "mlforge-sdk", editable = "." }]
 
 [package.metadata.requires-dev]
 check = [{ name = "ruff", specifier = ">=0.14.4" }]
+
+[[package]]
+name = "transactions-online"
+version = "0.1.0"
+source = { editable = "examples/transactions-online" }
+dependencies = [
+    { name = "mlforge-sdk", extra = ["redis"] },
+]
+
+[package.metadata]
+requires-dist = [{ name = "mlforge-sdk", extras = ["redis"], editable = "." }]
 
 [[package]]
 name = "trove-classifiers"
