@@ -129,6 +129,25 @@ Show the user:
 
 ## Phase 2: Implementation
 
+### Step 2.0: Create Feature Branch
+
+Create a feature branch from the release branch associated with this feature:
+
+```bash
+git checkout release/v{version}
+git pull origin release/v{version}
+git checkout -b feature/{feature-name}
+```
+
+Example for `v0.5.0` and `redis-online`:
+```bash
+git checkout release/v0.5.0
+git pull origin release/v0.5.0
+git checkout -b feature/redis-online
+```
+
+This ensures your feature work is based on the correct release branch.
+
 ### Step 2.1: Create New Files
 
 For each new file in the plan:
