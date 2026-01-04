@@ -155,7 +155,127 @@ just check-format
 
 Fix any issues before proceeding.
 
-### Step 2.4: Show Changes Summary
+Fix code formatting errors using the following command:
+
+```bash
+just format
+```
+
+### Step 2.4: Simplify Code
+
+Review the code you just wrote and simplify it. AI-generated code often contains unnecessary verbosity, over-abstraction, and redundant patterns.
+
+**Core Question:** Does every line directly contribute to completing the feature spec?
+
+#### Design Principles Check
+
+| Principle | Check |
+|-----------|-------|
+| **Deep Modules** | Don't create shallow functions that wrap one line of code |
+| **Simple Interface** | Hide complexity inside modules, don't push it to callers |
+| **Pull Complexity Down** | The module should handle complexity, not its callers |
+| **Design for Reading** | Would a new reader understand this in one pass? |
+
+#### Red Flags Check
+
+| Red Flag | Action |
+|----------|--------|
+| **Shallow Module** | Function does almost nothing? Inline it |
+| **Pass-Through Method** | Just forwards to another method? Remove it |
+| **Repetition** | Same pattern twice? Consolidate into helper |
+| **Comment Repeats Code** | Comment restates the obvious? Delete it |
+| **Hard to Describe** | Can't explain simply? It's doing too much |
+
+#### Avoid Over-Engineering
+
+- [ ] **YAGNI**: Delete code for features not in the spec
+- [ ] **Over-generic**: Is the code solving more than required?
+- [ ] **Unused abstractions**: Classes that could be functions? Inline them
+- [ ] **Defensive overkill**: Handling edge cases that can't occur?
+
+#### Avoid Over-Splitting
+
+- [ ] **Single-use functions**: Is this function used more than once? If not, consider inlining
+- [ ] **Fragmented flow**: Can a reader follow the logic without jumping between many files?
+- [ ] **Premature abstraction**: Are you creating helpers "in case" they're needed later?
+
+**Rule of thumb:** A function should exist if it (a) is called from multiple places, OR (b) encapsulates a distinct concept that aids understanding.
+
+#### Simplification Examples
+
+**Over-split (bad):**
+```python
+def _validate_not_empty(value: str) -> bool:
+    return len(value) > 0
+
+def _validate_max_length(value: str, max_len: int) -> bool:
+    return len(value) <= max_len
+
+def validate_name(name: str) -> bool:
+    if not _validate_not_empty(name):
+        return False
+    if not _validate_max_length(name, 100):
+        return False
+    return True
+```
+
+**Simple (good):**
+```python
+def validate_name(name: str) -> bool:
+    """Name must be 1-100 characters."""
+    return 0 < len(name) <= 100
+```
+
+**Unnecessary abstraction (bad):**
+```python
+class ResultBuilder:
+    def __init__(self):
+        self.items = []
+
+    def add(self, item):
+        self.items.append(item)
+
+    def build(self) -> list:
+        return self.items
+
+builder = ResultBuilder()
+for x in data:
+    builder.add(process(x))
+result = builder.build()
+```
+
+**Simple (good):**
+```python
+result = [process(x) for x in data]
+```
+
+#### Required Output
+
+After simplifying, document what changed:
+
+```
+## Simplifications Made
+
+### Removed
+- Deleted `_validate_helper()` - only called once, inlined into `validate()`
+- Removed `ResultBuilder` class - replaced with list comprehension
+- Deleted 3 comments that restated the code
+
+### Consolidated
+- Merged `_load_config()` and `_parse_config()` into single `load_config()`
+
+### Inlined
+- `_check_exists()` was single-use, inlined into `process_file()`
+
+### Kept As-Is (with justification)
+- `EntityKeyTransform` class - used in 3 places, encapsulates distinct concept
+
+**Lines reduced:** X -> Y (Z% reduction)
+```
+
+If no simplifications needed, state: "Reviewed for simplification - no changes needed."
+
+### Step 2.5: Show Changes Summary
 
 ```bash
 git diff --stat
