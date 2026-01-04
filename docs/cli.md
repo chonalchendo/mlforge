@@ -29,6 +29,7 @@ mlforge build [TARGET] [OPTIONS]
 - `--features NAMES`: Comma-separated list of feature names to build. Defaults to all features.
 - `--tags TAGS`: Comma-separated list of feature tags to build. Mutually exclusive with `--features`.
 - `--force`, `-f`: Overwrite existing features. Defaults to `False`.
+- `--online`: Build to online store (e.g., Redis) instead of offline store. Defaults to `False`.
 - `--no-preview`: Disable feature preview output. Defaults to `False` (preview enabled).
 - `--preview-rows N`: Number of preview rows to display. Defaults to `5`.
 - `--verbose`, `-v`: Enable debug logging. Defaults to `False`.
@@ -82,6 +83,14 @@ Custom preview size:
 ```bash
 mlforge build definitions.py --preview-rows 10
 ```
+
+Build to online store (Redis):
+
+```bash
+mlforge build --online
+```
+
+This extracts the latest value per entity and writes to the configured online store.
 
 #### Output
 
@@ -517,6 +526,44 @@ mlforge sync --dry-run
 - **Cloud stores**: Data is already shared via S3/GCS
 - **Source data changed intentionally**: Use `mlforge build --force` to create a new version
 - **Initial setup**: Use `mlforge build` for first-time feature creation
+
+### versions
+
+List all versions of a feature.
+
+```bash
+mlforge versions FEATURE_NAME [TARGET]
+```
+
+#### Arguments
+
+- `FEATURE_NAME` (required): Name of the feature to list versions for
+- `TARGET` (optional): Path to definitions file. Auto-discovers `definitions.py` if not specified.
+
+#### Examples
+
+List versions of a feature:
+
+```bash
+mlforge versions user_spend
+```
+
+#### Output
+
+Displays a table of all versions:
+
+```
+Versions of user_spend
+┌─────────┬─────────────────────┬─────────────────────┬────────────┐
+│ Version │ Created             │ Updated             │ Rows       │
+├─────────┼─────────────────────┼─────────────────────┼────────────┤
+│ 1.0.0   │ 2024-01-10T08:00:00│ 2024-01-10T08:00:00│ 50,000     │
+│ 1.1.0   │ 2024-01-15T10:30:00│ 2024-01-15T10:30:00│ 52,500     │
+│ 2.0.0   │ 2024-01-20T14:00:00│ 2024-01-20T14:00:00│ 55,000     │
+└─────────┴─────────────────────┴─────────────────────┴────────────┘
+
+Latest: 2.0.0
+```
 
 ### list
 

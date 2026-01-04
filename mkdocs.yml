@@ -65,6 +65,7 @@ nav:
       - Building Features: user-guide/building-features.md
       - Validators: user-guide/validators.md
       - Storage Backends: user-guide/storage-backends.md
+      - Online Stores: user-guide/online-stores.md
       - Feature Metadata: user-guide/feature-metadata.md
       - Retrieving Features: user-guide/retrieving-features.md
       - Entity Keys: user-guide/entity-keys.md
@@ -73,6 +74,8 @@ nav:
   - API Reference:
       - Core: api/core.md
       - Version: api/version.md
+      - Online: api/online.md
+      - Types: api/types.md
       - Validators: api/validators.md
       - Validation: api/validation.md
       - Store: api/store.md

@@ -1,6 +1,15 @@
 # Retrieving Features
 
-Once features are built, use `mlf.get_training_data()` to join them to your entity DataFrame.
+mlforge provides two retrieval functions for different use cases:
+
+| Function | Use Case | Store Type | Point-in-Time |
+|----------|----------|------------|---------------|
+| `get_training_data()` | Training, batch scoring | Offline (LocalStore, S3Store) | Yes |
+| `get_online_features()` | Real-time inference | Online (RedisStore) | No (latest only) |
+
+## Offline Retrieval (Training)
+
+Use `get_training_data()` to join features to your entity DataFrame for training or batch scoring.
 
 ## Basic Usage
 
@@ -381,8 +390,91 @@ training_data = training_data.with_columns(
 )
 ```
 
+## Online Retrieval (Inference)
+
+For real-time inference, use `get_online_features()` to retrieve features from an online store like Redis.
+
+### Basic Usage
+
+```python
+import mlforge as mlf
+from mlforge.online import RedisStore
+import polars as pl
+
+# Connect to Redis
+store = RedisStore(host="localhost", port=6379)
+
+# Define entity transform (same as training)
+with_user_id = mlf.entity_key("first", "last", "dob", alias="user_id")
+
+# Inference request
+request_df = pl.DataFrame({
+    "request_id": ["req_001", "req_002"],
+    "first": ["John", "Jane"],
+    "last": ["Doe", "Smith"],
+    "dob": ["1990-01-15", "1985-06-20"],
+})
+
+# Retrieve features
+features_df = mlf.get_online_features(
+    features=["user_spend"],
+    entity_df=request_df,
+    store=store,
+    entities=[with_user_id],
+)
+```
+
+### Function Signature
+
+```python
+def get_online_features(
+    features: list[str],
+    entity_df: pl.DataFrame,
+    store: OnlineStore,
+    entities: list[EntityKeyTransform] | None = None,
+) -> pl.DataFrame
+```
+
+### Key Differences from Training Retrieval
+
+| Aspect | `get_training_data()` | `get_online_features()` |
+|--------|----------------------|------------------------|
+| **Versioning** | Supports `("feature", "1.0.0")` | No versioning (latest only) |
+| **Point-in-time** | Uses `timestamp` parameter | Not applicable |
+| **Store parameter** | Path string or Store instance | OnlineStore instance required |
+| **Missing entities** | Returns null | Returns null |
+
+### Prerequisites
+
+Before using online retrieval:
+
+1. **Configure online store** in your definitions:
+   ```python
+   from mlforge.online import RedisStore
+
+   defs = mlf.Definitions(
+       name="my-project",
+       features=[user_spend],
+       offline_store=mlf.LocalStore("./feature_store"),
+       online_store=RedisStore(host="localhost"),
+   )
+   ```
+
+2. **Build to online store**:
+   ```bash
+   mlforge build --online
+   ```
+
+3. **Ensure Redis is running**:
+   ```bash
+   docker run -d -p 6379:6379 redis:7-alpine
+   ```
+
+See [Online Stores](online-stores.md) for detailed setup instructions.
+
 ## Next Steps
 
 - [Entity Keys](entity-keys.md) - Work with surrogate keys and transforms
 - [Point-in-Time Correctness](point-in-time.md) - Understand temporal joins
+- [Online Stores](online-stores.md) - Set up Redis for real-time serving
 - [API Reference](../api/retrieval.md) - Detailed API documentation
