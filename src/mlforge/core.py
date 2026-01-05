@@ -16,6 +16,7 @@ import mlforge.logging as log
 import mlforge.manifest as manifest
 import mlforge.metrics as metrics_
 import mlforge.online as online
+import mlforge.sources as sources
 import mlforge.store as store
 import mlforge.types as types_
 import mlforge.validation as validation_
@@ -65,7 +66,7 @@ class Feature:
 
     fn: FeatureFunction
     name: str
-    source: str
+    source: str | sources.Source
     keys: list[str]
     tags: list[str] | None
     timestamp: str | None
@@ -74,6 +75,20 @@ class Feature:
     metrics: list[metrics_.MetricKind] | None
     validators: dict[str, list[validators_.Validator]] | None
     engine: str | None
+
+    @property
+    def source_path(self) -> str:
+        """Get the source path, whether source is a string or Source object."""
+        if isinstance(self.source, sources.Source):
+            return self.source.path
+        return self.source
+
+    @property
+    def source_obj(self) -> sources.Source:
+        """Get source as a Source object, converting string if needed."""
+        if isinstance(self.source, sources.Source):
+            return self.source
+        return sources.Source(self.source)
 
     def __call__(self, *args, **kwargs) -> pl.DataFrame:
         """
@@ -89,7 +104,7 @@ class Feature:
 
 def feature(
     keys: list[str],
-    source: str,
+    source: str | sources.Source,
     description: str | None = None,
     tags: list[str] | None = None,
     timestamp: str | None = None,
@@ -106,7 +121,10 @@ def feature(
 
     Args:
         keys: Column names that uniquely identify entities
-        source: Path to source data file (parquet or csv)
+        source: Path to source data file or Source object. Can be:
+            - A string path: "data/transactions.parquet"
+            - A Source object: Source("s3://bucket/data.parquet")
+            - A Source with format options: Source("data.csv", format=CSVFormat(delimiter="|"))
         description: Human-readable feature description. Defaults to None.
         tags: Tags to group feature with other features. Defaults to None.
         timestamp: Column name for temporal features. Defaults to None.
@@ -146,6 +164,14 @@ def feature(
         )
         def user_large_spend(df):
             return df.select("user_id", "amount")
+
+        # Use Source with format options
+        @feature(
+            keys=["user_id"],
+            source=Source("data/events.csv", format=CSVFormat(delimiter="|")),
+        )
+        def user_events(df):
+            return df
     """
     # Convert timedelta to string if provided
     interval_str = (
@@ -426,7 +452,7 @@ class Definitions:
             content_hash = version.compute_content_hash(
                 Path(write_metadata["path"])
             )
-            source_hash = version.compute_source_hash(feature.source)
+            source_hash = version.compute_source_hash(feature.source_path)
 
             # Build and write feature metadata
             now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
@@ -592,7 +618,7 @@ class Definitions:
 
         # Load and process to get current schema (before metrics)
         engine = self._get_engine_for_feature(feature)
-        source_df = engine._load_source(feature.source)
+        source_df = engine._load_source(feature.source_obj)
 
         if isinstance(source_df, duckdb.DuckDBPyRelation):
             source_df_ = source_df.to_arrow_table()
@@ -715,7 +741,7 @@ class Definitions:
             try:
                 # Load and process data (without metrics)
                 engine = self._get_engine_for_feature(feature)
-                source_df = engine._load_source(feature.source)
+                source_df = engine._load_source(feature.source_obj)
                 processed_df = feature(source_df)
 
                 # Collect if LazyFrame
@@ -823,7 +849,7 @@ class Definitions:
             if metadata.source_hash:
                 try:
                     current_source_hash = version.compute_source_hash(
-                        feature.source
+                        feature.source_path
                     )
                     if current_source_hash != metadata.source_hash:
                         source_changed.append(feature.name)
@@ -832,12 +858,12 @@ class Definitions:
                                 feature_name=feature.name,
                                 expected_hash=metadata.source_hash,
                                 current_hash=current_source_hash,
-                                source_path=feature.source,
+                                source_path=feature.source_path,
                             )
                 except FileNotFoundError:
                     # Source file not found - can't sync
                     logger.warning(
-                        f"Source file not found for {feature.name}: {feature.source}"
+                        f"Source file not found for {feature.name}: {feature.source_path}"
                     )
                     continue
 
@@ -1109,7 +1135,7 @@ class Definitions:
             path=write_metadata["path"],
             entity=feature.keys[0],
             keys=feature.keys,
-            source=feature.source,
+            source=feature.source_path,
             row_count=write_metadata["row_count"],
             created_at=created_at or now,
             updated_at=updated_at or now,

@@ -211,3 +211,7 @@ __marimo__/
 examples/**/data/*.parquet
 examples/**/feature_store/*.parquet
 reports/
+
+# Private development files (roadmap specs, AI commands)
+roadmap/
+.opencode/

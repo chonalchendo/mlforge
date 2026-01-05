@@ -5,7 +5,6 @@ This module provides the DuckDBEngine implementation for feature computation
 using DuckDB, optimized for large datasets that may not fit in memory.
 """
 
-from pathlib import Path
 from typing import TYPE_CHECKING, override
 
 import polars as pl
@@ -14,6 +13,7 @@ import mlforge.compilers as compilers
 import mlforge.engines as engines
 import mlforge.errors as errors
 import mlforge.results as results_
+import mlforge.sources as sources
 import mlforge.validation as validation
 
 from .base import Engine
@@ -69,7 +69,7 @@ class DuckDBEngine(Engine):
         engines.get_duckdb_connection()  # Ensure DuckDB is available
 
         # Load data from source using DuckDB
-        source_relation = self._load_source(feature.source)
+        source_relation = self._load_source(feature.source_obj)
 
         # Convert to Polars for user's feature function
         # This maintains API compatibility - users write Polars code
@@ -161,28 +161,54 @@ class DuckDBEngine(Engine):
 
         return results_.DuckDBResult(final_result, base_schema=base_schema)
 
-    def _load_source(self, source: str) -> "duckdb.DuckDBPyRelation":
+    def _load_source(self, source: sources.Source) -> "duckdb.DuckDBPyRelation":
         """
-        Load source data from file path using DuckDB.
+        Load source data from Source object using DuckDB.
 
         Args:
-            source: Path to source data file
+            source: Source object specifying path and format
 
         Returns:
             DuckDB relation containing source data
 
         Raises:
-            ValueError: If file format is not supported (only .parquet and .csv)
+            ValueError: If file format is not supported
         """
-        path = Path(source)
+        path = source.path
+        fmt = source.format
 
-        match path.suffix:
-            case ".parquet":
-                return self._conn.read_parquet(str(path))
-            case ".csv":
-                return self._conn.read_csv(str(path))
+        match fmt:
+            case sources.ParquetFormat():
+                # DuckDB read_parquet doesn't support row_groups directly
+                # but does support column selection via SQL
+                relation = self._conn.read_parquet(path)
+                if fmt.columns:
+                    cols = ", ".join(f'"{c}"' for c in fmt.columns)
+                    relation = self._conn.sql(
+                        f"SELECT {cols} FROM relation"  # nosec B608
+                    )
+                return relation
+
+            case sources.CSVFormat():
+                return self._conn.read_csv(
+                    path,
+                    delimiter=fmt.delimiter,
+                    header=fmt.has_header,
+                    quotechar=fmt.quote_char,
+                    skiprows=fmt.skip_rows if fmt.skip_rows > 0 else None,
+                )
+
+            case sources.DeltaFormat():
+                # DuckDB can read Delta tables via delta extension
+                # Note: Version selection not yet supported in DuckDB delta_scan
+                return self._conn.sql(
+                    f"SELECT * FROM delta_scan('{path}')"  # nosec B608
+                )
+
             case _:
-                raise ValueError(f"Unsupported source format: {path.suffix}")
+                raise ValueError(
+                    f"Unsupported source format: {type(fmt).__name__}"
+                )
 
     def _run_validators(
         self,

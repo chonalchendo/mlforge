@@ -11,6 +11,14 @@ Usage:
     def my_feature(df):
         return df
 
+    # With Source abstraction (v0.6.0+)
+    @mlf.feature(
+        keys=["user_id"],
+        source=mlf.Source("data/events.csv", format=mlf.CSVFormat(delimiter="|")),
+    )
+    def user_events(df):
+        return df
+
     defs = mlf.Definitions(
         name="my-project",
         features=[my_feature],
@@ -25,6 +33,8 @@ Public API:
     S3Store: Amazon S3 storage backend
     RedisStore: Redis online store for real-time serving
     Rolling: Rolling window aggregation metric
+    Source: Data source abstraction with location/format detection
+    ParquetFormat, CSVFormat, DeltaFormat: Format configuration classes
     entity_key: Create reusable entity key transforms
     surrogate_key: Generate surrogate keys from columns
     get_training_data: Retrieve features with point-in-time correctness
@@ -40,6 +50,7 @@ from mlforge.core import Definitions, Feature, feature
 from mlforge.metrics import Rolling
 from mlforge.online import OnlineStore, RedisStore
 from mlforge.retrieval import get_online_features, get_training_data
+from mlforge.sources import CSVFormat, DeltaFormat, ParquetFormat, Source
 from mlforge.store import LocalStore, S3Store
 from mlforge.types import DataType, TypeKind
 from mlforge.utils import entity_key, surrogate_key
@@ -69,6 +80,10 @@ __all__ = [
     "get_training_data",
     "get_online_features",
     "Rolling",
+    "Source",
+    "ParquetFormat",
+    "CSVFormat",
+    "DeltaFormat",
     "DataType",
     "TypeKind",
     "greater_than",
