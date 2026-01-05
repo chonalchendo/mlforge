@@ -15,6 +15,7 @@ import mlforge.engines.base as base
 import mlforge.errors as errors
 import mlforge.results as results_
 import mlforge.sources as sources
+import mlforge.utils as utils
 import mlforge.validation as validation
 
 if TYPE_CHECKING:
@@ -60,6 +61,10 @@ class PolarsEngine(base.Engine):
         """
         # load data from source
         source_df = self._load_source(feature.source_obj)
+
+        # Generate surrogate keys for entities that require it
+        if feature.entities:
+            source_df = self._apply_entity_keys(source_df, feature.entities)
 
         # process dataframe with function code
         processed_df = feature(source_df)
@@ -171,6 +176,34 @@ class PolarsEngine(base.Engine):
                 raise ValueError(
                     f"Unsupported source format: {type(fmt).__name__}"
                 )
+
+    def _apply_entity_keys(
+        self,
+        df: pl.DataFrame,
+        entities: list,
+    ) -> pl.DataFrame:
+        """
+        Generate surrogate keys for entities that require it.
+
+        For each entity with from_columns specified, generates a surrogate
+        key column using the surrogate_key() function.
+
+        Args:
+            df: Source DataFrame
+            entities: List of Entity objects
+
+        Returns:
+            DataFrame with generated key columns added
+        """
+        for entity in entities:
+            if entity.requires_generation:
+                # Entity has from_columns - generate surrogate key
+                df = df.with_columns(
+                    utils.surrogate_key(*entity.from_columns).alias(
+                        entity.join_key  # type: ignore[arg-type]
+                    )
+                )
+        return df
 
     def _warn_if_large_dataset(
         self,

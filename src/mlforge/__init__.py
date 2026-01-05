@@ -29,6 +29,7 @@ Public API:
     feature: Decorator for defining features
     Feature: Container class for feature definitions
     Definitions: Central registry for features
+    Entity: Entity definition with optional surrogate key generation
     LocalStore: Local filesystem storage backend
     S3Store: Amazon S3 storage backend
     RedisStore: Redis online store for real-time serving
@@ -47,6 +48,7 @@ from importlib.metadata import version as _get_version
 __version__ = _get_version("mlforge-sdk")
 
 from mlforge.core import Definitions, Feature, feature
+from mlforge.entities import Entity
 from mlforge.metrics import Rolling
 from mlforge.online import OnlineStore, RedisStore
 from mlforge.retrieval import get_online_features, get_training_data
@@ -71,6 +73,7 @@ __all__ = [
     "feature",
     "Feature",
     "Definitions",
+    "Entity",
     "LocalStore",
     "S3Store",
     "OnlineStore",

@@ -11,6 +11,7 @@ import polars as pl
 from loguru import logger
 
 import mlforge.engines as engines
+import mlforge.entities as entities_
 import mlforge.errors as errors
 import mlforge.logging as log
 import mlforge.manifest as manifest
@@ -68,6 +69,7 @@ class Feature:
     name: str
     source: str | sources.Source
     keys: list[str]
+    entities: list[entities_.Entity] | None
     tags: list[str] | None
     timestamp: str | None
     description: str | None
@@ -103,8 +105,9 @@ class Feature:
 
 
 def feature(
-    keys: list[str],
     source: str | sources.Source,
+    keys: list[str] | None = None,
+    entities: list[entities_.Entity] | None = None,
     description: str | None = None,
     tags: list[str] | None = None,
     timestamp: str | None = None,
@@ -120,11 +123,13 @@ def feature(
     with Definitions and materialized to storage.
 
     Args:
-        keys: Column names that uniquely identify entities
         source: Path to source data file or Source object. Can be:
             - A string path: "data/transactions.parquet"
             - A Source object: Source("s3://bucket/data.parquet")
             - A Source with format options: Source("data.csv", format=CSVFormat(delimiter="|"))
+        keys: Column names that uniquely identify entities. Either keys or entities required.
+        entities: Entity definitions with optional surrogate key generation.
+            When provided, keys are derived from entity join_keys automatically.
         description: Human-readable feature description. Defaults to None.
         tags: Tags to group feature with other features. Defaults to None.
         timestamp: Column name for temporal features. Defaults to None.
@@ -139,40 +144,46 @@ def feature(
         Decorator function that converts a function into a Feature
 
     Example:
+        # Using keys (traditional style)
         @feature(
             keys=["user_id"],
             source="data/transactions.parquet",
             tags=['users'],
             timestamp="transaction_time",
             description="User spending statistics",
-            interval=timedelta(days=1),
-            validators={
-                "amount": [not_null(), greater_than(0)],
-                "user_id": [not_null()],
-            },
         )
         def user_spend_stats(df):
-            return df.group_by("user_id").agg(
-                pl.col("amount").mean().alias("avg_spend")
-            )
+            return df.group_by("user_id").agg(...)
 
-        # Use DuckDB for large dataset processing
-        @feature(
-            keys=["user_id"],
-            source="data/large_transactions.parquet",
-            engine="duckdb",
-        )
-        def user_large_spend(df):
-            return df.select("user_id", "amount")
+        # Using entities (v0.6.0+) - with automatic surrogate key generation
+        user = Entity(name="user", join_key="user_id", from_columns=["first", "last", "dob"])
 
-        # Use Source with format options
         @feature(
-            keys=["user_id"],
-            source=Source("data/events.csv", format=CSVFormat(delimiter="|")),
+            source="data/transactions.parquet",
+            entities=[user],  # Engine generates user_id from first, last, dob
         )
-        def user_events(df):
-            return df
+        def user_spend(df):
+            return df.select("user_id", "amount")  # user_id already exists
+
+    Raises:
+        ValueError: If neither keys nor entities is provided
     """
+    # Validate that either keys or entities is provided
+    if keys is None and entities is None:
+        raise ValueError("Either 'keys' or 'entities' must be provided")
+
+    # Derive keys from entities if not explicitly provided
+    derived_keys: list[str] = []
+    if keys is not None:
+        derived_keys = keys
+    elif entities is not None:
+        for entity in entities:
+            derived_keys.extend(entity.key_columns)
+        # Remove duplicates while preserving order
+        seen: set[str] = set()
+        derived_keys = [
+            k for k in derived_keys if not (k in seen or seen.add(k))
+        ]  # type: ignore[func-returns-value]
     # Convert timedelta to string if provided
     interval_str = (
         metrics_.timedelta_to_polars_duration(interval)
@@ -186,7 +197,8 @@ def feature(
             name=fn.__name__,
             description=description,
             source=source,
-            keys=keys,
+            keys=derived_keys,
+            entities=entities,
             tags=tags,
             timestamp=timestamp,
             interval=interval_str,
@@ -623,6 +635,14 @@ class Definitions:
         if isinstance(source_df, duckdb.DuckDBPyRelation):
             source_df_ = source_df.to_arrow_table()
             source_df = pl.from_arrow(source_df_)
+
+        # Ensure we have a DataFrame (from_arrow can return DataFrame | Series)
+        if not isinstance(source_df, pl.DataFrame):
+            raise TypeError("Expected DataFrame from source")
+
+        # Apply entity key generation if needed (same as engine.execute)
+        if feature.entities:
+            source_df = engine._apply_entity_keys(source_df, feature.entities)
 
         preview_df = feature(source_df)
 
