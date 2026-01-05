@@ -6,7 +6,6 @@ feature computation using Polars DataFrames.
 """
 
 import warnings
-from pathlib import Path
 from typing import TYPE_CHECKING, override
 
 import polars as pl
@@ -15,6 +14,8 @@ import mlforge.compilers as compilers
 import mlforge.engines.base as base
 import mlforge.errors as errors
 import mlforge.results as results_
+import mlforge.sources as sources
+import mlforge.utils as utils
 import mlforge.validation as validation
 
 if TYPE_CHECKING:
@@ -59,7 +60,11 @@ class PolarsEngine(base.Engine):
             ValueError: If entity keys or timestamp columns are missing
         """
         # load data from source
-        source_df = self._load_source(feature.source)
+        source_df = self._load_source(feature.source_obj)
+
+        # Generate surrogate keys for entities that require it
+        if feature.entities:
+            source_df = self._apply_entity_keys(source_df, feature.entities)
 
         # process dataframe with function code
         processed_df = feature(source_df)
@@ -127,28 +132,78 @@ class PolarsEngine(base.Engine):
 
         return results_.PolarsResult(result, base_schema=base_schema)
 
-    def _load_source(self, source: str) -> pl.DataFrame:
+    def _load_source(self, source: sources.Source) -> pl.DataFrame:
         """
-        Load source data from file path.
+        Load source data from Source object.
 
         Args:
-            source: Path to source data file
+            source: Source object specifying path and format
 
         Returns:
             DataFrame containing source data
 
         Raises:
-            ValueError: If file format is not supported (only .parquet and .csv)
+            ValueError: If file format is not supported
         """
-        path = Path(source)
+        path = source.path
+        fmt = source.format
 
-        match path.suffix:
-            case ".parquet":
-                return pl.read_parquet(path)
-            case ".csv":
-                return pl.read_csv(path)
+        match fmt:
+            case sources.ParquetFormat():
+                kwargs = {}
+                if fmt.columns:
+                    kwargs["columns"] = fmt.columns
+                if fmt.row_groups:
+                    kwargs["row_groups"] = fmt.row_groups
+                return pl.read_parquet(path, **kwargs)
+
+            case sources.CSVFormat():
+                return pl.read_csv(
+                    path,
+                    separator=fmt.delimiter,
+                    has_header=fmt.has_header,
+                    quote_char=fmt.quote_char,
+                    skip_rows=fmt.skip_rows,
+                )
+
+            case sources.DeltaFormat():
+                kwargs = {}
+                if fmt.version is not None:
+                    kwargs["version"] = fmt.version
+                return pl.read_delta(path, **kwargs)
+
             case _:
-                raise ValueError(f"Unsupported source format: {path.suffix}")
+                raise ValueError(
+                    f"Unsupported source format: {type(fmt).__name__}"
+                )
+
+    def _apply_entity_keys(
+        self,
+        df: pl.DataFrame,
+        entities: list,
+    ) -> pl.DataFrame:
+        """
+        Generate surrogate keys for entities that require it.
+
+        For each entity with from_columns specified, generates a surrogate
+        key column using the surrogate_key() function.
+
+        Args:
+            df: Source DataFrame
+            entities: List of Entity objects
+
+        Returns:
+            DataFrame with generated key columns added
+        """
+        for entity in entities:
+            if entity.requires_generation:
+                # Entity has from_columns - generate surrogate key
+                df = df.with_columns(
+                    utils.surrogate_key(*entity.from_columns).alias(
+                        entity.join_key  # type: ignore[arg-type]
+                    )
+                )
+        return df
 
     def _warn_if_large_dataset(
         self,

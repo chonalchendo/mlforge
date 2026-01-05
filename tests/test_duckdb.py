@@ -10,7 +10,7 @@ from pathlib import Path
 import polars as pl
 import pytest
 
-from mlforge import Definitions, LocalStore, Rolling, feature
+from mlforge import Definitions, LocalStore, Rolling, Source, feature
 from mlforge.compilers import DuckDBCompiler, DuckDBComputeContext
 from mlforge.engines import DuckDBEngine
 from mlforge.results import DuckDBResult
@@ -400,7 +400,8 @@ class TestDuckDBEngine:
         self, duckdb_engine: DuckDBEngine, sample_transactions_parquet: Path
     ):
         """Engine should load parquet files."""
-        relation = duckdb_engine._load_source(str(sample_transactions_parquet))
+        source = Source(str(sample_transactions_parquet))
+        relation = duckdb_engine._load_source(source)
 
         df = relation.pl()
         assert df.height == 6
@@ -410,7 +411,8 @@ class TestDuckDBEngine:
         self, duckdb_engine: DuckDBEngine, sample_transactions_csv: Path
     ):
         """Engine should load CSV files."""
-        relation = duckdb_engine._load_source(str(sample_transactions_csv))
+        source = Source(str(sample_transactions_csv))
+        relation = duckdb_engine._load_source(source)
 
         df = relation.pl()
         assert df.height == 3
@@ -420,8 +422,10 @@ class TestDuckDBEngine:
         self, duckdb_engine: DuckDBEngine
     ):
         """Engine should reject unsupported file formats."""
-        with pytest.raises(ValueError, match="Unsupported source format"):
-            duckdb_engine._load_source("data.json")
+        # Create a Source with an explicitly unsupported format type
+        # (This tests the edge case where format detection might fail)
+        with pytest.raises(ValueError, match="Cannot auto-detect format"):
+            Source("data.json")
 
     def test_engine_execute_simple_feature(
         self, sample_transactions_parquet: Path, tmp_path: Path

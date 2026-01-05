@@ -68,7 +68,7 @@ def print_features_table(features: dict[str, "Feature"]) -> None:
         table.add_row(
             name,
             ", ".join(feature.keys),
-            str(feature.source),
+            feature.source_path,
             ", ".join(feature.tags) if feature.tags else "-",
             feature.description or "-",
         )
