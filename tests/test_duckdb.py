@@ -15,6 +15,8 @@ from mlforge.compilers import DuckDBCompiler, DuckDBComputeContext
 from mlforge.engines import DuckDBEngine
 from mlforge.results import DuckDBResult
 
+import mlforge.errors as errors
+
 
 # =============================================================================
 # Fixtures
@@ -676,7 +678,7 @@ class TestDuckDBIntegration:
             offline_store=store,
         )
 
-        with pytest.raises(ValueError, match="Timestamp column.*not found"):
+        with pytest.raises(errors.TimestampParseError, match="not found"):
             defs.build(preview=False)
 
     def test_duckdb_missing_interval(

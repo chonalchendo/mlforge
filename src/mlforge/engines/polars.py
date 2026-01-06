@@ -15,6 +15,7 @@ import mlforge.engines.base as base
 import mlforge.errors as errors
 import mlforge.results as results_
 import mlforge.sources as sources
+import mlforge.timestamps as timestamps
 import mlforge.utils as utils
 import mlforge.validation as validation
 
@@ -89,9 +90,24 @@ class PolarsEngine(base.Engine):
         if not feature.metrics:
             return results_.PolarsResult(processed_df, base_schema=base_schema)
 
-        if feature.timestamp not in columns:
+        # Parse timestamp column (auto-detect format if needed)
+        if feature.timestamp is None:
             raise ValueError(
-                f"Timestamp column '{feature.timestamp}' not found in dataframe"
+                "Timestamp is required when using metrics. "
+                "Please set timestamp parameter in @feature decorator."
+            )
+
+        # Collect LazyFrame for timestamp parsing
+        if isinstance(processed_df, pl.LazyFrame):
+            processed_df = processed_df.collect()
+
+        processed_df, ts_column = timestamps.parse_timestamp_column(
+            processed_df, feature.timestamp
+        )
+
+        if ts_column not in processed_df.columns:
+            raise ValueError(
+                f"Timestamp column '{ts_column}' not found in dataframe"
             )
 
         if not feature.interval:
@@ -107,7 +123,7 @@ class PolarsEngine(base.Engine):
 
         ctx = compilers.ComputeContext(
             keys=feature.keys,
-            timestamp=feature.timestamp,
+            timestamp=ts_column,
             interval=feature.interval,
             dataframe=processed_df,
             tag=tag,

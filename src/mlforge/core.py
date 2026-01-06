@@ -19,6 +19,7 @@ import mlforge.metrics as metrics_
 import mlforge.online as online
 import mlforge.sources as sources
 import mlforge.store as store
+import mlforge.timestamps as timestamps_
 import mlforge.types as types_
 import mlforge.validation as validation_
 import mlforge.validators as validators_
@@ -71,7 +72,7 @@ class Feature:
     keys: list[str]
     entities: list[entities_.Entity] | None
     tags: list[str] | None
-    timestamp: str | None
+    timestamp: str | timestamps_.Timestamp | None
     description: str | None
     interval: str | None
     metrics: list[metrics_.MetricKind] | None
@@ -92,6 +93,11 @@ class Feature:
             return self.source
         return sources.Source(self.source)
 
+    @property
+    def timestamp_column(self) -> str | None:
+        """Return the timestamp column name, extracting from Timestamp if needed."""
+        return timestamps_.normalize_timestamp(self.timestamp)
+
     def __call__(self, *args, **kwargs) -> pl.DataFrame:
         """
         Execute the feature transformation function.
@@ -110,7 +116,7 @@ def feature(
     entities: list[entities_.Entity] | None = None,
     description: str | None = None,
     tags: list[str] | None = None,
-    timestamp: str | None = None,
+    timestamp: str | timestamps_.Timestamp | None = None,
     interval: str | timedelta | None = None,
     metrics: list[metrics_.MetricKind] | None = None,
     validators: dict[str, list[validators_.Validator]] | None = None,
@@ -132,7 +138,10 @@ def feature(
             When provided, keys are derived from entity join_keys automatically.
         description: Human-readable feature description. Defaults to None.
         tags: Tags to group feature with other features. Defaults to None.
-        timestamp: Column name for temporal features. Defaults to None.
+        timestamp: Timestamp configuration for temporal features. Can be:
+            - A string column name (format auto-detected)
+            - A Timestamp object with explicit format/alias
+            Defaults to None.
         interval: Time interval for rolling computations (e.g., "1d" or timedelta(days=1)). Defaults to None.
         metrics: Aggregation metrics like Rolling for time-based features. Defaults to None.
         validators: Column validators to run before metrics are computed. Defaults to None.
@@ -457,7 +466,7 @@ class Definitions:
             schema_hash = version.compute_schema_hash(schema_columns)
             config_hash = version.compute_config_hash(
                 keys=feature.keys,
-                timestamp=feature.timestamp,
+                timestamp=feature.timestamp_column,
                 interval=feature.interval,
                 metrics_config=self._serialize_metrics_config(feature.metrics),
             )
@@ -593,13 +602,14 @@ class Definitions:
         Returns:
             DataFrame with one row per unique entity (without timestamp)
         """
-        if feature.timestamp:
+        ts_col = feature.timestamp_column
+        if ts_col:
             # Sort by timestamp descending, take first per entity
             result = (
-                df.sort(feature.timestamp, descending=True)
+                df.sort(ts_col, descending=True)
                 .group_by(feature.keys)
                 .first()
-                .drop(feature.timestamp)
+                .drop(ts_col)
             )
         else:
             # No timestamp - take last row per entity
@@ -667,7 +677,7 @@ class Definitions:
         )
         current_config_hash = version.compute_config_hash(
             keys=feature.keys,
-            timestamp=feature.timestamp,
+            timestamp=feature.timestamp_column,
             interval=feature.interval,
             metrics_config=self._serialize_metrics_config(feature.metrics),
         )
@@ -1163,7 +1173,7 @@ class Definitions:
             schema_hash=schema_hash,
             config_hash=config_hash,
             source_hash=source_hash,
-            timestamp=feature.timestamp,
+            timestamp=feature.timestamp_column,
             interval=feature.interval,
             columns=base_columns,
             features=feature_columns,

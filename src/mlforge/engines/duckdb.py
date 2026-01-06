@@ -14,6 +14,7 @@ import mlforge.engines as engines
 import mlforge.errors as errors
 import mlforge.results as results_
 import mlforge.sources as sources
+import mlforge.timestamps as timestamps
 import mlforge.utils as utils
 import mlforge.validation as validation
 
@@ -112,10 +113,20 @@ class DuckDBEngine(Engine):
             relation = self._conn.from_arrow(processed_df.to_arrow())
             return results_.DuckDBResult(relation, base_schema=base_schema)
 
-        # Validate timestamp column exists
-        if feature.timestamp not in columns:
+        # Parse timestamp column (auto-detect format if needed)
+        if feature.timestamp is None:
             raise ValueError(
-                f"Timestamp column '{feature.timestamp}' not found in dataframe"
+                "Timestamp is required when using metrics. "
+                "Please set timestamp parameter in @feature decorator."
+            )
+
+        processed_df, ts_column = timestamps.parse_timestamp_column(
+            processed_df, feature.timestamp
+        )
+
+        if ts_column not in processed_df.columns:
+            raise ValueError(
+                f"Timestamp column '{ts_column}' not found in dataframe"
             )
 
         # Validate interval is set
@@ -134,7 +145,7 @@ class DuckDBEngine(Engine):
         # Create DuckDB compute context
         ctx = compilers.DuckDBComputeContext(
             keys=feature.keys,
-            timestamp=feature.timestamp,
+            timestamp=ts_column,
             interval=feature.interval,
             relation=processed_relation,
             tag=tag,
@@ -156,7 +167,7 @@ class DuckDBEngine(Engine):
         # Join multiple metric results
         # Use the first result as base and join others
         final_result = results.pop(0)
-        join_cols = [*feature.keys, feature.timestamp]
+        join_cols = [*feature.keys, ts_column]
 
         for relation in results:
             # Create join SQL

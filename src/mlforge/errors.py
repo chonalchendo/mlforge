@@ -238,6 +238,48 @@ class VersionNotFoundError(VersionError):
         return "\n".join(parts)
 
 
+class TimestampParseError(Exception):
+    """Raised when timestamp parsing or auto-detection fails."""
+
+    def __init__(
+        self,
+        column: str,
+        sample_values: list[str],
+        message: str | None = None,
+    ):
+        self.column = column
+        self.sample_values = sample_values
+        self.message = message
+        super().__init__(
+            message or f"Could not parse timestamp column '{column}'"
+        )
+
+    def __str__(self) -> str:
+        """Format error with sample values and format suggestions."""
+        if self.message:
+            parts = [f"TimestampParseError: {self.message}"]
+        else:
+            parts = [
+                f"TimestampParseError: Could not auto-detect datetime format "
+                f"for column '{self.column}'."
+            ]
+
+        if self.sample_values:
+            samples_str = ", ".join(repr(v) for v in self.sample_values[:5])
+            parts.append(f"\nSample values: [{samples_str}]")
+
+        parts.append(f"""
+Try specifying format explicitly:
+    timestamp=mlf.Timestamp(column="{self.column}", format="%Y-%m-%d %H:%M:%S")
+
+Common formats:
+    "%Y-%m-%d %H:%M:%S"    -> 2024-01-15 14:30:00
+    "%Y-%m-%dT%H:%M:%S"    -> 2024-01-15T14:30:00
+    "%Y-%m-%d"             -> 2024-01-15""")
+
+        return "\n".join(parts)
+
+
 class SourceDataChangedError(Exception):
     """
     Raised when source data has changed since the feature was built.
