@@ -525,6 +525,37 @@ profiles:
 
 
 # =============================================================================
+# Store Validation Tests
+# =============================================================================
+
+
+class TestValidateStores:
+    """Tests for validate_stores function."""
+
+    def test_validates_local_store_success(self, tmp_path):
+        """Should succeed for valid LocalStore config."""
+        config = profiles.ProfileConfig.model_validate(
+            {
+                "offline_store": {
+                    "KIND": "local",
+                    "path": str(tmp_path / "store"),
+                }
+            }
+        )
+        # Should not raise
+        profiles.validate_stores(config)
+
+    def test_raises_on_gcs_not_implemented(self):
+        """Should raise ProfileError for unimplemented GCS store."""
+        config = profiles.ProfileConfig.model_validate(
+            {"offline_store": {"KIND": "gcs", "bucket": "my-bucket"}}
+        )
+        with pytest.raises(errors.ProfileError) as exc_info:
+            profiles.validate_stores(config)
+        assert "Failed to validate offline_store" in str(exc_info.value)
+
+
+# =============================================================================
 # Integration Tests
 # =============================================================================
 

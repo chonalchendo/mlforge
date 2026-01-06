@@ -35,6 +35,7 @@ from omegaconf.errors import InterpolationKeyError
 from pydantic import BaseModel, Field, ValidationError
 
 import mlforge.errors as errors
+import mlforge.logging as log
 
 if T.TYPE_CHECKING:
     import mlforge.online as online_
@@ -309,3 +310,100 @@ def get_profile_info(
         return os.environ["MLFORGE_PROFILE"], "env", config
 
     return config.default_profile, "config", config
+
+
+# =============================================================================
+# Profile Display and Validation
+# =============================================================================
+
+
+def print_store_config(config: ProfileConfig) -> None:
+    """
+    Print store configuration details to console.
+
+    Args:
+        config: Profile configuration to display.
+    """
+    offline = config.offline_store
+    log.print_info("Offline Store:")
+    log.print_info(f"  Type: {offline.KIND}")
+
+    # Print fields that exist on this config type (excluding KIND)
+    for field in offline.model_fields:
+        if field == "KIND":
+            continue
+        value = getattr(offline, field)
+        if value:  # Only print non-empty values
+            log.print_info(f"  {field.replace('_', ' ').title()}: {value}")
+
+    log.print_info("")
+    if config.online_store:
+        online = config.online_store
+        log.print_info("Online Store:")
+        log.print_info(f"  Type: {online.KIND}")
+        for field in ["host", "port", "db"]:
+            if hasattr(online, field):
+                log.print_info(
+                    f"  {field.replace('_', ' ').title()}: {getattr(online, field)}"
+                )
+    else:
+        log.print_info("Online Store: not configured")
+
+
+def validate_stores(config: ProfileConfig) -> None:
+    """
+    Validate store connectivity.
+
+    Creates store instances and verifies they can be accessed.
+    For LocalStore, ensures the directory can be created.
+    For Redis, attempts a ping to verify connectivity.
+
+    Args:
+        config: Profile configuration to validate.
+
+    Raises:
+        ProfileError: If any store fails validation.
+    """
+    log.print_info("")
+    log.print_info("Validating stores...")
+
+    # Validate offline store
+    try:
+        store = config.offline_store.create()
+        # For LocalStore, ensure directory can be created
+        store_path = getattr(store, "path", None)
+        if store_path is not None and hasattr(store_path, "mkdir"):
+            store_path.mkdir(parents=True, exist_ok=True)
+        log.print_success(f"  offline_store: {config.offline_store.KIND} - OK")
+    except Exception as e:
+        log.print_error(
+            f"  offline_store: {config.offline_store.KIND} - FAILED"
+        )
+        log.print_error(f"    {e}")
+        raise errors.ProfileError(
+            f"Failed to validate offline_store ({config.offline_store.KIND}): {e}",
+            hint="Check your store configuration and ensure the service is accessible.",
+        ) from e
+
+    # Validate online store
+    if config.online_store:
+        try:
+            online_store = config.online_store.create()
+            client = getattr(online_store, "_client", None)
+            if client is not None:
+                client.ping()
+            log.print_success(
+                f"  online_store: {config.online_store.KIND} - OK"
+            )
+        except Exception as e:
+            log.print_error(
+                f"  online_store: {config.online_store.KIND} - FAILED"
+            )
+            log.print_error(f"    {e}")
+            raise errors.ProfileError(
+                f"Failed to validate online_store ({config.online_store.KIND}): {e}",
+                hint="Check your store configuration and ensure the service is running.",
+            ) from e
+
+    log.print_info("")
+    log.print_success("Profile valid.")

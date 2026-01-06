@@ -588,75 +588,6 @@ def sync(
         raise SystemExit(1)
 
 
-def _print_store_config(config: profiles_.ProfileConfig) -> None:
-    """Print store configuration details."""
-    offline = config.offline_store
-    log.print_info("Offline Store:")
-    log.print_info(f"  Type: {offline.KIND}")
-
-    # Print fields that exist on this config type (excluding KIND)
-    for field in offline.model_fields:
-        if field == "KIND":
-            continue
-        value = getattr(offline, field)
-        if value:  # Only print non-empty values
-            log.print_info(f"  {field.replace('_', ' ').title()}: {value}")
-
-    log.print_info("")
-    if config.online_store:
-        online = config.online_store
-        log.print_info("Online Store:")
-        log.print_info(f"  Type: {online.KIND}")
-        for field in ["host", "port", "db"]:
-            if hasattr(online, field):
-                log.print_info(
-                    f"  {field.replace('_', ' ').title()}: {getattr(online, field)}"
-                )
-    else:
-        log.print_info("Online Store: not configured")
-
-
-def _validate_stores(config: profiles_.ProfileConfig) -> None:
-    """Validate store connectivity. Raises SystemExit on failure."""
-    log.print_info("")
-    log.print_info("Validating stores...")
-
-    # Validate offline store
-    try:
-        store = config.offline_store.create()
-        # For LocalStore, ensure directory can be created
-        store_path = getattr(store, "path", None)
-        if store_path is not None and hasattr(store_path, "mkdir"):
-            store_path.mkdir(parents=True, exist_ok=True)
-        log.print_success(f"  offline_store: {config.offline_store.KIND} - OK")
-    except Exception as e:
-        log.print_error(
-            f"  offline_store: {config.offline_store.KIND} - FAILED"
-        )
-        log.print_error(f"    {e}")
-        raise SystemExit(1)
-
-    # Validate online store
-    if config.online_store:
-        try:
-            online_store = config.online_store.create()
-            client = getattr(online_store, "_client", None)
-            if client is not None:
-                client.ping()
-            log.print_success(
-                f"  online_store: {config.online_store.KIND} - OK"
-            )
-        except Exception as e:
-            log.print_error(
-                f"  online_store: {config.online_store.KIND} - FAILED"
-            )
-            log.print_error(f"    {e}")
-            raise SystemExit(1)
-
-    log.print_info("")
-    log.print_success("Profile valid.")
-
-
 @app.command
 def profile(
     profile_name: Annotated[
@@ -714,10 +645,10 @@ def profile(
         profile_config = profiles_.load_profile(target_name)
         log.print_info(f"Profile: {target_name} ({source_str})")
         log.print_info("")
-        _print_store_config(profile_config)
+        profiles_.print_store_config(profile_config)
 
         if validate_:
-            _validate_stores(profile_config)
+            profiles_.validate_stores(profile_config)
 
     except errors.ProfileError as e:
         log.print_error(str(e))
