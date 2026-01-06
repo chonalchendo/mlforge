@@ -6,6 +6,7 @@ import cyclopts
 import mlforge.errors as errors
 import mlforge.loader as loader
 import mlforge.logging as log
+import mlforge.profiles as profiles_
 import mlforge.store as store_
 
 app = cyclopts.App(name="mlforge", help="A simple feature store SDK")
@@ -81,6 +82,13 @@ def build(
             help="Write to online store instead of offline store.",
         ),
     ] = False,
+    profile: Annotated[
+        str | None,
+        cyclopts.Parameter(
+            name="--profile",
+            help="Profile name from mlforge.yaml to use for stores.",
+        ),
+    ] = None,
 ):
     """
     Materialize features to offline storage with versioning.
@@ -102,6 +110,7 @@ def build(
         no_preview: Disable feature preview output. Defaults to False.
         preview_rows: Number of preview rows to display. Defaults to 5.
         online: Write to online store instead of offline. Defaults to False.
+        profile: Profile name from mlforge.yaml. Defaults to None (uses env var or config default).
 
     Raises:
         SystemExit: If loading definitions or materialization fails
@@ -112,7 +121,7 @@ def build(
         )
 
     try:
-        defs = loader.load_definitions(target)
+        defs = loader.load_definitions(target, profile=profile)
         feature_names = (
             [f.strip() for f in features.split(",")] if features else None
         )
@@ -149,6 +158,7 @@ def build(
     except (
         errors.DefinitionsLoadError,
         errors.FeatureMaterializationError,
+        errors.ProfileError,
     ) as e:
         log.print_error(str(e))
         raise SystemExit(1)
@@ -173,6 +183,13 @@ def validate(
         str | None,
         cyclopts.Parameter(name="--tags", help="Comma-separated feature tags"),
     ] = None,
+    profile: Annotated[
+        str | None,
+        cyclopts.Parameter(
+            name="--profile",
+            help="Profile name from mlforge.yaml to use for stores.",
+        ),
+    ] = None,
 ):
     """
     Run validation checks on features without building.
@@ -184,6 +201,7 @@ def validate(
         target: Path to definitions file. Defaults to "definitions.py".
         features: Comma-separated list of feature names. Defaults to None (all).
         tags: Comma-separated list of feature tags. Defaults to None.
+        profile: Profile name from mlforge.yaml. Defaults to None (uses env var or config default).
 
     Raises:
         SystemExit: If loading definitions fails or any validation fails
@@ -194,7 +212,7 @@ def validate(
         )
 
     try:
-        defs = loader.load_definitions(target)
+        defs = loader.load_definitions(target, profile=profile)
         feature_names = (
             [f.strip() for f in features.split(",")] if features else None
         )
@@ -222,7 +240,7 @@ def validate(
         if failed > 0:
             raise SystemExit(1)
 
-    except errors.DefinitionsLoadError as e:
+    except (errors.DefinitionsLoadError, errors.ProfileError) as e:
         log.print_error(str(e))
         raise SystemExit(1)
 
@@ -239,6 +257,13 @@ def list_(
         str | None,
         cyclopts.Parameter(help="Comma-separated list of feature tags."),
     ] = None,
+    profile: Annotated[
+        str | None,
+        cyclopts.Parameter(
+            name="--profile",
+            help="Profile name from mlforge.yaml to use for stores.",
+        ),
+    ] = None,
 ):
     """
     Display all registered features in a table.
@@ -246,8 +271,11 @@ def list_(
     Loads feature definitions and prints their metadata including
     names, keys, sources, and descriptions.
     """
-
-    defs = loader.load_definitions(target)
+    try:
+        defs = loader.load_definitions(target, profile=profile)
+    except (errors.DefinitionsLoadError, errors.ProfileError) as e:
+        log.print_error(str(e))
+        raise SystemExit(1)
     features = defs.features
 
     if tags:
@@ -281,6 +309,13 @@ def inspect(
             help="Specific version to inspect. Defaults to latest.",
         ),
     ] = None,
+    profile: Annotated[
+        str | None,
+        cyclopts.Parameter(
+            name="--profile",
+            help="Profile name from mlforge.yaml to use for stores.",
+        ),
+    ] = None,
 ):
     """
     Display detailed metadata for a specific feature version.
@@ -292,12 +327,13 @@ def inspect(
         feature_name: Name of the feature to inspect
         target: Path to definitions file. Defaults to "definitions.py".
         version: Specific version to inspect. Defaults to latest.
+        profile: Profile name from mlforge.yaml. Defaults to None (uses env var or config default).
 
     Raises:
         SystemExit: If feature metadata is not found
     """
     try:
-        defs = loader.load_definitions(target)
+        defs = loader.load_definitions(target, profile=profile)
         metadata = defs.offline_store.read_metadata(feature_name, version)
 
         if not metadata:
@@ -310,7 +346,7 @@ def inspect(
 
         log.print_feature_metadata(feature_name, metadata)
 
-    except errors.DefinitionsLoadError as e:
+    except (errors.DefinitionsLoadError, errors.ProfileError) as e:
         log.print_error(str(e))
         raise SystemExit(1)
 
@@ -325,6 +361,13 @@ def versions(
         str | None,
         cyclopts.Parameter(name="--target", help="Path to definitions.py file"),
     ] = None,
+    profile: Annotated[
+        str | None,
+        cyclopts.Parameter(
+            name="--profile",
+            help="Profile name from mlforge.yaml to use for stores.",
+        ),
+    ] = None,
 ):
     """
     List all versions of a feature.
@@ -334,12 +377,13 @@ def versions(
     Args:
         feature_name: Name of the feature to list versions for
         target: Path to definitions file. Defaults to "definitions.py".
+        profile: Profile name from mlforge.yaml. Defaults to None (uses env var or config default).
 
     Raises:
         SystemExit: If loading definitions fails
     """
     try:
-        defs = loader.load_definitions(target)
+        defs = loader.load_definitions(target, profile=profile)
         version_list = defs.offline_store.list_versions(feature_name)
 
         if not version_list:
@@ -351,7 +395,7 @@ def versions(
         latest = defs.offline_store.get_latest_version(feature_name)
         log.print_versions_table(feature_name, version_list, latest)
 
-    except errors.DefinitionsLoadError as e:
+    except (errors.DefinitionsLoadError, errors.ProfileError) as e:
         log.print_error(str(e))
         raise SystemExit(1)
 
@@ -369,6 +413,13 @@ def manifest(
             help="Regenerate consolidated manifest.json from .meta.json files",
         ),
     ] = False,
+    profile: Annotated[
+        str | None,
+        cyclopts.Parameter(
+            name="--profile",
+            help="Profile name from mlforge.yaml to use for stores.",
+        ),
+    ] = None,
 ):
     """
     Display or regenerate the feature manifest.
@@ -379,12 +430,13 @@ def manifest(
     Args:
         target: Path to definitions file. Defaults to "definitions.py".
         regenerate: Rebuild manifest from metadata files. Defaults to False.
+        profile: Profile name from mlforge.yaml. Defaults to None (uses env var or config default).
 
     Raises:
         SystemExit: If loading definitions fails
     """
     try:
-        defs = loader.load_definitions(target)
+        defs = loader.load_definitions(target, profile=profile)
         metadata_list = defs.offline_store.list_metadata()
 
         if not metadata_list:
@@ -424,7 +476,7 @@ def manifest(
         else:
             log.print_manifest_summary(metadata_list)
 
-    except errors.DefinitionsLoadError as e:
+    except (errors.DefinitionsLoadError, errors.ProfileError) as e:
         log.print_error(str(e))
         raise SystemExit(1)
 
@@ -457,6 +509,13 @@ def sync(
             help="Rebuild even if source data has changed since original build",
         ),
     ] = False,
+    profile: Annotated[
+        str | None,
+        cyclopts.Parameter(
+            name="--profile",
+            help="Profile name from mlforge.yaml to use for stores.",
+        ),
+    ] = None,
 ):
     """
     Rebuild features that have metadata but no data.
@@ -473,12 +532,13 @@ def sync(
         features: Comma-separated list of feature names. Defaults to None (all).
         dry_run: Show what would be synced without doing it. Defaults to False.
         force: Rebuild even if source data has changed. Defaults to False.
+        profile: Profile name from mlforge.yaml. Defaults to None (uses env var or config default).
 
     Raises:
         SystemExit: If store is not LocalStore or sync fails
     """
     try:
-        defs = loader.load_definitions(target)
+        defs = loader.load_definitions(target, profile=profile)
 
         # Verify store is LocalStore
         if not isinstance(defs.offline_store, store_.LocalStore):
@@ -519,9 +579,146 @@ def sync(
             else:
                 log.print_success("All features are up to date.")
 
-    except errors.DefinitionsLoadError as e:
+    except (
+        errors.DefinitionsLoadError,
+        errors.ProfileError,
+        errors.SourceDataChangedError,
+    ) as e:
         log.print_error(str(e))
         raise SystemExit(1)
-    except errors.SourceDataChangedError as e:
+
+
+def _print_store_config(config: profiles_.ProfileConfig) -> None:
+    """Print store configuration details."""
+    offline = config.offline_store
+    log.print_info("Offline Store:")
+    log.print_info(f"  Type: {offline.KIND}")
+
+    # Print fields that exist on this config type (excluding KIND)
+    for field in offline.model_fields:
+        if field == "KIND":
+            continue
+        value = getattr(offline, field)
+        if value:  # Only print non-empty values
+            log.print_info(f"  {field.replace('_', ' ').title()}: {value}")
+
+    log.print_info("")
+    if config.online_store:
+        online = config.online_store
+        log.print_info("Online Store:")
+        log.print_info(f"  Type: {online.KIND}")
+        for field in ["host", "port", "db"]:
+            if hasattr(online, field):
+                log.print_info(
+                    f"  {field.replace('_', ' ').title()}: {getattr(online, field)}"
+                )
+    else:
+        log.print_info("Online Store: not configured")
+
+
+def _validate_stores(config: profiles_.ProfileConfig) -> None:
+    """Validate store connectivity. Raises SystemExit on failure."""
+    log.print_info("")
+    log.print_info("Validating stores...")
+
+    # Validate offline store
+    try:
+        store = config.offline_store.create()
+        # For LocalStore, ensure directory can be created
+        store_path = getattr(store, "path", None)
+        if store_path is not None and hasattr(store_path, "mkdir"):
+            store_path.mkdir(parents=True, exist_ok=True)
+        log.print_success(f"  offline_store: {config.offline_store.KIND} - OK")
+    except Exception as e:
+        log.print_error(
+            f"  offline_store: {config.offline_store.KIND} - FAILED"
+        )
+        log.print_error(f"    {e}")
+        raise SystemExit(1)
+
+    # Validate online store
+    if config.online_store:
+        try:
+            online_store = config.online_store.create()
+            client = getattr(online_store, "_client", None)
+            if client is not None:
+                client.ping()
+            log.print_success(
+                f"  online_store: {config.online_store.KIND} - OK"
+            )
+        except Exception as e:
+            log.print_error(
+                f"  online_store: {config.online_store.KIND} - FAILED"
+            )
+            log.print_error(f"    {e}")
+            raise SystemExit(1)
+
+    log.print_info("")
+    log.print_success("Profile valid.")
+
+
+@app.command
+def profile(
+    profile_name: Annotated[
+        str | None,
+        cyclopts.Parameter(
+            name="--profile",
+            help="Profile name to display. Defaults to current profile.",
+        ),
+    ] = None,
+    validate_: Annotated[
+        bool,
+        cyclopts.Parameter(
+            name="--validate",
+            help="Validate connectivity to configured stores.",
+        ),
+    ] = False,
+):
+    """
+    Display current profile configuration.
+
+    Shows the active profile and its store configurations. Use --validate
+    to test connectivity to configured stores.
+
+    Args:
+        profile_name: Profile name to display. Defaults to current profile.
+        validate_: Test connectivity to stores. Defaults to False.
+
+    Raises:
+        SystemExit: If profile not found or validation fails
+    """
+    try:
+        # Get profile info (single load_config call)
+        info = profiles_.get_profile_info()
+        if info is None:
+            log.print_warning(
+                f"No {profiles_.CONFIG_FILENAME} found in current directory."
+            )
+            log.print_info(
+                "Create mlforge.yaml to configure environment profiles."
+            )
+            return
+
+        current_name, source, config = info
+        target_name = profile_name or current_name
+
+        # Determine source description
+        if profile_name:
+            source_str = "explicitly requested"
+        elif source == "env":
+            source_str = "from MLFORGE_PROFILE env var"
+        else:
+            source_str = f"from {profiles_.CONFIG_FILENAME} default"
+
+        # Load and display profile
+        profile_config = profiles_.load_profile(target_name)
+        log.print_info(f"Profile: {target_name} ({source_str})")
+        log.print_info("")
+        _print_store_config(profile_config)
+
+        if validate_:
+            _validate_stores(profile_config)
+
+    except errors.ProfileError as e:
         log.print_error(str(e))
         raise SystemExit(1)

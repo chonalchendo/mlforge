@@ -17,6 +17,7 @@ import mlforge.logging as log
 import mlforge.manifest as manifest
 import mlforge.metrics as metrics_
 import mlforge.online as online
+import mlforge.profiles as profiles_
 import mlforge.sources as sources
 import mlforge.store as store
 import mlforge.timestamps as timestamps_
@@ -251,24 +252,42 @@ class Definitions:
 
         # Build to online store
         defs.build(feature_names=["user_spend"], online=True)
+
+        # Using profiles from mlforge.yaml
+        defs = Definitions(
+            name="my-project",
+            features=[my_features],
+            profile="staging",  # Load stores from mlforge.yaml
+        )
     """
 
     def __init__(
         self,
         name: str,
         features: list[Feature | ModuleType],
-        offline_store: store.OfflineStoreKind,
+        offline_store: store.OfflineStoreKind | None = None,
         online_store: online.OnlineStoreKind | None = None,
+        profile: str | None = None,
         default_engine: Literal["polars", "duckdb"] = "duckdb",
     ) -> None:
         """
         Initialize a feature store registry.
 
+        Store resolution order:
+        1. Explicit offline_store/online_store parameters (highest priority)
+        2. Profile from profile parameter
+        3. Profile from MLFORGE_PROFILE environment variable
+        4. Profile from default_profile in mlforge.yaml
+
         Args:
             name: Project name
             features: List of Feature objects or modules containing features
-            offline_store: Storage backend for materialized features
+            offline_store: Storage backend for materialized features. If None,
+                loads from profile configuration.
             online_store: Optional online store for real-time serving. Defaults to None.
+                If None and profile has online_store configured, loads from profile.
+            profile: Profile name to load from mlforge.yaml. If None, uses
+                MLFORGE_PROFILE env var or default_profile from config.
             default_engine: Default execution engine for features without explicit engine.
                 Defaults to "duckdb" which is optimized for large datasets with rolling
                 windows. Use "polars" for small datasets or when you prefer staying in
@@ -276,6 +295,7 @@ class Definitions:
                 engine parameter in the @feature decorator.
 
         Example:
+            # Explicit stores (traditional)
             defs = Definitions(
                 name="fraud-detection",
                 features=[user_features, transaction_features],
@@ -283,20 +303,46 @@ class Definitions:
                 online_store=RedisStore(host="localhost"),
             )
 
-            # Use Polars for small datasets
+            # Using profiles from mlforge.yaml
             defs = Definitions(
                 name="fraud-detection",
                 features=[user_features],
-                offline_store=LocalStore("./features"),
-                default_engine="polars"
+                profile="staging",  # Load from mlforge.yaml
             )
+
+            # Auto-detect profile (uses MLFORGE_PROFILE or default_profile)
+            defs = Definitions(
+                name="fraud-detection",
+                features=[user_features],
+                # Stores loaded from mlforge.yaml automatically
+            )
+
+        Raises:
+            ProfileError: If no offline_store provided and no mlforge.yaml found,
+                or if profile not found in config.
         """
         self.name = name
-        self.offline_store = offline_store
-        self.online_store = online_store
         self.features: dict[str, Feature] = {}
         self.default_engine = default_engine
         self._engines: dict[str, engines.EngineKind] = {}
+
+        # Resolve stores from profile if not explicitly provided
+        resolved_offline: store.Store
+        resolved_online: online.OnlineStore | None = online_store
+
+        if offline_store is not None:
+            # Explicit stores win - use as provided
+            resolved_offline = offline_store
+        else:
+            # Try to load from profile
+            profile_config = profiles_.load_profile(profile)
+            resolved_offline = profile_config.offline_store.create()
+            # Only load online store from profile if not explicitly provided
+            if online_store is None and profile_config.online_store is not None:
+                resolved_online = profile_config.online_store.create()
+
+        self.offline_store = resolved_offline
+        self.online_store = resolved_online
 
         for item in features or []:
             self._register(item)

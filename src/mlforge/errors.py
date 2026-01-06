@@ -280,6 +280,44 @@ Common formats:
         return "\n".join(parts)
 
 
+class ProfileError(Exception):
+    """
+    Raised when profile loading or validation fails.
+
+    Provides context about what went wrong with profile configuration,
+    including missing environment variables, invalid store types, and
+    profile not found errors.
+
+    Attributes:
+        message: Primary error message
+        hint: Suggestion for how to fix the error
+    """
+
+    def __init__(self, message: str, hint: str | None = None):
+        """
+        Initialize profile error.
+
+        Args:
+            message: Primary error message
+            hint: Resolution suggestion. Defaults to None.
+        """
+        self.message = message
+        self.hint = hint
+        super().__init__(message)
+
+    def __str__(self) -> str:
+        """
+        Format error message with hint.
+
+        Returns:
+            Formatted error message
+        """
+        parts = [f"ProfileError: {self.message}"]
+        if self.hint:
+            parts.append(f"\nHint: {self.hint}")
+        return "\n".join(parts)
+
+
 class SourceDataChangedError(Exception):
     """
     Raised when source data has changed since the feature was built.
