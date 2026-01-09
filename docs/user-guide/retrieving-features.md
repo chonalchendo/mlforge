@@ -31,10 +31,10 @@ training_data = mlf.get_training_data(
 
 ```python
 def get_training_data(
-    features: list[str],
+    features: list[str | tuple[str, str]],
     entity_df: pl.DataFrame,
     store: str | Path | Store = "./feature_store",
-    entities: list[EntityKeyTransform] | None = None,
+    entities: list[Entity] | None = None,
     timestamp: str | None = None,
 ) -> pl.DataFrame
 ```
@@ -98,19 +98,26 @@ training_data = mlf.get_training_data(
 
 #### entities (optional)
 
-List of entity key transforms to apply to `entity_df` before joining. Use this when your entity DataFrame doesn't have the required keys.
+List of `Entity` definitions for key generation and validation. Use this when:
+
+- Your entity DataFrame needs surrogate key generation
+- You want to validate that required columns exist
 
 ```python
 import mlforge as mlf
 
-# Define transform
-with_user_id = mlf.entity_key("first", "last", "dob", alias="user_id")
+# Define entity with surrogate key generation
+user = mlf.Entity(
+    name="user",
+    join_key="user_id",
+    from_columns=["first", "last", "dob"],
+)
 
-# Apply during retrieval
+# Apply during retrieval - generates user_id from first, last, dob
 training_data = mlf.get_training_data(
     features=["user_spend_stats"],
     entity_df=raw_entities,
-    entities=[with_user_id]  # Adds user_id column
+    entities=[user],
 )
 ```
 
@@ -196,14 +203,18 @@ import polars as pl
 # 1. Load entity data
 transactions = pl.read_parquet("data/transactions.parquet")
 
-# 2. Define entity transform
-with_user_id = mlf.entity_key("first", "last", "dob", alias="user_id")
+# 2. Define entity with surrogate key generation
+user = mlf.Entity(
+    name="user",
+    join_key="user_id",
+    from_columns=["first", "last", "dob"],
+)
 
 # 3. Retrieve features with point-in-time correctness
 training_data = mlf.get_training_data(
     features=["user_spend_mean_30d", "user_total_spend"],
     entity_df=transactions,
-    entities=[with_user_id],
+    entities=[user],
     timestamp="trans_date_trans_time",
     store="./feature_store"
 )
@@ -261,16 +272,46 @@ except ValueError as e:
     # No common columns to join 'user_total_spend'.
 ```
 
-Solution: Use entity transforms to add required keys:
+Solution: Use an entity to generate or validate the required key:
 
 ```python
-with_user_id = mlf.entity_key("customer_id", alias="user_id")
+user = mlf.Entity(
+    name="user",
+    join_key="user_id",
+    from_columns=["customer_id"],  # Generate user_id from customer_id
+)
 
 training_data = mlf.get_training_data(
     features=["user_total_spend"],
     entity_df=entities,
-    entities=[with_user_id]
+    entities=[user]
 )
+```
+
+### Missing Entity Columns
+
+If entity_df is missing columns required by an entity:
+
+```python
+user = mlf.Entity(
+    name="user",
+    join_key="user_id",
+    from_columns=["first", "last", "dob"],
+)
+
+# entity_df is missing "dob" column
+entities = pl.DataFrame({"first": ["Alice"], "last": ["Smith"]})
+
+try:
+    training_data = mlf.get_training_data(
+        features=["user_spend"],
+        entity_df=entities,
+        entities=[user],
+    )
+except ValueError as e:
+    print(e)
+    # Entity 'user' requires columns ['first', 'last', 'dob'],
+    # but entity_df is missing: ['dob']
 ```
 
 ### Timestamp Type Mismatch
@@ -398,14 +439,17 @@ For real-time inference, use `get_online_features()` to retrieve features from a
 
 ```python
 import mlforge as mlf
-from mlforge.online import RedisStore
 import polars as pl
 
 # Connect to Redis
-store = RedisStore(host="localhost", port=6379)
+store = mlf.RedisStore(host="localhost", port=6379)
 
-# Define entity transform (same as training)
-with_user_id = mlf.entity_key("first", "last", "dob", alias="user_id")
+# Define entity with surrogate key generation
+user = mlf.Entity(
+    name="user",
+    join_key="user_id",
+    from_columns=["first", "last", "dob"],
+)
 
 # Inference request
 request_df = pl.DataFrame({
@@ -420,7 +464,7 @@ features_df = mlf.get_online_features(
     features=["user_spend"],
     entity_df=request_df,
     store=store,
-    entities=[with_user_id],
+    entities=[user],
 )
 ```
 
@@ -431,7 +475,7 @@ def get_online_features(
     features: list[str],
     entity_df: pl.DataFrame,
     store: OnlineStore,
-    entities: list[EntityKeyTransform] | None = None,
+    entities: list[Entity] | None = None,
 ) -> pl.DataFrame
 ```
 
@@ -450,13 +494,13 @@ Before using online retrieval:
 
 1. **Configure online store** in your definitions:
    ```python
-   from mlforge.online import RedisStore
+   import mlforge as mlf
 
    defs = mlf.Definitions(
        name="my-project",
        features=[user_spend],
        offline_store=mlf.LocalStore("./feature_store"),
-       online_store=RedisStore(host="localhost"),
+       online_store=mlf.RedisStore(host="localhost"),
    )
    ```
 
@@ -474,7 +518,7 @@ See [Online Stores](online-stores.md) for detailed setup instructions.
 
 ## Next Steps
 
-- [Entity Keys](entity-keys.md) - Work with surrogate keys and transforms
+- [Entity Keys](entity-keys.md) - Work with surrogate keys and entities
 - [Point-in-Time Correctness](point-in-time.md) - Understand temporal joins
 - [Online Stores](online-stores.md) - Set up Redis for real-time serving
 - [API Reference](../api/retrieval.md) - Detailed API documentation
