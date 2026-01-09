@@ -5,7 +5,7 @@ from types import ModuleType
 import polars as pl
 import pytest
 
-from mlforge import Definitions, Feature, LocalStore, feature
+from mlforge import Definitions, Entity, Feature, LocalStore, Source, feature
 
 
 def test_feature_decorator_creates_feature_object():
@@ -705,3 +705,382 @@ def test_sync_with_specific_feature_names():
         # Then only feature_a should be synced
         assert "feature_a" in result["synced"]
         assert "feature_b" not in result["synced"]
+
+
+# =============================================================================
+# Tests for Definitions discovery methods (list_entities, list_sources, etc.)
+# =============================================================================
+
+
+def test_definitions_list_entities_returns_unique_names():
+    # Given features with entities
+    user = Entity(
+        name="user", join_key="user_id", from_columns=["first", "last"]
+    )
+    merchant = Entity(name="merchant", join_key="merchant_id")
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        source_path = Path(tmpdir) / "data.parquet"
+        pl.DataFrame(
+            {"first": ["a"], "last": ["b"], "merchant": ["m"]}
+        ).write_parquet(source_path)
+
+        @feature(keys=["user_id"], source=str(source_path), entities=[user])
+        def user_feature(df):
+            return df
+
+        @feature(
+            keys=["merchant_id"], source=str(source_path), entities=[merchant]
+        )
+        def merchant_feature(df):
+            return df
+
+        defs = Definitions(
+            name="test",
+            features=[user_feature, merchant_feature],
+            offline_store=LocalStore(tmpdir),
+        )
+
+        # When listing entities
+        entities = defs.list_entities()
+
+        # Then all unique entity names should be returned sorted
+        assert entities == ["merchant", "user"]
+
+
+def test_definitions_list_entities_empty_when_no_entities():
+    # Given features without entities
+    with tempfile.TemporaryDirectory() as tmpdir:
+
+        @feature(keys=["id"], source="data.parquet")
+        def simple_feature(df):
+            return df
+
+        defs = Definitions(
+            name="test",
+            features=[simple_feature],
+            offline_store=LocalStore(tmpdir),
+        )
+
+        # When listing entities
+        entities = defs.list_entities()
+
+        # Then empty list should be returned
+        assert entities == []
+
+
+def test_definitions_list_sources_returns_unique_names():
+    # Given features with Source objects
+    transactions = Source("data/transactions.parquet")
+    events = Source("data/events.parquet")
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+
+        @feature(keys=["id"], source=transactions)
+        def txn_feature(df):
+            return df
+
+        @feature(keys=["id"], source=events)
+        def event_feature(df):
+            return df
+
+        @feature(keys=["id"], source=transactions)  # Same source as txn_feature
+        def another_txn_feature(df):
+            return df
+
+        defs = Definitions(
+            name="test",
+            features=[txn_feature, event_feature, another_txn_feature],
+            offline_store=LocalStore(tmpdir),
+        )
+
+        # When listing sources
+        sources = defs.list_sources()
+
+        # Then unique source names should be returned sorted
+        assert sources == ["events", "transactions"]
+
+
+def test_definitions_list_sources_handles_string_sources():
+    # Given features with legacy string sources
+    with tempfile.TemporaryDirectory() as tmpdir:
+
+        @feature(keys=["id"], source="data/transactions.parquet")
+        def txn_feature(df):
+            return df
+
+        @feature(keys=["id"], source="other/events.csv")
+        def event_feature(df):
+            return df
+
+        defs = Definitions(
+            name="test",
+            features=[txn_feature, event_feature],
+            offline_store=LocalStore(tmpdir),
+        )
+
+        # When listing sources
+        sources = defs.list_sources()
+
+        # Then source names derived from path stems should be returned
+        assert sources == ["events", "transactions"]
+
+
+def test_definitions_get_entity_returns_entity():
+    # Given a feature with an entity
+    user = Entity(
+        name="user", join_key="user_id", from_columns=["first", "last"]
+    )
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+
+        @feature(keys=["user_id"], source="data.parquet", entities=[user])
+        def user_feature(df):
+            return df
+
+        defs = Definitions(
+            name="test",
+            features=[user_feature],
+            offline_store=LocalStore(tmpdir),
+        )
+
+        # When getting entity by name
+        result = defs.get_entity("user")
+
+        # Then the entity should be returned
+        assert result is not None
+        assert result.name == "user"
+        assert result.join_key == "user_id"
+        assert result.from_columns == ["first", "last"]
+
+
+def test_definitions_get_entity_returns_none_when_not_found():
+    # Given a feature with an entity
+    user = Entity(name="user", join_key="user_id")
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+
+        @feature(keys=["user_id"], source="data.parquet", entities=[user])
+        def user_feature(df):
+            return df
+
+        defs = Definitions(
+            name="test",
+            features=[user_feature],
+            offline_store=LocalStore(tmpdir),
+        )
+
+        # When getting non-existent entity
+        result = defs.get_entity("merchant")
+
+        # Then None should be returned
+        assert result is None
+
+
+def test_definitions_get_source_returns_source():
+    # Given a feature with a Source object
+    transactions = Source("data/transactions.parquet")
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+
+        @feature(keys=["id"], source=transactions)
+        def txn_feature(df):
+            return df
+
+        defs = Definitions(
+            name="test",
+            features=[txn_feature],
+            offline_store=LocalStore(tmpdir),
+        )
+
+        # When getting source by name
+        result = defs.get_source("transactions")
+
+        # Then the source should be returned
+        assert result is not None
+        assert result.name == "transactions"
+        assert result.path == "data/transactions.parquet"
+
+
+def test_definitions_get_source_returns_none_when_not_found():
+    # Given a feature with a source
+    with tempfile.TemporaryDirectory() as tmpdir:
+
+        @feature(keys=["id"], source="data/transactions.parquet")
+        def txn_feature(df):
+            return df
+
+        defs = Definitions(
+            name="test",
+            features=[txn_feature],
+            offline_store=LocalStore(tmpdir),
+        )
+
+        # When getting non-existent source
+        result = defs.get_source("events")
+
+        # Then None should be returned
+        assert result is None
+
+
+def test_definitions_get_source_converts_string_to_source():
+    # Given a feature with a legacy string source
+    with tempfile.TemporaryDirectory() as tmpdir:
+
+        @feature(keys=["id"], source="data/transactions.parquet")
+        def txn_feature(df):
+            return df
+
+        defs = Definitions(
+            name="test",
+            features=[txn_feature],
+            offline_store=LocalStore(tmpdir),
+        )
+
+        # When getting source by name
+        result = defs.get_source("transactions")
+
+        # Then a Source object should be returned
+        assert result is not None
+        assert isinstance(result, Source)
+        assert result.path == "data/transactions.parquet"
+
+
+def test_definitions_features_using_entity():
+    # Given features with different entities
+    user = Entity(name="user", join_key="user_id")
+    merchant = Entity(name="merchant", join_key="merchant_id")
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+
+        @feature(keys=["user_id"], source="data.parquet", entities=[user])
+        def user_spend(df):
+            return df
+
+        @feature(keys=["user_id"], source="data.parquet", entities=[user])
+        def user_transactions(df):
+            return df
+
+        @feature(
+            keys=["merchant_id"], source="data.parquet", entities=[merchant]
+        )
+        def merchant_spend(df):
+            return df
+
+        defs = Definitions(
+            name="test",
+            features=[user_spend, user_transactions, merchant_spend],
+            offline_store=LocalStore(tmpdir),
+        )
+
+        # When finding features using user entity
+        user_features = defs.features_using_entity("user")
+
+        # Then features using user should be returned
+        assert "user_spend" in user_features
+        assert "user_transactions" in user_features
+        assert "merchant_spend" not in user_features
+
+
+def test_definitions_features_using_entity_returns_empty_when_not_found():
+    # Given features with entities
+    user = Entity(name="user", join_key="user_id")
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+
+        @feature(keys=["user_id"], source="data.parquet", entities=[user])
+        def user_feature(df):
+            return df
+
+        defs = Definitions(
+            name="test",
+            features=[user_feature],
+            offline_store=LocalStore(tmpdir),
+        )
+
+        # When finding features using non-existent entity
+        result = defs.features_using_entity("merchant")
+
+        # Then empty list should be returned
+        assert result == []
+
+
+def test_definitions_features_using_source():
+    # Given features with different sources
+    transactions = Source("data/transactions.parquet")
+    events = Source("data/events.parquet")
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+
+        @feature(keys=["id"], source=transactions)
+        def txn_feature_a(df):
+            return df
+
+        @feature(keys=["id"], source=transactions)
+        def txn_feature_b(df):
+            return df
+
+        @feature(keys=["id"], source=events)
+        def event_feature(df):
+            return df
+
+        defs = Definitions(
+            name="test",
+            features=[txn_feature_a, txn_feature_b, event_feature],
+            offline_store=LocalStore(tmpdir),
+        )
+
+        # When finding features using transactions source
+        txn_features = defs.features_using_source("transactions")
+
+        # Then features using transactions should be returned
+        assert "txn_feature_a" in txn_features
+        assert "txn_feature_b" in txn_features
+        assert "event_feature" not in txn_features
+
+
+def test_definitions_features_using_source_returns_empty_when_not_found():
+    # Given features with sources
+    with tempfile.TemporaryDirectory() as tmpdir:
+
+        @feature(keys=["id"], source="data/transactions.parquet")
+        def txn_feature(df):
+            return df
+
+        defs = Definitions(
+            name="test",
+            features=[txn_feature],
+            offline_store=LocalStore(tmpdir),
+        )
+
+        # When finding features using non-existent source
+        result = defs.features_using_source("events")
+
+        # Then empty list should be returned
+        assert result == []
+
+
+def test_definitions_features_using_source_handles_string_sources():
+    # Given features with legacy string sources
+    with tempfile.TemporaryDirectory() as tmpdir:
+
+        @feature(keys=["id"], source="data/transactions.parquet")
+        def txn_feature_a(df):
+            return df
+
+        @feature(keys=["id"], source="data/transactions.parquet")
+        def txn_feature_b(df):
+            return df
+
+        defs = Definitions(
+            name="test",
+            features=[txn_feature_a, txn_feature_b],
+            offline_store=LocalStore(tmpdir),
+        )
+
+        # When finding features using source name
+        txn_features = defs.features_using_source("transactions")
+
+        # Then features using that source should be returned
+        assert "txn_feature_a" in txn_features
+        assert "txn_feature_b" in txn_features

@@ -326,6 +326,12 @@ class Definitions:
         self.default_engine = default_engine
         self._engines: dict[str, engines.EngineKind] = {}
 
+        # Indexes for O(1) lookups
+        self._entities: dict[str, entities_.Entity] = {}
+        self._sources: dict[str, sources.Source] = {}
+        self._entity_to_features: dict[str, list[str]] = {}
+        self._source_to_features: dict[str, list[str]] = {}
+
         # Resolve stores from profile if not explicitly provided
         resolved_offline: store.Store
         resolved_online: online.OnlineStore | None = online_store
@@ -1093,6 +1099,96 @@ class Definitions:
         features = self.list_features()
         return [tag for feat in features if feat.tags for tag in feat.tags]
 
+    def list_entities(self) -> list[str]:
+        """
+        List all unique entity names from registered features.
+
+        Returns:
+            Sorted list of unique entity names
+
+        Example:
+            defs = Definitions(features=[user_spend, merchant_spend], offline_store=store)
+            entities = defs.list_entities()  # ["merchant", "user"]
+        """
+        return sorted(self._entities.keys())
+
+    def list_sources(self) -> list[str]:
+        """
+        List all unique source names from registered features.
+
+        Returns:
+            Sorted list of unique source names
+
+        Example:
+            defs = Definitions(features=[user_spend, merchant_spend], offline_store=store)
+            sources = defs.list_sources()  # ["transactions"]
+        """
+        return sorted(self._sources.keys())
+
+    def get_entity(self, name: str) -> entities_.Entity | None:
+        """
+        Get entity by name from registered features.
+
+        Args:
+            name: Entity name to retrieve
+
+        Returns:
+            Entity object if found, None otherwise
+
+        Example:
+            user_entity = defs.get_entity("user")
+            if user_entity:
+                print(user_entity.join_key)  # "user_id"
+        """
+        return self._entities.get(name)
+
+    def get_source(self, name: str) -> sources.Source | None:
+        """
+        Get source by name from registered features.
+
+        Args:
+            name: Source name to retrieve
+
+        Returns:
+            Source object if found, None otherwise
+
+        Example:
+            txn_source = defs.get_source("transactions")
+            if txn_source:
+                print(txn_source.path)  # "data/transactions.parquet"
+        """
+        return self._sources.get(name)
+
+    def features_using_entity(self, entity_name: str) -> list[str]:
+        """
+        List features that use a specific entity.
+
+        Args:
+            entity_name: Name of the entity to search for
+
+        Returns:
+            List of feature names using the entity
+
+        Example:
+            features = defs.features_using_entity("user")  # ["user_spend", "user_transactions"]
+        """
+        return self._entity_to_features.get(entity_name, [])
+
+    def features_using_source(self, source_name: str) -> list[str]:
+        """
+        List features that use a specific source.
+
+        Args:
+            source_name: Name of the source to search for
+
+        Returns:
+            List of feature names using the source
+
+        Example:
+            features = defs.features_using_source("transactions")  # ["user_spend", "merchant_spend"]
+        """
+        return self._source_to_features.get(source_name, [])
+
     def _get_feature(self, name: str) -> Feature:
         """
         Get a feature by name.
@@ -1144,6 +1240,31 @@ class Definitions:
 
         logger.debug(f"Registered feature: {feature.name}")
         self.features[feature.name] = feature
+
+        # Index entities
+        if feature.entities:
+            for entity in feature.entities:
+                if entity.name not in self._entities:
+                    self._entities[entity.name] = entity
+                if entity.name not in self._entity_to_features:
+                    self._entity_to_features[entity.name] = []
+                self._entity_to_features[entity.name].append(feature.name)
+
+        # Index sources
+        if feature.source:
+            if isinstance(feature.source, sources.Source):
+                source_name = feature.source.name
+                if source_name not in self._sources:
+                    self._sources[source_name] = feature.source
+            else:
+                # Legacy string source
+                source_name = Path(feature.source).stem
+                if source_name not in self._sources:
+                    self._sources[source_name] = sources.Source(feature.source)
+
+            if source_name not in self._source_to_features:
+                self._source_to_features[source_name] = []
+            self._source_to_features[source_name].append(feature.name)
 
     def _register_module(self, module: ModuleType) -> None:
         """
