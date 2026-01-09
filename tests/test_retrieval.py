@@ -3,12 +3,14 @@ from datetime import datetime
 from typing import Any
 
 import polars as pl
+import pytest
 
 from mlforge import (
+    Entity,
     LocalStore,
-    entity_key,
     get_online_features,
     get_training_data,
+    surrogate_key,
 )
 from mlforge.online import OnlineStore
 from mlforge.results import PolarsResult
@@ -234,12 +236,12 @@ class MockOnlineStore(OnlineStore):
 
 def test_get_online_features_single_feature():
     """Retrieve a single feature for multiple entities."""
-    # Given an entity transform
-    with_user_key = entity_key("user_id", alias="user_key")
+    # Given an entity definition with surrogate key generation
+    user = Entity(name="user", join_key="user_key", from_columns=["user_id"])
 
     # Pre-compute hashed keys for known users
     users_df = pl.DataFrame({"user_id": ["user_123", "user_456", "user_789"]})
-    hashed = users_df.pipe(with_user_key)
+    hashed = users_df.with_columns(surrogate_key("user_id").alias("user_key"))
     key_123 = hashed.filter(pl.col("user_id") == "user_123")["user_key"][0]
     key_456 = hashed.filter(pl.col("user_id") == "user_456")["user_key"][0]
 
@@ -255,7 +257,7 @@ def test_get_online_features_single_feature():
         features=["user_spend"],
         entity_df=request_df,
         store=store,
-        entities=[with_user_key],
+        entities=[user],
     )
 
     # Then features are joined correctly
@@ -269,13 +271,13 @@ def test_get_online_features_single_feature():
 
 def test_get_online_features_multiple_features():
     """Multiple features are joined correctly."""
-    # Given an entity transform
-    with_user_key = entity_key("user_id", alias="user_key")
+    # Given an entity definition
+    user = Entity(name="user", join_key="user_key", from_columns=["user_id"])
 
     # Pre-compute hashed key
-    key_123 = pl.DataFrame({"user_id": ["user_123"]}).pipe(with_user_key)[
-        "user_key"
-    ][0]
+    key_123 = pl.DataFrame({"user_id": ["user_123"]}).with_columns(
+        surrogate_key("user_id").alias("user_key")
+    )["user_key"][0]
 
     # And an online store with multiple features
     store = MockOnlineStore()
@@ -288,7 +290,7 @@ def test_get_online_features_multiple_features():
         features=["user_spend", "user_risk"],
         entity_df=request_df,
         store=store,
-        entities=[with_user_key],
+        entities=[user],
     )
 
     # Then both feature columns are present
@@ -300,13 +302,13 @@ def test_get_online_features_multiple_features():
 
 def test_get_online_features_missing_entities_return_none():
     """Missing entities return None values."""
-    # Given an entity transform
-    with_user_key = entity_key("user_id", alias="user_key")
+    # Given an entity definition
+    user = Entity(name="user", join_key="user_key", from_columns=["user_id"])
 
     # Pre-compute hashed key for user_123 only
-    key_123 = pl.DataFrame({"user_id": ["user_123"]}).pipe(with_user_key)[
-        "user_key"
-    ][0]
+    key_123 = pl.DataFrame({"user_id": ["user_123"]}).with_columns(
+        surrogate_key("user_id").alias("user_key")
+    )["user_key"][0]
 
     # And an online store with partial data (only user_123)
     store = MockOnlineStore()
@@ -319,7 +321,7 @@ def test_get_online_features_missing_entities_return_none():
         features=["user_spend"],
         entity_df=request_df,
         store=store,
-        entities=[with_user_key],
+        entities=[user],
     )
 
     # Then missing entities have None values
@@ -327,44 +329,50 @@ def test_get_online_features_missing_entities_return_none():
     assert result.filter(pl.col("user_id") == "user_456")["total"][0] is None
 
 
-def test_get_online_features_with_entity_transform():
-    """Entity transforms are applied before lookup."""
+def test_get_online_features_with_surrogate_key_generation():
+    """Surrogate keys are generated before lookup."""
     # Given an online store with hashed user keys
     store = MockOnlineStore()
 
-    # Create entity transform that hashes the user_id
-    with_user_key = entity_key("first_name", "last_name", alias="user_key")
+    # Create entity that generates surrogate key from multiple columns
+    user = Entity(
+        name="user",
+        join_key="user_key",
+        from_columns=["first_name", "last_name"],
+    )
 
     # Pre-compute what the hash would be and store under that key
     test_df = pl.DataFrame({"first_name": ["John"], "last_name": ["Doe"]})
-    transformed = test_df.pipe(with_user_key)
+    transformed = test_df.with_columns(
+        surrogate_key("first_name", "last_name").alias("user_key")
+    )
     user_key_value = transformed["user_key"][0]
 
     store.write("user_spend", {"user_key": user_key_value}, {"total": 500.0})
 
-    # When retrieving features with entity transform
+    # When retrieving features with entity that generates surrogate key
     request_df = pl.DataFrame({"first_name": ["John"], "last_name": ["Doe"]})
     result = get_online_features(
         features=["user_spend"],
         entity_df=request_df,
         store=store,
-        entities=[with_user_key],
+        entities=[user],
     )
 
-    # Then entity transform is applied and features are joined
+    # Then surrogate key is generated and features are joined
     assert "total" in result.columns
     assert result["total"][0] == 500.0
 
 
 def test_get_online_features_preserves_entity_df_columns():
     """Original entity_df columns are preserved in result."""
-    # Given an entity transform
-    with_user_key = entity_key("user_id", alias="user_key")
+    # Given an entity definition
+    user = Entity(name="user", join_key="user_key", from_columns=["user_id"])
 
     # Pre-compute hashed key
-    key_123 = pl.DataFrame({"user_id": ["user_123"]}).pipe(with_user_key)[
-        "user_key"
-    ][0]
+    key_123 = pl.DataFrame({"user_id": ["user_123"]}).with_columns(
+        surrogate_key("user_id").alias("user_key")
+    )["user_key"][0]
 
     # And an online store with feature data
     store = MockOnlineStore()
@@ -382,7 +390,7 @@ def test_get_online_features_preserves_entity_df_columns():
         features=["user_spend"],
         entity_df=request_df,
         store=store,
-        entities=[with_user_key],
+        entities=[user],
     )
 
     # Then all original columns are preserved
@@ -390,13 +398,13 @@ def test_get_online_features_preserves_entity_df_columns():
     assert "user_id" in result.columns
     assert "timestamp" in result.columns
     assert "total" in result.columns
-    assert "user_key" in result.columns  # Entity transform adds this column
+    assert "user_key" in result.columns  # Entity generates this column
 
 
 def test_get_online_features_empty_entity_df():
     """Empty entity_df returns empty result."""
     store = MockOnlineStore()
-    with_user_id = entity_key("user_id", alias="user_id")
+    user = Entity(name="user", join_key="user_key", from_columns=["user_id"])
 
     # When retrieving features for empty DataFrame
     request_df = pl.DataFrame({"user_id": []}).cast({"user_id": pl.Utf8})
@@ -404,7 +412,7 @@ def test_get_online_features_empty_entity_df():
         features=["user_spend"],
         entity_df=request_df,
         store=store,
-        entities=[with_user_id],
+        entities=[user],
     )
 
     # Then result is empty
@@ -413,13 +421,13 @@ def test_get_online_features_empty_entity_df():
 
 def test_get_online_features_duplicate_entities():
     """Duplicate entities in entity_df are handled correctly."""
-    # Given an entity transform
-    with_user_key = entity_key("user_id", alias="user_key")
+    # Given an entity definition
+    user = Entity(name="user", join_key="user_key", from_columns=["user_id"])
 
     # Pre-compute hashed key
-    key_123 = pl.DataFrame({"user_id": ["user_123"]}).pipe(with_user_key)[
-        "user_key"
-    ][0]
+    key_123 = pl.DataFrame({"user_id": ["user_123"]}).with_columns(
+        surrogate_key("user_id").alias("user_key")
+    )["user_key"][0]
 
     # And an online store with feature data
     store = MockOnlineStore()
@@ -436,7 +444,7 @@ def test_get_online_features_duplicate_entities():
         features=["user_spend"],
         entity_df=request_df,
         store=store,
-        entities=[with_user_key],
+        entities=[user],
     )
 
     # Then all rows get the feature value
@@ -445,14 +453,12 @@ def test_get_online_features_duplicate_entities():
 
 
 def test_get_online_features_raises_without_entities():
-    """Raises ValueError when no entity transforms provided."""
+    """Raises ValueError when no entities provided."""
     store = MockOnlineStore()
     request_df = pl.DataFrame({"user_id": ["user_123"]})
 
     # When retrieving features without entities parameter
     # Then ValueError is raised
-    import pytest
-
     with pytest.raises(ValueError, match="Cannot determine entity keys"):
         get_online_features(
             features=["user_spend"],
@@ -462,43 +468,96 @@ def test_get_online_features_raises_without_entities():
         )
 
 
-def test_get_online_features_raises_for_invalid_entity_transform():
-    """Raises ValueError for entity transform without metadata."""
+def test_get_online_features_raises_for_missing_from_columns():
+    """Raises ValueError when entity_df missing required from_columns."""
     store = MockOnlineStore()
-    request_df = pl.DataFrame({"user_id": ["user_123"]})
+    user = Entity(
+        name="user", join_key="user_key", from_columns=["first", "last"]
+    )
 
-    # Create a plain function without entity_key metadata
-    def bad_transform(df: pl.DataFrame) -> pl.DataFrame:
-        return df
-
-    # When retrieving features with invalid entity transform
-    # Then ValueError is raised
-    import pytest
-
-    with pytest.raises(ValueError, match="missing metadata"):
-        get_online_features(
-            features=["user_spend"],
-            entity_df=request_df,
-            store=store,
-            entities=[bad_transform],  # type: ignore
-        )
-
-
-def test_get_online_features_raises_for_missing_columns():
-    """Raises ValueError when entity_df missing required columns."""
-    store = MockOnlineStore()
-    with_user_id = entity_key("user_id", "account_id", alias="user_key")
+    # entity_df is missing "last" column
+    request_df = pl.DataFrame({"first": ["John"]})
 
     # When retrieving features with missing columns
-    request_df = pl.DataFrame({"user_id": ["user_123"]})  # missing account_id
-
     # Then ValueError is raised
-    import pytest
-
-    with pytest.raises(ValueError, match="missing"):
+    with pytest.raises(ValueError, match="missing.*last"):
         get_online_features(
             features=["user_spend"],
             entity_df=request_df,
             store=store,
-            entities=[with_user_id],
+            entities=[user],
         )
+
+
+def test_get_online_features_raises_for_missing_join_key():
+    """Raises ValueError when entity_df missing required join_key (direct entity)."""
+    store = MockOnlineStore()
+    # Entity without from_columns (direct key, no generation)
+    merchant = Entity(name="merchant", join_key="merchant_id")
+
+    # entity_df is missing "merchant_id" column
+    request_df = pl.DataFrame({"user_id": ["user_123"]})
+
+    # When retrieving features with missing join_key
+    # Then ValueError is raised
+    with pytest.raises(ValueError, match="missing.*merchant_id"):
+        get_online_features(
+            features=["merchant_revenue"],
+            entity_df=request_df,
+            store=store,
+            entities=[merchant],
+        )
+
+
+def test_get_training_data_validates_entity_columns():
+    """Raises ValueError when entity_df missing required columns."""
+    user = Entity(
+        name="user", join_key="user_id", from_columns=["first", "last"]
+    )
+
+    # Missing "last" column
+    entity_df = pl.DataFrame({"first": ["Alice"], "label": [1]})
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        store = LocalStore(path=tmpdir)
+
+        # Write a dummy feature
+        feature_df = pl.DataFrame({"user_id": ["u1"], "spend": [100.0]})
+        store.write(
+            "user_spend", PolarsResult(feature_df), feature_version="1.0.0"
+        )
+
+        with pytest.raises(ValueError, match="missing.*last"):
+            get_training_data(
+                features=["user_spend"],
+                entity_df=entity_df,
+                store=store,
+                entities=[user],
+            )
+
+
+def test_get_training_data_validates_direct_entity_columns():
+    """Raises ValueError when join_key column missing (no surrogate generation)."""
+    merchant = Entity(name="merchant", join_key="merchant_id")
+
+    # Missing "merchant_id" column
+    entity_df = pl.DataFrame({"user_id": ["u1"], "label": [1]})
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        store = LocalStore(path=tmpdir)
+
+        # Write a dummy feature
+        feature_df = pl.DataFrame({"merchant_id": ["m1"], "revenue": [100.0]})
+        store.write(
+            "merchant_revenue",
+            PolarsResult(feature_df),
+            feature_version="1.0.0",
+        )
+
+        with pytest.raises(ValueError, match="missing.*merchant_id"):
+            get_training_data(
+                features=["merchant_revenue"],
+                entity_df=entity_df,
+                store=store,
+                entities=[merchant],
+            )

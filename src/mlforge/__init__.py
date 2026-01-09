@@ -37,7 +37,6 @@ Public API:
     Source: Data source abstraction with location/format detection
     ParquetFormat, CSVFormat, DeltaFormat: Format configuration classes
     Timestamp: Timestamp configuration with auto-detection
-    entity_key: Create reusable entity key transforms
     surrogate_key: Generate surrogate keys from columns
     get_training_data: Retrieve features with point-in-time correctness
     get_online_features: Retrieve features from online store for inference
@@ -57,7 +56,7 @@ from mlforge.sources import CSVFormat, DeltaFormat, ParquetFormat, Source
 from mlforge.store import LocalStore, S3Store
 from mlforge.timestamps import Timestamp
 from mlforge.types import DataType, TypeKind
-from mlforge.utils import entity_key, surrogate_key
+from mlforge.utils import surrogate_key
 from mlforge.validators import (
     greater_than,
     greater_than_or_equal,
@@ -81,7 +80,6 @@ __all__ = [
     "OnlineStore",
     "RedisStore",
     "Timestamp",
-    "entity_key",
     "surrogate_key",
     "get_training_data",
     "get_online_features",
