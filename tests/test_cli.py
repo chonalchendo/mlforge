@@ -1192,3 +1192,427 @@ def test_init_all_options_combined(temp_dir, monkeypatch):
     assert "RedisStore" in definitions
     assert 'engine="duckdb"' in definitions
     assert (project / "mlforge.yaml").exists()
+
+
+# =============================================================================
+# diff command tests
+# =============================================================================
+
+
+@pytest.fixture
+def definitions_with_versions(temp_dir, sample_parquet_file):
+    """Create definitions file with two versions of a feature built."""
+    import json
+
+    definitions_file = temp_dir / "definitions.py"
+    store_path = temp_dir / "store"
+    store_path.mkdir()
+
+    definitions_file.write_text(
+        f"""
+from mlforge import Definitions, LocalStore, feature
+import polars as pl
+
+@feature(keys=["id"], source="{sample_parquet_file}")
+def test_feature(df):
+    return df.select(["id", "value"])
+
+defs = Definitions(
+    name="test-project",
+    features=[test_feature],
+    offline_store=LocalStore("{store_path}")
+)
+"""
+    )
+
+    # Create two versions manually
+    feature_dir = store_path / "test_feature"
+
+    # Version 1.0.0
+    v1_dir = feature_dir / "1.0.0"
+    v1_dir.mkdir(parents=True)
+    (v1_dir / ".meta.json").write_text(
+        json.dumps(
+            {
+                "name": "test_feature",
+                "version": "1.0.0",
+                "path": str(v1_dir / "data.parquet"),
+                "entity": "id",
+                "keys": ["id"],
+                "source": str(sample_parquet_file),
+                "row_count": 100,
+                "created_at": "2024-01-01T00:00:00Z",
+                "updated_at": "2024-01-01T00:00:00Z",
+                "content_hash": "abc123",
+                "schema_hash": "def456",
+                "config_hash": "ghi789",
+                "source_hash": "jkl012",
+                "columns": [
+                    {"name": "id", "dtype": "Int64"},
+                    {"name": "value", "dtype": "Float64"},
+                ],
+                "features": [],
+            }
+        )
+    )
+
+    # Version 2.0.0 (with added column)
+    v2_dir = feature_dir / "2.0.0"
+    v2_dir.mkdir(parents=True)
+    (v2_dir / ".meta.json").write_text(
+        json.dumps(
+            {
+                "name": "test_feature",
+                "version": "2.0.0",
+                "path": str(v2_dir / "data.parquet"),
+                "entity": "id",
+                "keys": ["id"],
+                "source": str(sample_parquet_file),
+                "row_count": 150,
+                "created_at": "2024-01-02T00:00:00Z",
+                "updated_at": "2024-01-02T00:00:00Z",
+                "content_hash": "xyz789",
+                "schema_hash": "uvw456",
+                "config_hash": "ghi789",
+                "source_hash": "jkl012",
+                "columns": [
+                    {"name": "id", "dtype": "Int64"},
+                    {"name": "value", "dtype": "Float64"},
+                    {"name": "new_col", "dtype": "String"},
+                ],
+                "features": [],
+            }
+        )
+    )
+
+    # Write _latest.json pointer
+    (feature_dir / "_latest.json").write_text(json.dumps({"version": "2.0.0"}))
+
+    return definitions_file
+
+
+def test_diff_compares_two_versions(definitions_with_versions):
+    """Should compare two specific versions."""
+    from mlforge.cli import diff
+
+    with (
+        patch("mlforge.logging.print_version_diff") as mock_print,
+        pytest.raises(SystemExit) as exc_info,
+    ):
+        diff(
+            feature_name="test_feature",
+            version1="1.0.0",
+            version2="2.0.0",
+            target=str(definitions_with_versions),
+        )
+
+    # MINOR change (column added) = exit code 2
+    assert exc_info.value.code == 2
+    mock_print.assert_called_once()
+
+    # Check the diff result
+    diff_result = mock_print.call_args[0][0]
+    assert diff_result.feature == "test_feature"
+    assert diff_result.version_from == "1.0.0"
+    assert diff_result.version_to == "2.0.0"
+    assert len(diff_result.schema_changes.added) == 1
+    assert diff_result.schema_changes.added[0].name == "new_col"
+
+
+def test_diff_compares_with_latest(definitions_with_versions):
+    """Should compare version with latest when only one version specified."""
+    from mlforge.cli import diff
+
+    with (
+        patch("mlforge.logging.print_version_diff") as mock_print,
+        pytest.raises(SystemExit) as exc_info,
+    ):
+        diff(
+            feature_name="test_feature",
+            version1="1.0.0",
+            version2=None,
+            target=str(definitions_with_versions),
+        )
+
+    assert exc_info.value.code == 2
+    diff_result = mock_print.call_args[0][0]
+    assert diff_result.version_from == "1.0.0"
+    assert diff_result.version_to == "2.0.0"
+
+
+def test_diff_compares_latest_with_previous(definitions_with_versions):
+    """Should compare latest with previous when no versions specified."""
+    from mlforge.cli import diff
+
+    with (
+        patch("mlforge.logging.print_version_diff") as mock_print,
+        pytest.raises(SystemExit) as exc_info,
+    ):
+        diff(
+            feature_name="test_feature",
+            version1=None,
+            version2=None,
+            target=str(definitions_with_versions),
+        )
+
+    assert exc_info.value.code == 2
+    diff_result = mock_print.call_args[0][0]
+    assert diff_result.version_from == "1.0.0"
+    assert diff_result.version_to == "2.0.0"
+
+
+def test_diff_json_output(definitions_with_versions):
+    """Should output JSON format when requested."""
+    from mlforge.cli import diff
+
+    with (
+        patch("mlforge.logging.print_version_diff_json") as mock_json,
+        pytest.raises(SystemExit),
+    ):
+        diff(
+            feature_name="test_feature",
+            version1="1.0.0",
+            version2="2.0.0",
+            target=str(definitions_with_versions),
+            format_="json",
+        )
+
+    mock_json.assert_called_once()
+
+
+def test_diff_quiet_mode(definitions_with_versions):
+    """Should not print when quiet mode enabled."""
+    from mlforge.cli import diff
+
+    with (
+        patch("mlforge.logging.print_version_diff") as mock_print,
+        patch("mlforge.logging.print_version_diff_json") as mock_json,
+        pytest.raises(SystemExit) as exc_info,
+    ):
+        diff(
+            feature_name="test_feature",
+            version1="1.0.0",
+            version2="2.0.0",
+            target=str(definitions_with_versions),
+            quiet=True,
+        )
+
+    assert exc_info.value.code == 2
+    mock_print.assert_not_called()
+    mock_json.assert_not_called()
+
+
+def test_diff_version_not_found(definitions_with_versions):
+    """Should error when version doesn't exist."""
+    from mlforge.cli import diff
+
+    with (
+        patch("mlforge.logging.print_error"),
+        pytest.raises(SystemExit) as exc_info,
+    ):
+        diff(
+            feature_name="test_feature",
+            version1="1.0.0",
+            version2="9.9.9",
+            target=str(definitions_with_versions),
+        )
+
+    assert exc_info.value.code == 4
+
+
+def test_diff_feature_not_found(definitions_with_versions):
+    """Should error when feature doesn't exist."""
+    from mlforge.cli import diff
+
+    with (
+        patch("mlforge.logging.print_error"),
+        pytest.raises(SystemExit) as exc_info,
+    ):
+        diff(
+            feature_name="nonexistent_feature",
+            version1="1.0.0",
+            version2="2.0.0",
+            target=str(definitions_with_versions),
+        )
+
+    assert exc_info.value.code == 4
+
+
+# =============================================================================
+# rollback command tests
+# =============================================================================
+
+
+def test_rollback_to_specific_version(definitions_with_versions, temp_dir):
+    """Should rollback to specific version."""
+    import json
+
+    from mlforge.cli import rollback
+
+    with (
+        patch("mlforge.logging.print_rollback_result"),
+        patch("mlforge.logging.print_success"),
+        pytest.raises(SystemExit) as exc_info,
+    ):
+        rollback(
+            feature_name="test_feature",
+            version="1.0.0",
+            force=True,
+            target=str(definitions_with_versions),
+        )
+
+    assert exc_info.value.code == 0
+
+    # Check _latest.json was updated
+    store_path = temp_dir / "store"
+    latest_file = store_path / "test_feature" / "_latest.json"
+    latest_data = json.loads(latest_file.read_text())
+    assert latest_data["version"] == "1.0.0"
+
+
+def test_rollback_with_previous_flag(definitions_with_versions, temp_dir):
+    """Should rollback to previous version with --previous flag."""
+    import json
+
+    from mlforge.cli import rollback
+
+    with (
+        patch("mlforge.logging.print_rollback_result"),
+        patch("mlforge.logging.print_success"),
+        pytest.raises(SystemExit) as exc_info,
+    ):
+        rollback(
+            feature_name="test_feature",
+            previous=True,
+            force=True,
+            target=str(definitions_with_versions),
+        )
+
+    assert exc_info.value.code == 0
+
+    store_path = temp_dir / "store"
+    latest_file = store_path / "test_feature" / "_latest.json"
+    latest_data = json.loads(latest_file.read_text())
+    assert latest_data["version"] == "1.0.0"
+
+
+def test_rollback_dry_run(definitions_with_versions, temp_dir):
+    """Should not make changes in dry run mode."""
+    import json
+
+    from mlforge.cli import rollback
+
+    with (
+        patch("mlforge.logging.print_rollback_result"),
+        pytest.raises(SystemExit) as exc_info,
+    ):
+        rollback(
+            feature_name="test_feature",
+            version="1.0.0",
+            dry_run=True,
+            target=str(definitions_with_versions),
+        )
+
+    assert exc_info.value.code == 0
+
+    # Check _latest.json was NOT updated
+    store_path = temp_dir / "store"
+    latest_file = store_path / "test_feature" / "_latest.json"
+    latest_data = json.loads(latest_file.read_text())
+    assert latest_data["version"] == "2.0.0"
+
+
+def test_rollback_preserves_data(definitions_with_versions, temp_dir):
+    """Should preserve all version directories after rollback."""
+    from mlforge.cli import rollback
+
+    with (
+        patch("mlforge.logging.print_rollback_result"),
+        patch("mlforge.logging.print_success"),
+        pytest.raises(SystemExit),
+    ):
+        rollback(
+            feature_name="test_feature",
+            version="1.0.0",
+            force=True,
+            target=str(definitions_with_versions),
+        )
+
+    # Both version directories should still exist
+    store_path = temp_dir / "store"
+    assert (store_path / "test_feature" / "1.0.0").exists()
+    assert (store_path / "test_feature" / "2.0.0").exists()
+
+
+def test_rollback_version_not_found(definitions_with_versions):
+    """Should error when version doesn't exist."""
+    from mlforge.cli import rollback
+
+    with (
+        patch("mlforge.logging.print_error"),
+        pytest.raises(SystemExit) as exc_info,
+    ):
+        rollback(
+            feature_name="test_feature",
+            version="9.9.9",
+            force=True,
+            target=str(definitions_with_versions),
+        )
+
+    assert exc_info.value.code == 1
+
+
+def test_rollback_already_at_version(definitions_with_versions):
+    """Should error when already at target version."""
+    from mlforge.cli import rollback
+
+    with (
+        patch("mlforge.logging.print_error"),
+        pytest.raises(SystemExit) as exc_info,
+    ):
+        rollback(
+            feature_name="test_feature",
+            version="2.0.0",
+            force=True,
+            target=str(definitions_with_versions),
+        )
+
+    assert exc_info.value.code == 2
+
+
+def test_rollback_requires_version_or_previous(definitions_with_versions):
+    """Should error when neither version nor --previous specified."""
+    from mlforge.cli import rollback
+
+    with (
+        patch("mlforge.logging.print_error"),
+        pytest.raises(SystemExit) as exc_info,
+    ):
+        rollback(
+            feature_name="test_feature",
+            force=True,
+            target=str(definitions_with_versions),
+        )
+
+    assert exc_info.value.code == 4
+
+
+def test_rollback_cancelled_by_user(definitions_with_versions, monkeypatch):
+    """Should exit with code 3 when user cancels."""
+    from mlforge.cli import rollback
+
+    # Mock input to return 'n'
+    monkeypatch.setattr("builtins.input", lambda _: "n")
+
+    with (
+        patch("mlforge.logging.print_rollback_confirmation"),
+        patch("mlforge.logging.print_info"),
+        pytest.raises(SystemExit) as exc_info,
+    ):
+        rollback(
+            feature_name="test_feature",
+            version="1.0.0",
+            target=str(definitions_with_versions),
+        )
+
+    assert exc_info.value.code == 3

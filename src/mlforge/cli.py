@@ -1123,3 +1123,297 @@ def init(
     log.console.print(
         f"  mlforge build --target src/{module_name}/definitions.py"
     )
+
+
+@app.command
+def diff(
+    feature_name: Annotated[
+        str,
+        cyclopts.Parameter(help="Name of the feature to compare"),
+    ],
+    version1: Annotated[
+        str | None,
+        cyclopts.Parameter(help="First version to compare"),
+    ] = None,
+    version2: Annotated[
+        str | None,
+        cyclopts.Parameter(help="Second version to compare"),
+    ] = None,
+    target: Annotated[
+        str | None,
+        cyclopts.Parameter(name="--target", help="Path to definitions.py file"),
+    ] = None,
+    format_: Annotated[
+        str,
+        cyclopts.Parameter(
+            name="--format",
+            help="Output format (table, json)",
+        ),
+    ] = "table",
+    quiet: Annotated[
+        bool,
+        cyclopts.Parameter(
+            name="--quiet",
+            help="Quiet mode (exit code only)",
+        ),
+    ] = False,
+    profile: Annotated[
+        str | None,
+        cyclopts.Parameter(
+            name="--profile",
+            help="Profile name from mlforge.yaml to use for stores.",
+        ),
+    ] = None,
+):
+    """
+    Compare two versions of a feature.
+
+    Shows schema changes, config changes, and data statistics between versions.
+
+    Examples:
+        mlforge diff user_spend 1.0.0 2.0.0  # Compare specific versions
+        mlforge diff user_spend 1.0.0        # Compare with latest
+        mlforge diff user_spend              # Compare latest with previous
+
+    Exit codes:
+        0: No differences (same version)
+        1: PATCH differences (data only)
+        2: MINOR differences (additive)
+        3: MAJOR differences (breaking)
+        4: Error
+
+    Args:
+        feature_name: Name of the feature to compare
+        version1: First version to compare. If not specified, compares latest with previous.
+        version2: Second version to compare. If not specified, compares version1 with latest.
+        target: Path to definitions file. Defaults to "definitions.py".
+        format_: Output format (table, json). Defaults to "table".
+        quiet: Quiet mode (exit code only). Defaults to False.
+        profile: Profile name from mlforge.yaml. Defaults to None.
+
+    Raises:
+        SystemExit: With exit code based on diff result or error
+    """
+    import mlforge.version as version
+
+    try:
+        defs = loader.load_definitions(target, profile=profile)
+
+        # Get store root path - must be LocalStore
+        if not isinstance(defs.offline_store, store_.LocalStore):
+            log.print_error("diff command requires LocalStore")
+            raise SystemExit(4)
+
+        store_root = defs.offline_store.path
+
+        # Resolve versions
+        if version1 is None and version2 is None:
+            # Compare latest with previous
+            latest = defs.offline_store.get_latest_version(feature_name)
+            if latest is None:
+                log.print_error(
+                    f"No versions found for feature '{feature_name}'"
+                )
+                raise SystemExit(4)
+
+            prev = version.get_previous_version(store_root, feature_name)
+            if prev is None:
+                log.print_error(
+                    f"Only one version exists for '{feature_name}'. "
+                    "Need at least 2 versions to compare."
+                )
+                raise SystemExit(4)
+
+            version_from: str = prev
+            version_to: str = latest
+        elif version1 is not None and version2 is None:
+            # Compare version1 with latest
+            latest = defs.offline_store.get_latest_version(feature_name)
+            if latest is None:
+                log.print_error(
+                    f"No versions found for feature '{feature_name}'"
+                )
+                raise SystemExit(4)
+            version_from = version1
+            version_to = latest
+        elif version1 is not None and version2 is not None:
+            # Compare version1 with version2
+            version_from = version1
+            version_to = version2
+        else:
+            # version1 is None but version2 is not - invalid
+            log.print_error("Cannot specify version2 without version1")
+            raise SystemExit(4)
+
+        # Perform diff
+        diff_result = version.diff_versions(
+            store_root, feature_name, version_from, version_to
+        )
+
+        # Output result
+        if not quiet:
+            if format_ == "json":
+                log.print_version_diff_json(diff_result)
+            else:
+                log.print_version_diff(diff_result)
+
+        # Exit code based on change type
+        change_type = diff_result.change_type
+        if change_type == version.ChangeType.MAJOR:
+            raise SystemExit(3)
+        elif change_type == version.ChangeType.MINOR:
+            raise SystemExit(2)
+        elif change_type == version.ChangeType.PATCH:
+            raise SystemExit(1)
+        else:
+            raise SystemExit(0)
+
+    except errors.VersionNotFoundError as e:
+        log.print_error(str(e))
+        raise SystemExit(4)
+    except (errors.DefinitionsLoadError, errors.ProfileError) as e:
+        log.print_error(str(e))
+        raise SystemExit(4)
+
+
+@app.command
+def rollback(
+    feature_name: Annotated[
+        str,
+        cyclopts.Parameter(help="Name of the feature to rollback"),
+    ],
+    version: Annotated[
+        str | None,
+        cyclopts.Parameter(help="Version to rollback to"),
+    ] = None,
+    previous: Annotated[
+        bool,
+        cyclopts.Parameter(
+            name="--previous",
+            help="Rollback to the version before latest",
+        ),
+    ] = False,
+    dry_run: Annotated[
+        bool,
+        cyclopts.Parameter(
+            name="--dry-run",
+            help="Show what would happen without making changes",
+        ),
+    ] = False,
+    force: Annotated[
+        bool,
+        cyclopts.Parameter(
+            name=["--force", "-f"],
+            help="Skip confirmation prompt",
+        ),
+    ] = False,
+    target: Annotated[
+        str | None,
+        cyclopts.Parameter(name="--target", help="Path to definitions.py file"),
+    ] = None,
+    profile: Annotated[
+        str | None,
+        cyclopts.Parameter(
+            name="--profile",
+            help="Profile name from mlforge.yaml to use for stores.",
+        ),
+    ] = None,
+):
+    """
+    Rollback a feature to a previous version.
+
+    Updates _latest.json to point to the target version.
+    Does NOT delete any version data.
+
+    Examples:
+        mlforge rollback user_spend 1.0.0     # Rollback to specific version
+        mlforge rollback user_spend --previous  # Rollback to previous version
+        mlforge rollback user_spend 1.0.0 --dry-run  # Preview without changes
+
+    Exit codes:
+        0: Rollback successful
+        1: Version not found
+        2: Already at target version
+        3: User cancelled
+        4: Error
+
+    Args:
+        feature_name: Name of the feature to rollback
+        version: Version to rollback to
+        previous: Rollback to the version before latest. Defaults to False.
+        dry_run: Show what would happen without making changes. Defaults to False.
+        force: Skip confirmation prompt. Defaults to False.
+        target: Path to definitions file. Defaults to "definitions.py".
+        profile: Profile name from mlforge.yaml. Defaults to None.
+
+    Raises:
+        SystemExit: With exit code based on result
+    """
+    import mlforge.version as version_mod
+
+    try:
+        defs = loader.load_definitions(target, profile=profile)
+
+        # Get store root path - must be LocalStore
+        if not isinstance(defs.offline_store, store_.LocalStore):
+            log.print_error("rollback command requires LocalStore")
+            raise SystemExit(4)
+
+        store_root = defs.offline_store.path
+
+        # Determine target version
+        if previous:
+            prev = version_mod.get_previous_version(store_root, feature_name)
+            if prev is None:
+                log.print_error(
+                    f"No previous version found for '{feature_name}'. "
+                    "Need at least 2 versions to rollback."
+                )
+                raise SystemExit(1)
+            target_version: str = prev
+        elif version is None:
+            log.print_error("Must specify either a version or --previous flag")
+            raise SystemExit(4)
+        else:
+            target_version = version
+
+        # Get current version for confirmation
+        current_version = defs.offline_store.get_latest_version(feature_name)
+        if current_version is None:
+            log.print_error(f"No versions found for feature '{feature_name}'")
+            raise SystemExit(1)
+
+        # Show confirmation unless force or dry_run
+        if not force and not dry_run:
+            log.print_rollback_confirmation(
+                feature_name, current_version, target_version
+            )
+            log.console.print("")
+            response = input("Proceed? [y/N]: ")
+            if response.lower() not in ("y", "yes"):
+                log.print_info("Rollback cancelled.")
+                raise SystemExit(3)
+
+        # Perform rollback
+        result = version_mod.rollback_version(
+            store_root, feature_name, target_version, dry_run=dry_run
+        )
+
+        log.print_rollback_result(result)
+
+        if result.success:
+            if not dry_run:
+                log.print_success(
+                    f"Rolled back {feature_name} to version {target_version}"
+                )
+            raise SystemExit(0)
+
+    except errors.VersionNotFoundError as e:
+        log.print_error(str(e))
+        raise SystemExit(1)
+    except errors.AlreadyAtVersionError as e:
+        log.print_error(str(e))
+        raise SystemExit(2)
+    except (errors.DefinitionsLoadError, errors.ProfileError) as e:
+        log.print_error(str(e))
+        raise SystemExit(4)

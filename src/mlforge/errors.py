@@ -238,6 +238,42 @@ class VersionNotFoundError(VersionError):
         return "\n".join(parts)
 
 
+class AlreadyAtVersionError(VersionError):
+    """
+    Raised when attempting to rollback to the current version.
+
+    Attributes:
+        feature_name: Name of the feature
+        version: The version that is already current
+    """
+
+    def __init__(self, feature_name: str, version: str):
+        """
+        Initialize already at version error.
+
+        Args:
+            feature_name: Name of the feature
+            version: The version that is already current
+        """
+        self.feature_name = feature_name
+        self.version = version
+        super().__init__(
+            f"Feature '{feature_name}' is already at version '{version}'"
+        )
+
+    def __str__(self) -> str:
+        """
+        Format error message.
+
+        Returns:
+            Formatted error message
+        """
+        return (
+            f"Version '{self.version}' is already the latest version "
+            f"for feature '{self.feature_name}'.\n\nNothing to rollback."
+        )
+
+
 class TimestampParseError(Exception):
     """Raised when timestamp parsing or auto-detection fails."""
 

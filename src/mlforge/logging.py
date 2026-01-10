@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from mlforge.manifest import FeatureMetadata
     from mlforge.sources.base import Source
     from mlforge.validation import FeatureValidationResult
+    from mlforge.version import RollbackResult, VersionDiff
 
 
 console = console_.Console()
@@ -473,3 +474,153 @@ def print_source_detail(source: "Source", used_in: list[str]) -> None:
     table.add_row("Used In", ", ".join(used_in) if used_in else "-")
 
     console.print(table)
+
+
+def print_version_diff(diff: "VersionDiff") -> None:
+    """
+    Display version diff in a formatted layout.
+
+    Shows schema changes, config changes, and data statistics between
+    two versions of a feature.
+
+    Args:
+        diff: VersionDiff object containing the comparison results
+    """
+    # Header
+    console.print(
+        f"\nComparing [cyan]{diff.feature}[/cyan]: "
+        f"[magenta]{diff.version_from}[/magenta] -> "
+        f"[magenta]{diff.version_to}[/magenta]\n"
+    )
+
+    # Change type with color
+    change_type = diff.change_type.value.upper()
+    if change_type == "MAJOR":
+        change_style = "[red]MAJOR[/red] (breaking change)"
+    elif change_type == "MINOR":
+        change_style = "[yellow]MINOR[/yellow] (additive change)"
+    else:
+        change_style = "[green]PATCH[/green] (data refresh)"
+
+    console.print(f"Change Type: {change_style}\n")
+
+    # Schema changes table
+    if diff.schema_changes.has_changes():
+        table = table_.Table(title="Schema Changes")
+        table.add_column("Column", style="cyan")
+        table.add_column(f"v{diff.version_from}", style="dim")
+        table.add_column(f"v{diff.version_to}", style="dim")
+        table.add_column("Change", justify="center")
+
+        for col in diff.schema_changes.removed:
+            table.add_row(col.name, col.dtype, "-", "[red]REMOVED[/red]")
+
+        for col in diff.schema_changes.added:
+            table.add_row(col.name, "-", col.dtype, "[green]ADDED[/green]")
+
+        for col in diff.schema_changes.modified:
+            table.add_row(
+                col.name,
+                col.dtype_from,
+                col.dtype_to,
+                "[yellow]MODIFIED[/yellow]",
+            )
+
+        console.print(table)
+    else:
+        console.print("[dim]Schema Changes: None[/dim]")
+
+    # Config changes
+    if diff.config_changes:
+        console.print("\n[bold]Config Changes:[/bold]")
+        for change in diff.config_changes:
+            console.print(
+                f"  {change.key}: [dim]{change.value_from}[/dim] -> "
+                f"[dim]{change.value_to}[/dim]"
+            )
+    else:
+        console.print("\n[dim]Config Changes: None[/dim]")
+
+    # Data statistics
+    if diff.data_statistics:
+        stats = diff.data_statistics
+        console.print("\n[bold]Data Statistics:[/bold]")
+
+        # Row count with percentage change
+        pct = stats.row_count_change_pct()
+        if pct is not None and pct != 0:
+            pct_str = f" ({pct:+.1f}%)"
+            if pct > 0:
+                pct_str = f"[green]{pct_str}[/green]"
+            else:
+                pct_str = f"[red]{pct_str}[/red]"
+        else:
+            pct_str = ""
+
+        console.print(
+            f"  Row count: {stats.row_count_from:,} -> "
+            f"{stats.row_count_to:,}{pct_str}"
+        )
+
+
+def print_version_diff_json(diff: "VersionDiff") -> None:
+    """
+    Display version diff as JSON.
+
+    Args:
+        diff: VersionDiff object containing the comparison results
+    """
+    import json
+
+    console.print(json.dumps(diff.to_dict(), indent=2))
+
+
+def print_rollback_result(result: "RollbackResult") -> None:
+    """
+    Display rollback result.
+
+    Args:
+        result: RollbackResult object with rollback details
+    """
+    if result.dry_run:
+        console.print("\n[bold]Rollback preview[/bold] (dry run)\n")
+    else:
+        console.print("\n[bold]Rollback complete[/bold]\n")
+
+    console.print(f"Feature: [cyan]{result.feature}[/cyan]")
+    console.print(
+        f"Version: [dim]{result.version_from}[/dim] -> "
+        f"[magenta]{result.version_to}[/magenta]"
+    )
+
+    if result.dry_run:
+        console.print("\n[dim]No changes made (dry run).[/dim]")
+    else:
+        console.print(
+            f"\nTo undo: [dim]mlforge rollback {result.feature} "
+            f"{result.version_from}[/dim]"
+        )
+
+
+def print_rollback_confirmation(
+    feature: str,
+    current_version: str,
+    target_version: str,
+) -> None:
+    """
+    Display rollback confirmation prompt info.
+
+    Args:
+        feature: Feature name
+        current_version: Current version
+        target_version: Target version to rollback to
+    """
+    console.print(
+        f"\nRolling back [cyan]{feature}[/cyan] to version {target_version}\n"
+    )
+    console.print(f"  Current version: [dim]{current_version}[/dim]")
+    console.print(f"  Target version:  [magenta]{target_version}[/magenta]")
+    console.print("\nThis will:")
+    console.print(f"  - Update _latest.json to point to {target_version}")
+    console.print(f"  - NOT delete version {current_version} (data preserved)")
+    console.print("  - NOT rebuild the feature")
