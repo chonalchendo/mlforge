@@ -89,6 +89,8 @@ default-groups = ["check", "commit", "dev"]
 members = [
     "examples/transactions",
     "examples/transactions-online",
+    "examples/fraud-detection",
+    "examples/recommendation",
 ]
 
 [tool.commitizen]

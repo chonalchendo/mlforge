@@ -277,6 +277,12 @@ def get_online_features(
     - Does not support versioning (online stores hold latest only)
     - Uses direct key lookups instead of DataFrame joins
 
+    Note:
+        For retrieving multiple features with different entities (e.g., user_spend
+        and merchant_spend), use Definitions.get_online_features() instead. It
+        automatically determines the correct entity keys for each feature, avoiding
+        the common error of entity key mismatches.
+
     Args:
         features: List of feature names to retrieve
         entity_df: DataFrame with entity keys (e.g., inference requests)
@@ -284,6 +290,8 @@ def get_online_features(
         entities: Entity definitions for key generation/validation.
             When an entity has from_columns, a surrogate key is generated.
             Otherwise, validates that join_key columns exist.
+            Important: All features will use ALL entity keys for lookup.
+            For multi-entity scenarios, use Definitions.get_online_features().
 
     Returns:
         entity_df with feature columns joined (None for missing entities)
@@ -310,6 +318,12 @@ def get_online_features(
             entities=[user],
             store=store,
         )
+
+        # For multiple features with different entities, prefer:
+        # result = defs.get_online_features(
+        #     features=["user_spend", "merchant_spend"],
+        #     entity_df=request_df,
+        # )
     """
     result = _apply_entities(entity_df, entities)
 
@@ -404,6 +418,33 @@ def _join_online_feature(
             "Provide entity transforms via the 'entities' parameter."
         )
 
+    return join_online_feature_by_keys(
+        result, feature_name, store, entity_key_columns
+    )
+
+
+def join_online_feature_by_keys(
+    result: pl.DataFrame,
+    feature_name: str,
+    store: online_.OnlineStore,
+    entity_key_columns: list[str],
+) -> pl.DataFrame:
+    """
+    Join a single feature from online store using specific entity key columns.
+
+    This is the core join logic used by both the standalone get_online_features()
+    and Definitions.get_online_features(). It extracts unique entity combinations,
+    batch-reads from the store, and joins the feature values back.
+
+    Args:
+        result: Current result DataFrame with entity keys
+        feature_name: Name of feature to retrieve
+        store: Online store instance
+        entity_key_columns: Specific entity key columns for this feature
+
+    Returns:
+        Result DataFrame with feature columns joined
+    """
     # Extract unique entity combinations
     unique_entities = result.select(entity_key_columns).unique()
     entity_dicts = [

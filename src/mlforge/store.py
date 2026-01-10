@@ -3,7 +3,6 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any, override
 
-import gcsfs
 import polars as pl
 import s3fs
 from loguru import logger
@@ -906,6 +905,14 @@ class GCSStore(Store):
         Raises:
             ValueError: If bucket doesn't exist or is not accessible
         """
+        try:
+            import gcsfs  # type: ignore[import-not-found]
+        except ImportError as e:
+            raise ImportError(
+                "gcsfs is required for GCSStore. "
+                "Install it with: pip install mlforge[gcs]"
+            ) from e
+
         self.bucket = bucket
         self.prefix = prefix.strip("/")
         self._gcs = gcsfs.GCSFileSystem()

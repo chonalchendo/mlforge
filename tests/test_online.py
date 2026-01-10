@@ -536,4 +536,4 @@ def test_online_store_is_abstract():
     # Given OnlineStore ABC
     # When/Then instantiating should raise TypeError
     with pytest.raises(TypeError):
-        OnlineStore()  # type: ignore[abstract]
+        OnlineStore()

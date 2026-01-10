@@ -561,3 +561,216 @@ def test_get_training_data_validates_direct_entity_columns():
                 store=store,
                 entities=[merchant],
             )
+
+
+# =============================================================================
+# Definitions.get_online_features Tests
+# =============================================================================
+
+
+def test_definitions_get_online_features_single_entity():
+    """Definitions.get_online_features retrieves features for single entity."""
+    from mlforge import Definitions, feature
+
+    # Create a feature with entity
+    user = Entity(name="user", join_key="user_key", from_columns=["user_id"])
+
+    @feature(source="dummy.parquet", entities=[user])
+    def user_spend(df: pl.DataFrame) -> pl.DataFrame:
+        return df
+
+    # Pre-compute hashed key
+    key_123 = pl.DataFrame({"user_id": ["user_123"]}).with_columns(
+        surrogate_key("user_id").alias("user_key")
+    )["user_key"][0]
+
+    # Setup store with data
+    online_store = MockOnlineStore()
+    online_store.write("user_spend", {"user_key": key_123}, {"total": 100.0})
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        offline_store = LocalStore(path=tmpdir)
+
+        defs = Definitions(
+            name="test",
+            features=[user_spend],
+            offline_store=offline_store,
+            online_store=online_store,
+        )
+
+        # Retrieve features
+        request_df = pl.DataFrame({"user_id": ["user_123"]})
+        result = defs.get_online_features(
+            features=["user_spend"],
+            entity_df=request_df,
+        )
+
+        assert "total" in result.columns
+        assert result["total"][0] == 100.0
+
+
+def test_definitions_get_online_features_multiple_entities():
+    """Definitions.get_online_features handles multiple features with different entities."""
+    from mlforge import Definitions, feature
+
+    # Create entities
+    user = Entity(name="user", join_key="user_key", from_columns=["user_id"])
+    merchant = Entity(
+        name="merchant", join_key="merchant_key", from_columns=["merchant_id"]
+    )
+
+    @feature(source="dummy.parquet", entities=[user])
+    def user_spend(df: pl.DataFrame) -> pl.DataFrame:
+        return df
+
+    @feature(source="dummy.parquet", entities=[merchant])
+    def merchant_revenue(df: pl.DataFrame) -> pl.DataFrame:
+        return df
+
+    # Pre-compute hashed keys
+    user_key = pl.DataFrame({"user_id": ["user_123"]}).with_columns(
+        surrogate_key("user_id").alias("user_key")
+    )["user_key"][0]
+
+    merchant_key = pl.DataFrame({"merchant_id": ["merch_456"]}).with_columns(
+        surrogate_key("merchant_id").alias("merchant_key")
+    )["merchant_key"][0]
+
+    # Setup store - each feature stored with its own entity key
+    online_store = MockOnlineStore()
+    online_store.write("user_spend", {"user_key": user_key}, {"spend": 100.0})
+    online_store.write(
+        "merchant_revenue", {"merchant_key": merchant_key}, {"revenue": 500.0}
+    )
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        offline_store = LocalStore(path=tmpdir)
+
+        defs = Definitions(
+            name="test",
+            features=[user_spend, merchant_revenue],
+            offline_store=offline_store,
+            online_store=online_store,
+        )
+
+        # Request with both user and merchant IDs
+        request_df = pl.DataFrame(
+            {"user_id": ["user_123"], "merchant_id": ["merch_456"]}
+        )
+
+        # Retrieve both features in one call
+        result = defs.get_online_features(
+            features=["user_spend", "merchant_revenue"],
+            entity_df=request_df,
+        )
+
+        # Both feature columns should be present
+        assert "spend" in result.columns
+        assert "revenue" in result.columns
+        assert result["spend"][0] == 100.0
+        assert result["revenue"][0] == 500.0
+
+
+def test_definitions_get_online_features_raises_without_store():
+    """Definitions.get_online_features raises if no online store configured."""
+    from mlforge import Definitions, feature
+
+    user = Entity(name="user", join_key="user_key", from_columns=["user_id"])
+
+    @feature(source="dummy.parquet", entities=[user])
+    def user_spend(df: pl.DataFrame) -> pl.DataFrame:
+        return df
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        offline_store = LocalStore(path=tmpdir)
+
+        # No online store
+        defs = Definitions(
+            name="test",
+            features=[user_spend],
+            offline_store=offline_store,
+        )
+
+        request_df = pl.DataFrame({"user_id": ["user_123"]})
+
+        with pytest.raises(ValueError, match="No online store configured"):
+            defs.get_online_features(
+                features=["user_spend"],
+                entity_df=request_df,
+            )
+
+
+def test_definitions_get_online_features_raises_for_unknown_feature():
+    """Definitions.get_online_features raises for unknown feature name."""
+    from mlforge import Definitions, feature
+
+    user = Entity(name="user", join_key="user_key", from_columns=["user_id"])
+
+    @feature(source="dummy.parquet", entities=[user])
+    def user_spend(df: pl.DataFrame) -> pl.DataFrame:
+        return df
+
+    online_store = MockOnlineStore()
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        offline_store = LocalStore(path=tmpdir)
+
+        defs = Definitions(
+            name="test",
+            features=[user_spend],
+            offline_store=offline_store,
+            online_store=online_store,
+        )
+
+        request_df = pl.DataFrame({"user_id": ["user_123"]})
+
+        with pytest.raises(ValueError, match="Unknown feature.*nonexistent"):
+            defs.get_online_features(
+                features=["nonexistent"],
+                entity_df=request_df,
+            )
+
+
+def test_definitions_get_online_features_store_override():
+    """Definitions.get_online_features accepts store parameter override."""
+    from mlforge import Definitions, feature
+
+    user = Entity(name="user", join_key="user_key", from_columns=["user_id"])
+
+    @feature(source="dummy.parquet", entities=[user])
+    def user_spend(df: pl.DataFrame) -> pl.DataFrame:
+        return df
+
+    # Pre-compute hashed key
+    key_123 = pl.DataFrame({"user_id": ["user_123"]}).with_columns(
+        surrogate_key("user_id").alias("user_key")
+    )["user_key"][0]
+
+    # Setup two stores with different data
+    default_store = MockOnlineStore()
+    default_store.write("user_spend", {"user_key": key_123}, {"total": 100.0})
+
+    override_store = MockOnlineStore()
+    override_store.write("user_spend", {"user_key": key_123}, {"total": 999.0})
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        offline_store = LocalStore(path=tmpdir)
+
+        defs = Definitions(
+            name="test",
+            features=[user_spend],
+            offline_store=offline_store,
+            online_store=default_store,
+        )
+
+        request_df = pl.DataFrame({"user_id": ["user_123"]})
+
+        # Use override store
+        result = defs.get_online_features(
+            features=["user_spend"],
+            entity_df=request_df,
+            store=override_store,
+        )
+
+        # Should get value from override store
+        assert result["total"][0] == 999.0

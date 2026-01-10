@@ -1,0 +1,25 @@
+[project]
+name = "fraud_detection"
+version = "0.1.0"
+description = "Fraud detection example using mlforge feature store"
+readme = "README.md"
+authors = [
+    { name = "chonalchendo", email = "110059232+chonalchendo@users.noreply.github.com" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "mlforge-sdk[duckdb,redis]",
+    "scikit-learn>=1.6.0",
+]
+
+[tool.uv.sources]
+mlforge-sdk = { workspace = true }
+
+[build-system]
+requires = ["uv_build>=0.9.16,<0.10.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+check = [
+    "ruff>=0.14.4",
+]

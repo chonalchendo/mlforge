@@ -498,7 +498,10 @@ def test_gcs_store_initialization_success(mocker):
     # Given a mock GCSFileSystem that confirms bucket exists
     mock_gcs = MagicMock()
     mock_gcs.exists.return_value = True
-    mocker.patch("mlforge.store.gcsfs.GCSFileSystem", return_value=mock_gcs)
+    mocker.patch.dict(
+        "sys.modules",
+        {"gcsfs": MagicMock(GCSFileSystem=MagicMock(return_value=mock_gcs))},
+    )
 
     # When creating GCSStore
     store = GCSStore(bucket="test-bucket", prefix="features")
@@ -513,7 +516,10 @@ def test_gcs_store_initialization_strips_prefix_slashes(mocker):
     # Given a mock GCSFileSystem
     mock_gcs = MagicMock()
     mock_gcs.exists.return_value = True
-    mocker.patch("mlforge.store.gcsfs.GCSFileSystem", return_value=mock_gcs)
+    mocker.patch.dict(
+        "sys.modules",
+        {"gcsfs": MagicMock(GCSFileSystem=MagicMock(return_value=mock_gcs))},
+    )
 
     # When creating GCSStore with slashes in prefix
     store = GCSStore(bucket="test-bucket", prefix="/features/")
@@ -526,7 +532,10 @@ def test_gcs_store_initialization_raises_on_missing_bucket(mocker):
     # Given a mock GCSFileSystem that reports bucket doesn't exist
     mock_gcs = MagicMock()
     mock_gcs.exists.return_value = False
-    mocker.patch("mlforge.store.gcsfs.GCSFileSystem", return_value=mock_gcs)
+    mocker.patch.dict(
+        "sys.modules",
+        {"gcsfs": MagicMock(GCSFileSystem=MagicMock(return_value=mock_gcs))},
+    )
 
     # When/Then creating GCSStore should raise ValueError
     with pytest.raises(
@@ -540,7 +549,10 @@ def test_gcs_store_initialization_with_empty_prefix(mocker):
     # Given a mock GCSFileSystem
     mock_gcs = MagicMock()
     mock_gcs.exists.return_value = True
-    mocker.patch("mlforge.store.gcsfs.GCSFileSystem", return_value=mock_gcs)
+    mocker.patch.dict(
+        "sys.modules",
+        {"gcsfs": MagicMock(GCSFileSystem=MagicMock(return_value=mock_gcs))},
+    )
 
     # When creating GCSStore with empty prefix
     store = GCSStore(bucket="test-bucket", prefix="")
@@ -553,7 +565,10 @@ def test_gcs_store_path_for_returns_versioned_gcs_uri(mocker):
     # Given a GCSStore with a feature
     mock_gcs = MagicMock()
     mock_gcs.exists.return_value = True
-    mocker.patch("mlforge.store.gcsfs.GCSFileSystem", return_value=mock_gcs)
+    mocker.patch.dict(
+        "sys.modules",
+        {"gcsfs": MagicMock(GCSFileSystem=MagicMock(return_value=mock_gcs))},
+    )
     store = GCSStore(bucket="my-bucket", prefix="prod/features")
 
     # When getting path for a feature
@@ -568,7 +583,10 @@ def test_gcs_store_path_for_with_empty_prefix(mocker):
     # Given a GCSStore with empty prefix
     mock_gcs = MagicMock()
     mock_gcs.exists.return_value = True
-    mocker.patch("mlforge.store.gcsfs.GCSFileSystem", return_value=mock_gcs)
+    mocker.patch.dict(
+        "sys.modules",
+        {"gcsfs": MagicMock(GCSFileSystem=MagicMock(return_value=mock_gcs))},
+    )
     store = GCSStore(bucket="my-bucket", prefix="")
 
     # When getting path for specific version
@@ -582,7 +600,10 @@ def test_gcs_store_write_calls_polars_write_parquet(mocker, sample_dataframe):
     # Given a GCSStore and mock write_parquet
     mock_gcs = MagicMock()
     mock_gcs.exists.return_value = True
-    mocker.patch("mlforge.store.gcsfs.GCSFileSystem", return_value=mock_gcs)
+    mocker.patch.dict(
+        "sys.modules",
+        {"gcsfs": MagicMock(GCSFileSystem=MagicMock(return_value=mock_gcs))},
+    )
     mock_write = mocker.patch.object(pl.DataFrame, "write_parquet")
     store = GCSStore(bucket="test-bucket", prefix="features")
 
@@ -606,7 +627,10 @@ def test_gcs_store_list_versions(mocker):
         "test-bucket/features/feature/2.0.0",
         "test-bucket/features/feature/_latest.json",
     ]
-    mocker.patch("mlforge.store.gcsfs.GCSFileSystem", return_value=mock_gcs)
+    mocker.patch.dict(
+        "sys.modules",
+        {"gcsfs": MagicMock(GCSFileSystem=MagicMock(return_value=mock_gcs))},
+    )
     store = GCSStore(bucket="test-bucket", prefix="features")
 
     # When listing versions
@@ -623,7 +647,10 @@ def test_gcs_store_exists_with_specific_version(mocker):
         "test-bucket",
         "gs://test-bucket/features/feature/1.0.0/data.parquet",
     ]
-    mocker.patch("mlforge.store.gcsfs.GCSFileSystem", return_value=mock_gcs)
+    mocker.patch.dict(
+        "sys.modules",
+        {"gcsfs": MagicMock(GCSFileSystem=MagicMock(return_value=mock_gcs))},
+    )
     store = GCSStore(bucket="test-bucket", prefix="features")
 
     # When checking specific version
@@ -637,7 +664,10 @@ def test_gcs_store_read_raises_on_missing_feature(mocker):
     mock_gcs.exists.side_effect = (
         lambda p: p == "test-bucket"
     )  # Only bucket exists
-    mocker.patch("mlforge.store.gcsfs.GCSFileSystem", return_value=mock_gcs)
+    mocker.patch.dict(
+        "sys.modules",
+        {"gcsfs": MagicMock(GCSFileSystem=MagicMock(return_value=mock_gcs))},
+    )
     store = GCSStore(bucket="test-bucket", prefix="features")
 
     # When/Then reading non-existent feature should raise
@@ -649,7 +679,10 @@ def test_gcs_store_metadata_path_for_returns_versioned_path(mocker):
     # Given a GCSStore
     mock_gcs = MagicMock()
     mock_gcs.exists.return_value = True
-    mocker.patch("mlforge.store.gcsfs.GCSFileSystem", return_value=mock_gcs)
+    mocker.patch.dict(
+        "sys.modules",
+        {"gcsfs": MagicMock(GCSFileSystem=MagicMock(return_value=mock_gcs))},
+    )
     store = GCSStore(bucket="my-bucket", prefix="features")
 
     # When getting metadata path for specific version
@@ -663,7 +696,10 @@ def test_gcs_store_get_latest_version_returns_none_when_no_pointer(mocker):
     # Given a GCSStore with no latest pointer
     mock_gcs = MagicMock()
     mock_gcs.exists.side_effect = lambda p: p == "test-bucket"
-    mocker.patch("mlforge.store.gcsfs.GCSFileSystem", return_value=mock_gcs)
+    mocker.patch.dict(
+        "sys.modules",
+        {"gcsfs": MagicMock(GCSFileSystem=MagicMock(return_value=mock_gcs))},
+    )
     store = GCSStore(bucket="test-bucket", prefix="features")
 
     # When getting latest version
@@ -677,7 +713,10 @@ def test_gcs_store_base_path_with_prefix(mocker):
     # Given a GCSStore with prefix
     mock_gcs = MagicMock()
     mock_gcs.exists.return_value = True
-    mocker.patch("mlforge.store.gcsfs.GCSFileSystem", return_value=mock_gcs)
+    mocker.patch.dict(
+        "sys.modules",
+        {"gcsfs": MagicMock(GCSFileSystem=MagicMock(return_value=mock_gcs))},
+    )
     store = GCSStore(bucket="my-bucket", prefix="prod/features")
 
     # When getting base path
@@ -691,7 +730,10 @@ def test_gcs_store_base_path_without_prefix(mocker):
     # Given a GCSStore without prefix
     mock_gcs = MagicMock()
     mock_gcs.exists.return_value = True
-    mocker.patch("mlforge.store.gcsfs.GCSFileSystem", return_value=mock_gcs)
+    mocker.patch.dict(
+        "sys.modules",
+        {"gcsfs": MagicMock(GCSFileSystem=MagicMock(return_value=mock_gcs))},
+    )
     store = GCSStore(bucket="my-bucket", prefix="")
 
     # When getting base path

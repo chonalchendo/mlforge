@@ -18,6 +18,7 @@ import mlforge.manifest as manifest
 import mlforge.metrics as metrics_
 import mlforge.online as online
 import mlforge.profiles as profiles_
+import mlforge.retrieval as retrieval_
 import mlforge.sources as sources
 import mlforge.store as store
 import mlforge.timestamps as timestamps_
@@ -193,7 +194,7 @@ def feature(
         seen: set[str] = set()
         derived_keys = [
             k for k in derived_keys if not (k in seen or seen.add(k))
-        ]  # type: ignore[func-returns-value]
+        ]
     # Convert timedelta to string if provided
     interval_str = (
         metrics_.timedelta_to_polars_duration(interval)
@@ -1348,3 +1349,197 @@ class Definitions:
             description=feature.description,
             change_summary=change_summary.to_dict() if change_summary else None,
         )
+
+    # =========================================================================
+    # Feature Retrieval Methods
+    # =========================================================================
+
+    def get_online_features(
+        self,
+        features: list[str],
+        entity_df: pl.DataFrame,
+        store: online.OnlineStore | None = None,
+    ) -> pl.DataFrame:
+        """
+        Retrieve features from online store for inference.
+
+        Unlike the standalone get_online_features(), this method automatically
+        determines the correct entity keys for each feature from the feature
+        definitions. This prevents the common error of using wrong entity keys
+        when retrieving multiple features with different entities.
+
+        Args:
+            features: List of feature names to retrieve
+            entity_df: DataFrame with entity source columns (e.g., first, last, dob
+                for user entity). The method will generate surrogate keys automatically
+                based on each feature's entity definition.
+            store: Optional online store override. Defaults to self.online_store.
+
+        Returns:
+            entity_df with feature columns joined. Missing entities have None values.
+
+        Raises:
+            ValueError: If no online store configured, or if feature name unknown
+
+        Example:
+            # Retrieve multiple features with different entities in one call
+            result = defs.get_online_features(
+                features=["user_spend", "merchant_spend", "card_velocity"],
+                entity_df=request_df,
+            )
+
+            # Override store (e.g., for testing)
+            result = defs.get_online_features(
+                features=["user_spend"],
+                entity_df=request_df,
+                store=test_store,
+            )
+        """
+        online_store = store or self.online_store
+        if online_store is None:
+            raise ValueError(
+                "No online store configured. Either pass store= parameter "
+                "or configure online_store in Definitions/mlforge.yaml."
+            )
+
+        # Collect all unique entities needed across requested features
+        all_entities: list[entities_.Entity] = []
+        seen_entity_names: set[str] = set()
+
+        for feature_name in features:
+            if feature_name not in self.features:
+                raise ValueError(f"Unknown feature: '{feature_name}'")
+            feature = self.features[feature_name]
+            if feature.entities:
+                for entity in feature.entities:
+                    if entity.name not in seen_entity_names:
+                        all_entities.append(entity)
+                        seen_entity_names.add(entity.name)
+
+        # Apply entity key generation (surrogate keys) for all entities
+        result = retrieval_._apply_entities(entity_df, all_entities)
+
+        # Join each feature using only its specific entity keys
+        for feature_name in features:
+            feature = self.features[feature_name]
+            if feature.entities:
+                entity_key_columns = retrieval_._get_entity_key_columns(
+                    feature.entities
+                )
+            else:
+                entity_key_columns = feature.keys
+
+            result = self._join_online_feature_with_keys(
+                result, feature_name, online_store, entity_key_columns
+            )
+
+        return result
+
+    def _join_online_feature_with_keys(
+        self,
+        result: pl.DataFrame,
+        feature_name: str,
+        online_store: online.OnlineStore,
+        entity_key_columns: list[str],
+    ) -> pl.DataFrame:
+        """
+        Join a single feature from online store using specific entity key columns.
+
+        Delegates to the shared join_online_feature_by_keys() helper in retrieval.
+
+        Args:
+            result: Current result DataFrame with entity keys
+            feature_name: Name of feature to retrieve
+            online_store: Online store instance
+            entity_key_columns: Specific entity key columns for this feature
+
+        Returns:
+            Result DataFrame with feature columns joined
+        """
+        return retrieval_.join_online_feature_by_keys(
+            result, feature_name, online_store, entity_key_columns
+        )
+
+    def get_training_data(
+        self,
+        features: list[retrieval_.FeatureSpec],
+        entity_df: pl.DataFrame,
+        timestamp: str | None = None,
+        store: store.Store | None = None,
+    ) -> pl.DataFrame:
+        """
+        Retrieve features from offline store for training.
+
+        Unlike the standalone get_training_data(), this method automatically
+        determines the correct entity keys for each feature from the feature
+        definitions.
+
+        Args:
+            features: Feature specifications. Can be:
+                - "feature_name" - uses latest version
+                - ("feature_name", "1.0.0") - uses specific version
+            entity_df: DataFrame with entity source columns
+            timestamp: Column in entity_df for point-in-time joins.
+                If provided, features with timestamps will be asof-joined.
+            store: Optional store override. Defaults to self.offline_store.
+
+        Returns:
+            entity_df with feature columns joined
+
+        Raises:
+            ValueError: If no store configured, or if feature not found
+
+        Example:
+            # Point-in-time correct training data
+            training_df = defs.get_training_data(
+                features=["user_spend", ("merchant_features", "1.0.0")],
+                entity_df=transactions,
+                timestamp="event_time",
+            )
+        """
+        offline_store = store or self.offline_store
+        if offline_store is None:
+            raise ValueError(
+                "No store configured. Either pass store= parameter "
+                "or configure store in Definitions/mlforge.yaml."
+            )
+
+        # Collect all entities from requested features
+        feature_names = [f if isinstance(f, str) else f[0] for f in features]
+        all_entities = self._collect_entities_for_features(feature_names)
+
+        # Delegate to standalone function with collected entities
+        return retrieval_.get_training_data(
+            features=features,
+            entity_df=entity_df,
+            store=offline_store,
+            entities=all_entities,
+            timestamp=timestamp,
+        )
+
+    def _collect_entities_for_features(
+        self,
+        feature_names: list[str],
+    ) -> list[entities_.Entity]:
+        """
+        Collect unique entities from a list of features.
+
+        Args:
+            feature_names: List of feature names to collect entities from
+
+        Returns:
+            List of unique Entity objects
+        """
+        entities: list[entities_.Entity] = []
+        seen: set[str] = set()
+
+        for name in feature_names:
+            if name in self.features:
+                feature = self.features[name]
+                if feature.entities:
+                    for entity in feature.entities:
+                        if entity.name not in seen:
+                            entities.append(entity)
+                            seen.add(entity.name)
+
+        return entities

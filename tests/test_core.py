@@ -454,7 +454,7 @@ def test_materialize_raises_on_none_return():
 
         @feature(keys=["id"], source=str(source_path))
         def returns_none(df):
-            return None  # type: ignore[return-value]
+            return None
 
         defs = Definitions(
             name="test",
@@ -475,7 +475,7 @@ def test_materialize_raises_on_wrong_return_type():
 
         @feature(keys=["id"], source=str(source_path))
         def returns_string(df):
-            return "not a dataframe"  # type: ignore[return-value]
+            return "not a dataframe"
 
         defs = Definitions(
             name="test",

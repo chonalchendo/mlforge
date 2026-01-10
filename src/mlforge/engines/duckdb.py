@@ -249,7 +249,7 @@ class DuckDBEngine(Engine):
                 # Entity has from_columns - generate surrogate key
                 df = df.with_columns(
                     utils.surrogate_key(*entity.from_columns).alias(
-                        entity.join_key  # type: ignore[arg-type]
+                        entity.join_key
                     )
                 )
         return df

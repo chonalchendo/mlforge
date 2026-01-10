@@ -1,5 +1,7 @@
 """Tests for environment profiles functionality."""
 
+from unittest.mock import MagicMock
+
 import pytest
 from pydantic import ValidationError
 
@@ -78,7 +80,14 @@ class TestGCSStoreConfig:
         # Mock GCSFileSystem to avoid real GCS calls
         mock_gcs = mocker.MagicMock()
         mock_gcs.exists.return_value = True
-        mocker.patch("mlforge.store.gcsfs.GCSFileSystem", return_value=mock_gcs)
+        mocker.patch.dict(
+            "sys.modules",
+            {
+                "gcsfs": MagicMock(
+                    GCSFileSystem=MagicMock(return_value=mock_gcs)
+                )
+            },
+        )
 
         config = profiles.GCSStoreConfig(bucket="my-bucket", prefix="features")
         store = config.create()
@@ -557,7 +566,14 @@ class TestValidateStores:
         # Mock GCSFileSystem to avoid real GCS calls
         mock_gcs = mocker.MagicMock()
         mock_gcs.exists.return_value = True
-        mocker.patch("mlforge.store.gcsfs.GCSFileSystem", return_value=mock_gcs)
+        mocker.patch.dict(
+            "sys.modules",
+            {
+                "gcsfs": MagicMock(
+                    GCSFileSystem=MagicMock(return_value=mock_gcs)
+                )
+            },
+        )
 
         config = profiles.ProfileConfig.model_validate(
             {"offline_store": {"KIND": "gcs", "bucket": "my-bucket"}}
@@ -570,7 +586,14 @@ class TestValidateStores:
         # Mock GCSFileSystem to report bucket doesn't exist
         mock_gcs = mocker.MagicMock()
         mock_gcs.exists.return_value = False
-        mocker.patch("mlforge.store.gcsfs.GCSFileSystem", return_value=mock_gcs)
+        mocker.patch.dict(
+            "sys.modules",
+            {
+                "gcsfs": MagicMock(
+                    GCSFileSystem=MagicMock(return_value=mock_gcs)
+                )
+            },
+        )
 
         config = profiles.ProfileConfig.model_validate(
             {"offline_store": {"KIND": "gcs", "bucket": "nonexistent-bucket"}}
