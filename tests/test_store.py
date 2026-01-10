@@ -5,7 +5,7 @@ from unittest.mock import MagicMock
 import polars as pl
 import pytest
 
-from mlforge import LocalStore, S3Store
+from mlforge import GCSStore, LocalStore, S3Store
 from mlforge.results import PolarsResult
 
 # =============================================================================
@@ -487,3 +487,215 @@ def test_s3_store_region_defaults_to_none(mocker):
 
     # Then region should be None
     assert store.region is None
+
+
+# =============================================================================
+# GCSStore Tests
+# =============================================================================
+
+
+def test_gcs_store_initialization_success(mocker):
+    # Given a mock GCSFileSystem that confirms bucket exists
+    mock_gcs = MagicMock()
+    mock_gcs.exists.return_value = True
+    mocker.patch("mlforge.store.gcsfs.GCSFileSystem", return_value=mock_gcs)
+
+    # When creating GCSStore
+    store = GCSStore(bucket="test-bucket", prefix="features")
+
+    # Then it should initialize successfully
+    assert store.bucket == "test-bucket"
+    assert store.prefix == "features"
+    mock_gcs.exists.assert_called_once_with("test-bucket")
+
+
+def test_gcs_store_initialization_strips_prefix_slashes(mocker):
+    # Given a mock GCSFileSystem
+    mock_gcs = MagicMock()
+    mock_gcs.exists.return_value = True
+    mocker.patch("mlforge.store.gcsfs.GCSFileSystem", return_value=mock_gcs)
+
+    # When creating GCSStore with slashes in prefix
+    store = GCSStore(bucket="test-bucket", prefix="/features/")
+
+    # Then slashes should be stripped
+    assert store.prefix == "features"
+
+
+def test_gcs_store_initialization_raises_on_missing_bucket(mocker):
+    # Given a mock GCSFileSystem that reports bucket doesn't exist
+    mock_gcs = MagicMock()
+    mock_gcs.exists.return_value = False
+    mocker.patch("mlforge.store.gcsfs.GCSFileSystem", return_value=mock_gcs)
+
+    # When/Then creating GCSStore should raise ValueError
+    with pytest.raises(
+        ValueError,
+        match="Bucket 'nonexistent-bucket' does not exist or is not accessible",
+    ):
+        GCSStore(bucket="nonexistent-bucket")
+
+
+def test_gcs_store_initialization_with_empty_prefix(mocker):
+    # Given a mock GCSFileSystem
+    mock_gcs = MagicMock()
+    mock_gcs.exists.return_value = True
+    mocker.patch("mlforge.store.gcsfs.GCSFileSystem", return_value=mock_gcs)
+
+    # When creating GCSStore with empty prefix
+    store = GCSStore(bucket="test-bucket", prefix="")
+
+    # Then prefix should be empty string
+    assert store.prefix == ""
+
+
+def test_gcs_store_path_for_returns_versioned_gcs_uri(mocker):
+    # Given a GCSStore with a feature
+    mock_gcs = MagicMock()
+    mock_gcs.exists.return_value = True
+    mocker.patch("mlforge.store.gcsfs.GCSFileSystem", return_value=mock_gcs)
+    store = GCSStore(bucket="my-bucket", prefix="prod/features")
+
+    # When getting path for a feature
+    path = store.path_for("user_age", feature_version="1.0.0")
+
+    # Then it should return versioned GCS URI
+    assert path == "gs://my-bucket/prod/features/user_age/1.0.0/data.parquet"
+    assert isinstance(path, str)
+
+
+def test_gcs_store_path_for_with_empty_prefix(mocker):
+    # Given a GCSStore with empty prefix
+    mock_gcs = MagicMock()
+    mock_gcs.exists.return_value = True
+    mocker.patch("mlforge.store.gcsfs.GCSFileSystem", return_value=mock_gcs)
+    store = GCSStore(bucket="my-bucket", prefix="")
+
+    # When getting path for specific version
+    path = store.path_for("user_age", feature_version="1.0.0")
+
+    # Then it should return versioned GCS URI
+    assert path == "gs://my-bucket/user_age/1.0.0/data.parquet"
+
+
+def test_gcs_store_write_calls_polars_write_parquet(mocker, sample_dataframe):
+    # Given a GCSStore and mock write_parquet
+    mock_gcs = MagicMock()
+    mock_gcs.exists.return_value = True
+    mocker.patch("mlforge.store.gcsfs.GCSFileSystem", return_value=mock_gcs)
+    mock_write = mocker.patch.object(pl.DataFrame, "write_parquet")
+    store = GCSStore(bucket="test-bucket", prefix="features")
+
+    # When writing a feature with version
+    store.write(
+        "test_feature", PolarsResult(sample_dataframe), feature_version="1.0.0"
+    )
+
+    # Then it should call write_parquet with correct versioned GCS path
+    expected_path = "gs://test-bucket/features/test_feature/1.0.0/data.parquet"
+    mock_write.assert_called_once_with(expected_path)
+
+
+def test_gcs_store_list_versions(mocker):
+    # Given a GCSStore with multiple versions
+    mock_gcs = MagicMock()
+    mock_gcs.exists.return_value = True
+    mock_gcs.ls.return_value = [
+        "test-bucket/features/feature/1.0.0",
+        "test-bucket/features/feature/1.1.0",
+        "test-bucket/features/feature/2.0.0",
+        "test-bucket/features/feature/_latest.json",
+    ]
+    mocker.patch("mlforge.store.gcsfs.GCSFileSystem", return_value=mock_gcs)
+    store = GCSStore(bucket="test-bucket", prefix="features")
+
+    # When listing versions
+    versions = store.list_versions("feature")
+
+    # Then it should return sorted versions (excluding _latest.json)
+    assert versions == ["1.0.0", "1.1.0", "2.0.0"]
+
+
+def test_gcs_store_exists_with_specific_version(mocker):
+    # Given a GCSStore
+    mock_gcs = MagicMock()
+    mock_gcs.exists.side_effect = lambda p: p in [
+        "test-bucket",
+        "gs://test-bucket/features/feature/1.0.0/data.parquet",
+    ]
+    mocker.patch("mlforge.store.gcsfs.GCSFileSystem", return_value=mock_gcs)
+    store = GCSStore(bucket="test-bucket", prefix="features")
+
+    # When checking specific version
+    assert store.exists("feature", feature_version="1.0.0") is True
+    assert store.exists("feature", feature_version="2.0.0") is False
+
+
+def test_gcs_store_read_raises_on_missing_feature(mocker):
+    # Given a GCSStore with no versions
+    mock_gcs = MagicMock()
+    mock_gcs.exists.side_effect = (
+        lambda p: p == "test-bucket"
+    )  # Only bucket exists
+    mocker.patch("mlforge.store.gcsfs.GCSFileSystem", return_value=mock_gcs)
+    store = GCSStore(bucket="test-bucket", prefix="features")
+
+    # When/Then reading non-existent feature should raise
+    with pytest.raises(FileNotFoundError, match="not found"):
+        store.read("nonexistent")
+
+
+def test_gcs_store_metadata_path_for_returns_versioned_path(mocker):
+    # Given a GCSStore
+    mock_gcs = MagicMock()
+    mock_gcs.exists.return_value = True
+    mocker.patch("mlforge.store.gcsfs.GCSFileSystem", return_value=mock_gcs)
+    store = GCSStore(bucket="my-bucket", prefix="features")
+
+    # When getting metadata path for specific version
+    path = store.metadata_path_for("user_age", feature_version="1.0.0")
+
+    # Then it should return versioned metadata path
+    assert path == "gs://my-bucket/features/user_age/1.0.0/.meta.json"
+
+
+def test_gcs_store_get_latest_version_returns_none_when_no_pointer(mocker):
+    # Given a GCSStore with no latest pointer
+    mock_gcs = MagicMock()
+    mock_gcs.exists.side_effect = lambda p: p == "test-bucket"
+    mocker.patch("mlforge.store.gcsfs.GCSFileSystem", return_value=mock_gcs)
+    store = GCSStore(bucket="test-bucket", prefix="features")
+
+    # When getting latest version
+    latest = store.get_latest_version("feature")
+
+    # Then it should return None
+    assert latest is None
+
+
+def test_gcs_store_base_path_with_prefix(mocker):
+    # Given a GCSStore with prefix
+    mock_gcs = MagicMock()
+    mock_gcs.exists.return_value = True
+    mocker.patch("mlforge.store.gcsfs.GCSFileSystem", return_value=mock_gcs)
+    store = GCSStore(bucket="my-bucket", prefix="prod/features")
+
+    # When getting base path
+    base = store._base_path()
+
+    # Then it should include prefix
+    assert base == "gs://my-bucket/prod/features"
+
+
+def test_gcs_store_base_path_without_prefix(mocker):
+    # Given a GCSStore without prefix
+    mock_gcs = MagicMock()
+    mock_gcs.exists.return_value = True
+    mocker.patch("mlforge.store.gcsfs.GCSFileSystem", return_value=mock_gcs)
+    store = GCSStore(bucket="my-bucket", prefix="")
+
+    # When getting base path
+    base = store._base_path()
+
+    # Then it should be just the bucket
+    assert base == "gs://my-bucket"

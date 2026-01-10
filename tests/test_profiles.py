@@ -71,13 +71,20 @@ class TestGCSStoreConfig:
         assert config.KIND == "gcs"
         assert config.bucket == "my-bucket"
 
-    def test_create_raises_not_implemented(self):
-        """create() should raise NotImplementedError."""
-        config = profiles.GCSStoreConfig(bucket="my-bucket")
-        with pytest.raises(
-            NotImplementedError, match="GCSStore is not yet implemented"
-        ):
-            config.create()
+    def test_create_returns_gcs_store(self, mocker):
+        """create() should return GCSStore instance."""
+        import mlforge.store as store_
+
+        # Mock GCSFileSystem to avoid real GCS calls
+        mock_gcs = mocker.MagicMock()
+        mock_gcs.exists.return_value = True
+        mocker.patch("mlforge.store.gcsfs.GCSFileSystem", return_value=mock_gcs)
+
+        config = profiles.GCSStoreConfig(bucket="my-bucket", prefix="features")
+        store = config.create()
+        assert isinstance(store, store_.GCSStore)
+        assert store.bucket == "my-bucket"
+        assert store.prefix == "features"
 
 
 class TestRedisStoreConfig:
@@ -545,10 +552,28 @@ class TestValidateStores:
         # Should not raise
         profiles.validate_stores(config)
 
-    def test_raises_on_gcs_not_implemented(self):
-        """Should raise ProfileError for unimplemented GCS store."""
+    def test_validates_gcs_store_success(self, mocker):
+        """Should succeed for valid GCSStore config."""
+        # Mock GCSFileSystem to avoid real GCS calls
+        mock_gcs = mocker.MagicMock()
+        mock_gcs.exists.return_value = True
+        mocker.patch("mlforge.store.gcsfs.GCSFileSystem", return_value=mock_gcs)
+
         config = profiles.ProfileConfig.model_validate(
             {"offline_store": {"KIND": "gcs", "bucket": "my-bucket"}}
+        )
+        # Should not raise
+        profiles.validate_stores(config)
+
+    def test_raises_on_gcs_bucket_not_found(self, mocker):
+        """Should raise ProfileError when GCS bucket doesn't exist."""
+        # Mock GCSFileSystem to report bucket doesn't exist
+        mock_gcs = mocker.MagicMock()
+        mock_gcs.exists.return_value = False
+        mocker.patch("mlforge.store.gcsfs.GCSFileSystem", return_value=mock_gcs)
+
+        config = profiles.ProfileConfig.model_validate(
+            {"offline_store": {"KIND": "gcs", "bucket": "nonexistent-bucket"}}
         )
         with pytest.raises(errors.ProfileError) as exc_info:
             profiles.validate_stores(config)
