@@ -11,6 +11,17 @@ import mlforge.store as store_
 
 app = cyclopts.App(name="mlforge", help="A simple feature store SDK")
 
+# Sub-apps for command groups
+list_app = cyclopts.App(
+    name="list", help="List features, entities, sources, or versions."
+)
+app.command(list_app)
+
+inspect_app = cyclopts.App(
+    name="inspect", help="Inspect features, entities, or sources."
+)
+app.command(inspect_app)
+
 
 @app.meta.default
 def launcher(
@@ -245,8 +256,8 @@ def validate(
         raise SystemExit(1)
 
 
-@app.command
-def list_(
+@list_app.command
+def features(
     target: Annotated[
         str | None,
         cyclopts.Parameter(
@@ -255,7 +266,9 @@ def list_(
     ] = None,
     tags: Annotated[
         str | None,
-        cyclopts.Parameter(help="Comma-separated list of feature tags."),
+        cyclopts.Parameter(
+            name="--tags", help="Comma-separated list of feature tags."
+        ),
     ] = None,
     profile: Annotated[
         str | None,
@@ -266,7 +279,7 @@ def list_(
     ] = None,
 ):
     """
-    Display all registered features in a table.
+    List all registered features.
 
     Loads feature definitions and prints their metadata including
     names, keys, sources, and descriptions.
@@ -276,24 +289,97 @@ def list_(
     except (errors.DefinitionsLoadError, errors.ProfileError) as e:
         log.print_error(str(e))
         raise SystemExit(1)
-    features = defs.features
+    feature_dict = defs.features
 
     if tags:
         tag_set = {t.strip() for t in tags.split(",")}
-        features = {
+        feature_dict = {
             name: feature
-            for name, feature in features.items()
+            for name, feature in feature_dict.items()
             if feature.tags and tag_set.intersection(feature.tags)
         }
 
-        if not features:
-            raise ValueError(f"Unknown tags: {tags}")
+        if not feature_dict:
+            log.print_warning(f"No features found with tags: {tags}")
+            return
 
-    log.print_features_table(features)
+    log.print_features_table(feature_dict)
 
 
-@app.command
-def inspect(
+@list_app.command
+def entities(
+    target: Annotated[
+        str | None,
+        cyclopts.Parameter(
+            help="Path to definitions.py file - automatically handled."
+        ),
+    ] = None,
+    profile: Annotated[
+        str | None,
+        cyclopts.Parameter(
+            name="--profile",
+            help="Profile name from mlforge.yaml to use for stores.",
+        ),
+    ] = None,
+):
+    """
+    List all entities used by features.
+
+    Shows entity names, join keys, and source columns for surrogate key generation.
+    """
+    try:
+        defs = loader.load_definitions(target, profile=profile)
+    except (errors.DefinitionsLoadError, errors.ProfileError) as e:
+        log.print_error(str(e))
+        raise SystemExit(1)
+
+    entity_names = defs.list_entities()
+    if not entity_names:
+        log.print_warning("No entities found.")
+        return
+
+    entities_dict = {name: defs.get_entity(name) for name in entity_names}
+    log.print_entities_table(entities_dict)
+
+
+@list_app.command
+def sources(
+    target: Annotated[
+        str | None,
+        cyclopts.Parameter(
+            help="Path to definitions.py file - automatically handled."
+        ),
+    ] = None,
+    profile: Annotated[
+        str | None,
+        cyclopts.Parameter(
+            name="--profile",
+            help="Profile name from mlforge.yaml to use for stores.",
+        ),
+    ] = None,
+):
+    """
+    List all sources used by features.
+
+    Shows source names, paths, formats, and storage locations.
+    """
+    try:
+        defs = loader.load_definitions(target, profile=profile)
+    except (errors.DefinitionsLoadError, errors.ProfileError) as e:
+        log.print_error(str(e))
+        raise SystemExit(1)
+
+    source_names = defs.list_sources()
+    if not source_names:
+        log.print_warning("No sources found.")
+        return
+
+    sources_dict = {name: defs.get_source(name) for name in source_names}
+    log.print_sources_table(sources_dict)
+
+
+@inspect_app.command
+def feature(
     feature_name: Annotated[
         str,
         cyclopts.Parameter(help="Name of the feature to inspect"),
@@ -318,7 +404,7 @@ def inspect(
     ] = None,
 ):
     """
-    Display detailed metadata for a specific feature version.
+    Inspect a feature's detailed metadata.
 
     Shows feature configuration, storage details, column information,
     version info, and hashes from the feature's metadata file.
@@ -351,7 +437,103 @@ def inspect(
         raise SystemExit(1)
 
 
-@app.command
+@inspect_app.command
+def entity(
+    entity_name: Annotated[
+        str,
+        cyclopts.Parameter(help="Name of the entity to inspect"),
+    ],
+    target: Annotated[
+        str | None,
+        cyclopts.Parameter(name="--target", help="Path to definitions.py file"),
+    ] = None,
+    profile: Annotated[
+        str | None,
+        cyclopts.Parameter(
+            name="--profile",
+            help="Profile name from mlforge.yaml to use for stores.",
+        ),
+    ] = None,
+):
+    """
+    Inspect an entity's details.
+
+    Shows entity configuration including join key, source columns,
+    and which features use this entity.
+
+    Args:
+        entity_name: Name of the entity to inspect
+        target: Path to definitions file. Defaults to "definitions.py".
+        profile: Profile name from mlforge.yaml. Defaults to None (uses env var or config default).
+
+    Raises:
+        SystemExit: If entity is not found
+    """
+    try:
+        defs = loader.load_definitions(target, profile=profile)
+        ent = defs.get_entity(entity_name)
+
+        if ent is None:
+            log.print_error(f"Entity '{entity_name}' not found.")
+            raise SystemExit(1)
+
+        used_in = defs.features_using_entity(entity_name)
+        log.print_entity_detail(ent, used_in)
+
+    except (errors.DefinitionsLoadError, errors.ProfileError) as e:
+        log.print_error(str(e))
+        raise SystemExit(1)
+
+
+@inspect_app.command
+def source(
+    source_name: Annotated[
+        str,
+        cyclopts.Parameter(help="Name of the source to inspect"),
+    ],
+    target: Annotated[
+        str | None,
+        cyclopts.Parameter(name="--target", help="Path to definitions.py file"),
+    ] = None,
+    profile: Annotated[
+        str | None,
+        cyclopts.Parameter(
+            name="--profile",
+            help="Profile name from mlforge.yaml to use for stores.",
+        ),
+    ] = None,
+):
+    """
+    Inspect a source's details.
+
+    Shows source configuration including path, format, location,
+    and which features use this source.
+
+    Args:
+        source_name: Name of the source to inspect
+        target: Path to definitions file. Defaults to "definitions.py".
+        profile: Profile name from mlforge.yaml. Defaults to None (uses env var or config default).
+
+    Raises:
+        SystemExit: If source is not found
+    """
+    try:
+        defs = loader.load_definitions(target, profile=profile)
+        src = defs.get_source(source_name)
+
+        if src is None:
+            log.print_error(f"Source '{source_name}' not found.")
+            raise SystemExit(1)
+
+        used_in = defs.features_using_source(source_name)
+        log.print_source_detail(src, used_in)
+
+    except (errors.DefinitionsLoadError, errors.ProfileError) as e:
+        log.print_error(str(e))
+        raise SystemExit(1)
+
+
+@list_app.command
 def versions(
     feature_name: Annotated[
         str,

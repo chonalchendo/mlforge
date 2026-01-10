@@ -4,7 +4,18 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from mlforge.cli import build, inspect, list_, manifest, sync
+from mlforge.cli import (
+    build,
+    entities,
+    feature,
+    features,
+    manifest,
+    source,
+    sources,
+    sync,
+    versions,
+)
+from mlforge.cli import entity as inspect_entity
 from mlforge.errors import FeatureMaterializationError, SourceDataChangedError
 
 
@@ -242,40 +253,40 @@ defs = Definitions(
     assert "2" in call_args
 
 
-def test_list_command_with_default_target(
+def test_list_features_command_with_default_target(
     definitions_file, temp_dir, monkeypatch
 ):
     # Given a definitions file in the working directory
     monkeypatch.chdir(temp_dir)
     (temp_dir / "definitions.py").write_text(definitions_file.read_text())
 
-    # When running list command with no target
+    # When running list features command with no target
     with patch("mlforge.logging.print_features_table") as mock_print:
-        list_(target=None, tags=None)
+        features(target=None, tags=None)
 
     # Then it should display features
     mock_print.assert_called_once()
 
 
-def test_list_command_with_custom_target(definitions_file):
+def test_list_features_command_with_custom_target(definitions_file):
     # Given a custom definitions file
     target = str(definitions_file)
 
-    # When running list with custom target
+    # When running list features with custom target
     with patch("mlforge.logging.print_features_table") as mock_print:
-        list_(target=target, tags=None)
+        features(target=target, tags=None)
 
     # Then it should load and display features
     mock_print.assert_called_once()
 
 
-def test_list_command_displays_all_features(definitions_file):
+def test_list_features_command_displays_all_features(definitions_file):
     # Given a definitions file with features
     target = str(definitions_file)
 
     # When listing features
     with patch("mlforge.logging.print_features_table") as mock_print:
-        list_(target=target, tags=None)
+        features(target=target, tags=None)
 
     # Then it should pass the features dictionary
     mock_print.assert_called_once()
@@ -390,7 +401,7 @@ def test_build_command_raises_on_tags_and_features_both_specified():
         )
 
 
-def test_list_command_filters_by_tags(temp_dir, sample_parquet_file):
+def test_list_features_command_filters_by_tags(temp_dir, sample_parquet_file):
     # Given a definitions file with tagged features
     definitions_file = temp_dir / "definitions.py"
     store_path = temp_dir / "store"
@@ -417,7 +428,7 @@ defs = Definitions(
 
     # When listing with tag filter
     with patch("mlforge.logging.print_features_table") as mock_print:
-        list_(target=str(definitions_file), tags="user")
+        features(target=str(definitions_file), tags="user")
 
     # Then it should display only features with that tag
     mock_print.assert_called_once()
@@ -426,7 +437,9 @@ defs = Definitions(
     assert "transaction_feature" not in features_dict
 
 
-def test_list_command_raises_on_unknown_tags(temp_dir, sample_parquet_file):
+def test_list_features_command_warns_on_unknown_tags(
+    temp_dir, sample_parquet_file
+):
     # Given a definitions file with features
     definitions_file = temp_dir / "definitions.py"
     store_path = temp_dir / "store"
@@ -447,12 +460,14 @@ defs = Definitions(
 """
     )
 
-    # When/Then listing with unknown tag should raise ValueError
-    with pytest.raises(ValueError, match="Unknown tags"):
-        list_(target=str(definitions_file), tags="nonexistent")
+    # When listing with unknown tag it should warn (not raise)
+    with patch("mlforge.logging.print_warning") as mock_warning:
+        features(target=str(definitions_file), tags="nonexistent")
+
+    mock_warning.assert_called_once()
 
 
-def test_inspect_command_displays_metadata(definitions_file):
+def test_inspect_feature_command_displays_metadata(definitions_file):
     # Given a built feature with metadata
     target = str(definitions_file)
 
@@ -472,7 +487,7 @@ def test_inspect_command_displays_metadata(definitions_file):
 
     # When inspecting the feature
     with patch("mlforge.logging.print_feature_metadata") as mock_print:
-        inspect(feature_name="test_feature", target=target)
+        feature(feature_name="test_feature", target=target)
 
     # Then it should display the metadata
     mock_print.assert_called_once()
@@ -481,13 +496,13 @@ def test_inspect_command_displays_metadata(definitions_file):
     assert call_args[1] is not None
 
 
-def test_inspect_command_handles_missing_metadata(definitions_file):
+def test_inspect_feature_command_handles_missing_metadata(definitions_file):
     # Given a feature that hasn't been built yet
     target = str(definitions_file)
 
     # When/Then inspecting should exit with error
     with pytest.raises(SystemExit) as exc_info:
-        inspect(feature_name="test_feature", target=target)
+        feature(feature_name="test_feature", target=target)
 
     assert exc_info.value.code == 1
 
@@ -755,3 +770,199 @@ def test_sync_command_dry_run_shows_source_changed(definitions_file):
 
     # Then it should warn about source changes
     assert mock_warning.call_count >= 1
+
+
+# =============================================================================
+# List Entities Command Tests
+# =============================================================================
+
+
+@pytest.fixture
+def definitions_file_with_entities(temp_dir, sample_parquet_file):
+    """Create a definitions file with entities for testing."""
+    definitions_file = temp_dir / "definitions.py"
+    store_path = temp_dir / "store"
+    definitions_file.write_text(
+        f"""
+from mlforge import Definitions, LocalStore, feature, Entity
+
+user = Entity(name="user", join_key="user_id")
+merchant = Entity(name="merchant", join_key="merchant_id", from_columns=["name", "category"])
+
+@feature(keys=["user_id"], source="{sample_parquet_file}", entities=[user])
+def user_feature(df):
+    return df.select(["id"]).rename({{"id": "user_id"}})
+
+@feature(keys=["merchant_id"], source="{sample_parquet_file}", entities=[merchant])
+def merchant_feature(df):
+    return df.select(["id"]).rename({{"id": "merchant_id"}})
+
+defs = Definitions(
+    name="test-project",
+    features=[user_feature, merchant_feature],
+    offline_store=LocalStore("{store_path}")
+)
+"""
+    )
+    return definitions_file
+
+
+def test_list_entities_command(definitions_file_with_entities):
+    # Given a definitions file with entities
+    target = str(definitions_file_with_entities)
+
+    # When listing entities
+    with patch("mlforge.logging.print_entities_table") as mock_print:
+        entities(target=target)
+
+    # Then it should display entities
+    mock_print.assert_called_once()
+    entities_dict = mock_print.call_args[0][0]
+    assert "user" in entities_dict
+    assert "merchant" in entities_dict
+
+
+def test_list_entities_command_no_entities(definitions_file):
+    # Given a definitions file without explicit entities
+    target = str(definitions_file)
+
+    # When listing entities and none found
+    with patch("mlforge.logging.print_warning") as mock_warning:
+        entities(target=target)
+
+    # Then it should show a warning
+    mock_warning.assert_called_once()
+
+
+# =============================================================================
+# List Sources Command Tests
+# =============================================================================
+
+
+def test_list_sources_command(definitions_file):
+    # Given a definitions file with sources
+    target = str(definitions_file)
+
+    # When listing sources
+    with patch("mlforge.logging.print_sources_table") as mock_print:
+        sources(target=target)
+
+    # Then it should display sources
+    mock_print.assert_called_once()
+    sources_dict = mock_print.call_args[0][0]
+    assert len(sources_dict) >= 1
+
+
+# =============================================================================
+# List Versions Command Tests
+# =============================================================================
+
+
+def test_list_versions_command(definitions_file):
+    # Given a built feature
+    target = str(definitions_file)
+
+    # First build the feature
+    with (
+        patch("mlforge.logging.print_build_results"),
+        patch("mlforge.logging.print_success"),
+    ):
+        build(
+            target=target,
+            features=None,
+            tags=None,
+            force=False,
+            no_preview=True,
+            preview_rows=5,
+        )
+
+    # When listing versions
+    with patch("mlforge.logging.print_versions_table") as mock_print:
+        versions(feature_name="test_feature", target=target)
+
+    # Then it should display versions
+    mock_print.assert_called_once()
+    call_args = mock_print.call_args[0]
+    assert call_args[0] == "test_feature"
+
+
+def test_list_versions_command_no_versions(definitions_file):
+    # Given a feature that hasn't been built
+    target = str(definitions_file)
+
+    # When listing versions
+    with patch("mlforge.logging.print_warning") as mock_warning:
+        versions(feature_name="test_feature", target=target)
+
+    # Then it should show a warning
+    mock_warning.assert_called_once()
+
+
+# =============================================================================
+# Inspect Entity Command Tests
+# =============================================================================
+
+
+def test_inspect_entity_command(definitions_file_with_entities):
+    # Given a definitions file with entities
+    target = str(definitions_file_with_entities)
+
+    # When inspecting an entity
+    with patch("mlforge.logging.print_entity_detail") as mock_print:
+        inspect_entity(entity_name="user", target=target)
+
+    # Then it should display entity details
+    mock_print.assert_called_once()
+    call_args = mock_print.call_args[0]
+    assert call_args[0].name == "user"
+
+
+def test_inspect_entity_command_not_found(definitions_file):
+    # Given a definitions file
+    target = str(definitions_file)
+
+    # When inspecting a non-existent entity
+    with pytest.raises(SystemExit) as exc_info:
+        inspect_entity(entity_name="nonexistent", target=target)
+
+    assert exc_info.value.code == 1
+
+
+# =============================================================================
+# Inspect Source Command Tests
+# =============================================================================
+
+
+def test_inspect_source_command(definitions_file):
+    # Given a definitions file with a source
+    target = str(definitions_file)
+
+    # When inspecting a source (source name is derived from file stem)
+    with patch("mlforge.logging.print_source_detail") as mock_print:
+        # Get the source name from the sample parquet file
+        with patch("mlforge.loader.load_definitions") as mock_load:
+            mock_defs = Mock()
+            mock_source = Mock()
+            mock_source.name = "test_source"
+            mock_source.path = "/path/to/source.parquet"
+            mock_source.format = Mock()
+            mock_source.location = "local"
+            mock_defs.get_source.return_value = mock_source
+            mock_defs.features_using_source.return_value = ["test_feature"]
+            mock_load.return_value = mock_defs
+
+            source(source_name="test_source", target=target)
+
+    # Then it should display source details
+    mock_print.assert_called_once()
+
+
+def test_inspect_source_command_not_found(definitions_file):
+    # Given a definitions file
+    target = str(definitions_file)
+
+    # When inspecting a non-existent source
+    with pytest.raises(SystemExit) as exc_info:
+        source(source_name="nonexistent", target=target)
+
+    assert exc_info.value.code == 1

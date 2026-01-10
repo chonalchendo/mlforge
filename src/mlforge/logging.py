@@ -12,7 +12,9 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from mlforge.core import Feature
+    from mlforge.entities import Entity
     from mlforge.manifest import FeatureMetadata
+    from mlforge.sources.base import Source
     from mlforge.validation import FeatureValidationResult
 
 
@@ -367,3 +369,107 @@ def print_versions_table(
 
     console.print(table)
     console.print(f"\n[dim]{len(versions)} version(s) total[/dim]")
+
+
+def print_entities_table(entities: dict[str, "Entity | None"]) -> None:
+    """
+    Display entities in a formatted table.
+
+    Args:
+        entities: Dictionary mapping entity names to Entity objects
+    """
+    table = table_.Table(title="Entities")
+    table.add_column("Name", style="cyan")
+    table.add_column("Join Key", style="green")
+    table.add_column("From Columns", style="dim")
+
+    for name, entity in entities.items():
+        if entity is None:
+            table.add_row(name, "-", "-")
+            continue
+        join_key = ", ".join(entity.key_columns)
+        from_cols = (
+            ", ".join(entity.from_columns) if entity.from_columns else "-"
+        )
+        table.add_row(name, join_key, from_cols)
+
+    console.print(table)
+    console.print(f"\n[dim]{len(entities)} entities found[/dim]")
+
+
+def print_sources_table(sources: dict[str, "Source | None"]) -> None:
+    """
+    Display sources in a formatted table.
+
+    Args:
+        sources: Dictionary mapping source names to Source objects
+    """
+    table = table_.Table(title="Sources")
+    table.add_column("Name", style="cyan")
+    table.add_column("Path", style="dim")
+    table.add_column("Format", style="green")
+    table.add_column("Location", style="magenta")
+
+    for name, source in sources.items():
+        if source is None:
+            table.add_row(name, "-", "-", "-")
+            continue
+        fmt = (
+            type(source.format).__name__.replace("Format", "").lower()
+            if source.format
+            else "-"
+        )
+        table.add_row(name, source.path, fmt, source.location)
+
+    console.print(table)
+    console.print(f"\n[dim]{len(sources)} sources found[/dim]")
+
+
+def print_entity_detail(entity: "Entity", used_in: list[str]) -> None:
+    """
+    Display detailed entity information.
+
+    Args:
+        entity: Entity object to display
+        used_in: List of feature names using this entity
+    """
+    table = table_.Table(title=f"Entity: {entity.name}")
+    table.add_column("Property", style="cyan")
+    table.add_column("Value")
+
+    join_key = ", ".join(entity.key_columns)
+    from_cols = ", ".join(entity.from_columns) if entity.from_columns else "-"
+
+    table.add_row("Name", entity.name)
+    table.add_row("Join Key", join_key)
+    table.add_row("From Columns", from_cols)
+    table.add_row("Used In", ", ".join(used_in) if used_in else "-")
+
+    console.print(table)
+
+
+def print_source_detail(source: "Source", used_in: list[str]) -> None:
+    """
+    Display detailed source information.
+
+    Args:
+        source: Source object to display
+        used_in: List of feature names using this source
+    """
+    table = table_.Table(title=f"Source: {source.name}")
+    table.add_column("Property", style="cyan")
+    table.add_column("Value")
+
+    fmt = (
+        type(source.format).__name__.replace("Format", "").lower()
+        if source.format
+        else "-"
+    )
+
+    table.add_row("Name", source.name)
+    table.add_row("Path", source.path)
+    table.add_row("Format", fmt)
+    table.add_row("Location", source.location)
+    table.add_row("Used In", ", ".join(used_in) if used_in else "-")
+
+    console.print(table)
