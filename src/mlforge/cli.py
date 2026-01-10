@@ -11,6 +11,152 @@ import mlforge.store as store_
 
 app = cyclopts.App(name="mlforge", help="A simple feature store SDK")
 
+# =============================================================================
+# Project initialization templates
+# =============================================================================
+
+DEFINITIONS_TEMPLATE = '''"""Definitions for {name}."""
+
+import mlforge as mlf
+from {module_name} import features
+
+defs = mlf.Definitions(
+    name="{name}",
+    features=[features],
+    offline_store=mlf.LocalStore(path="./feature_store"),{online_store}{engine}
+)
+'''
+
+DEFINITIONS_ONLINE_REDIS = """
+    online_store=mlf.RedisStore(host="localhost", port=6379),"""
+
+DEFINITIONS_ONLINE_VALKEY = """
+    online_store=mlf.ValkeyStore(host="localhost", port=6379),"""
+
+DEFINITIONS_ENGINE_DUCKDB = """
+    engine="duckdb","""
+
+DEFINITIONS_S3_STORE = '''"""Definitions for {name}."""
+
+import mlforge as mlf
+from {module_name} import features
+
+defs = mlf.Definitions(
+    name="{name}",
+    features=[features],
+    offline_store=mlf.S3Store(
+        bucket="my-bucket",
+        prefix="features",
+    ),{online_store}{engine}
+)
+'''
+
+FEATURES_TEMPLATE = '''"""Feature definitions for {name}."""
+
+import mlforge as mlf
+import polars as pl
+
+
+# Example feature - replace with your own
+@mlf.feature(
+    source="data/example.parquet",
+    keys=["entity_id"],
+    timestamp="event_time",
+    interval="1d",
+)
+def example_feature(df: pl.DataFrame) -> pl.DataFrame:
+    """Example feature - replace with your implementation."""
+    return df.select("entity_id", "event_time", "value")
+'''
+
+ENTITIES_TEMPLATE = '''"""Entity definitions for {name}."""
+
+import mlforge as mlf  # noqa: F401
+
+# Example entity - replace with your own
+# user = mlf.Entity(
+#     name="user",
+#     join_key="user_id",
+#     from_columns=["first_name", "last_name"],
+# )
+'''
+
+PYPROJECT_TEMPLATE = """[project]
+name = "{name}"
+version = "0.1.0"
+requires-python = ">=3.13"
+dependencies = [
+    "{mlforge_dep}",
+    "polars>=1.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "ruff>=0.4.0",
+]
+
+[tool.ruff]
+line-length = 88
+target-version = "py313"
+"""
+
+README_TEMPLATE = """# {name}
+
+Feature store built with [mlforge](https://github.com/chonalchendo/mlforge).
+
+## Setup
+
+```bash
+uv sync
+```
+
+## Build Features
+
+```bash
+mlforge build --target src/{module_name}/definitions.py
+```
+
+## List Features
+
+```bash
+mlforge list features --target src/{module_name}/definitions.py
+```
+"""
+
+GITIGNORE_TEMPLATE = """# Python
+__pycache__/
+*.py[cod]
+.venv/
+
+# mlforge
+feature_store/*.parquet
+
+# IDE
+.idea/
+.vscode/
+"""
+
+FEATURE_STORE_GITIGNORE = """# Ignore parquet files but keep directory
+*.parquet
+!.gitignore
+"""
+
+MLFORGE_YAML_TEMPLATE = """default_profile: dev
+
+profiles:
+  dev:
+    offline_store:
+      KIND: local
+      path: ./feature_store
+
+  production:
+    offline_store:
+      KIND: s3
+      bucket: ${{oc.env:S3_BUCKET}}
+      prefix: features
+"""
+
 # Sub-apps for command groups
 list_app = cyclopts.App(
     name="list", help="List features, entities, sources, or versions."
@@ -835,3 +981,145 @@ def profile(
     except errors.ProfileError as e:
         log.print_error(str(e))
         raise SystemExit(1)
+
+
+@app.command
+def init(
+    name: Annotated[
+        str,
+        cyclopts.Parameter(help="Name of the project to create"),
+    ],
+    online: Annotated[
+        str | None,
+        cyclopts.Parameter(
+            name="--online",
+            help="Include online store config (redis, valkey)",
+        ),
+    ] = None,
+    engine: Annotated[
+        str | None,
+        cyclopts.Parameter(
+            name="--engine",
+            help="Default compute engine (duckdb)",
+        ),
+    ] = None,
+    store: Annotated[
+        str | None,
+        cyclopts.Parameter(
+            name="--store",
+            help="Offline store type (local, s3). Defaults to local.",
+        ),
+    ] = None,
+    with_profile: Annotated[
+        bool,
+        cyclopts.Parameter(
+            name="--profile",
+            help="Include mlforge.yaml with environment profiles",
+        ),
+    ] = False,
+):
+    """
+    Initialize a new mlforge project.
+
+    Creates a project directory with boilerplate structure including
+    source files, pyproject.toml, README, and configuration files.
+
+    Args:
+        name: Name of the project to create
+        online: Include online store config (redis, valkey)
+        engine: Default compute engine (duckdb)
+        store: Offline store type (local, s3). Defaults to local.
+        with_profile: Include mlforge.yaml with environment profiles
+
+    Raises:
+        SystemExit: If directory already exists or invalid options provided
+    """
+    project_dir = Path(name)
+    module_name = name.replace("-", "_")
+
+    # Validate directory doesn't exist
+    if project_dir.exists():
+        log.print_error(f"Directory '{name}' already exists")
+        raise SystemExit(1)
+
+    # Validate options
+    if online and online not in ("redis", "valkey"):
+        log.print_error(
+            f"Invalid online store: '{online}'. Use 'redis' or 'valkey'."
+        )
+        raise SystemExit(1)
+
+    if engine and engine != "duckdb":
+        log.print_error(f"Invalid engine: '{engine}'. Use 'duckdb'.")
+        raise SystemExit(1)
+
+    if store and store not in ("local", "s3"):
+        log.print_error(f"Invalid store: '{store}'. Use 'local' or 's3'.")
+        raise SystemExit(1)
+
+    # Create directory structure
+    src_dir = project_dir / "src" / module_name
+    src_dir.mkdir(parents=True)
+    (project_dir / "data").mkdir()
+    (project_dir / "feature_store").mkdir()
+
+    # Build definitions content
+    online_store = ""
+    if online == "redis":
+        online_store = DEFINITIONS_ONLINE_REDIS
+    elif online == "valkey":
+        online_store = DEFINITIONS_ONLINE_VALKEY
+
+    engine_str = DEFINITIONS_ENGINE_DUCKDB if engine == "duckdb" else ""
+
+    if store == "s3":
+        definitions_content = DEFINITIONS_S3_STORE.format(
+            name=name,
+            module_name=module_name,
+            online_store=online_store,
+            engine=engine_str,
+        )
+    else:
+        definitions_content = DEFINITIONS_TEMPLATE.format(
+            name=name,
+            module_name=module_name,
+            online_store=online_store,
+            engine=engine_str,
+        )
+
+    # Determine mlforge dependency
+    mlforge_dep = "mlforge>=0.6.0"
+    if engine == "duckdb":
+        mlforge_dep = "mlforge[duckdb]>=0.6.0"
+
+    # Write source files
+    (src_dir / "__init__.py").write_text("")
+    (src_dir / "definitions.py").write_text(definitions_content)
+    (src_dir / "features.py").write_text(FEATURES_TEMPLATE.format(name=name))
+    (src_dir / "entities.py").write_text(ENTITIES_TEMPLATE.format(name=name))
+
+    # Write project files
+    (project_dir / "pyproject.toml").write_text(
+        PYPROJECT_TEMPLATE.format(name=name, mlforge_dep=mlforge_dep)
+    )
+    (project_dir / "README.md").write_text(
+        README_TEMPLATE.format(name=name, module_name=module_name)
+    )
+    (project_dir / ".gitignore").write_text(GITIGNORE_TEMPLATE)
+    (project_dir / "data" / ".gitkeep").write_text("")
+    (project_dir / "feature_store" / ".gitignore").write_text(
+        FEATURE_STORE_GITIGNORE
+    )
+
+    # Write profile config if requested
+    if with_profile:
+        (project_dir / "mlforge.yaml").write_text(MLFORGE_YAML_TEMPLATE)
+
+    log.print_success(f"Created project '{name}'")
+    log.console.print("")
+    log.console.print("Next steps:")
+    log.console.print(f"  cd {name}")
+    log.console.print("  uv sync")
+    log.console.print(
+        f"  mlforge build --target src/{module_name}/definitions.py"
+    )

@@ -966,3 +966,229 @@ def test_inspect_source_command_not_found(definitions_file):
         source(source_name="nonexistent", target=target)
 
     assert exc_info.value.code == 1
+
+
+# =============================================================================
+# Init Command Tests
+# =============================================================================
+
+
+def test_init_creates_project_structure(temp_dir, monkeypatch):
+    """Should create project directory structure."""
+    from mlforge.cli import init
+
+    monkeypatch.chdir(temp_dir)
+
+    # When running init command
+    with patch("mlforge.logging.print_success"):
+        init(name="test-project")
+
+    # Then it should create the expected structure
+    project = temp_dir / "test-project"
+    assert project.exists()
+    assert (project / "src" / "test_project" / "__init__.py").exists()
+    assert (project / "src" / "test_project" / "definitions.py").exists()
+    assert (project / "src" / "test_project" / "features.py").exists()
+    assert (project / "src" / "test_project" / "entities.py").exists()
+    assert (project / "pyproject.toml").exists()
+    assert (project / "README.md").exists()
+    assert (project / ".gitignore").exists()
+    assert (project / "data" / ".gitkeep").exists()
+    assert (project / "feature_store" / ".gitignore").exists()
+
+
+def test_init_definitions_content(temp_dir, monkeypatch):
+    """Should create definitions.py with correct content."""
+    from mlforge.cli import init
+
+    monkeypatch.chdir(temp_dir)
+
+    with patch("mlforge.logging.print_success"):
+        init(name="my-project")
+
+    definitions = (
+        temp_dir / "my-project" / "src" / "my_project" / "definitions.py"
+    ).read_text()
+
+    assert 'name="my-project"' in definitions
+    assert "from my_project import features" in definitions
+    assert "mlf.LocalStore" in definitions
+
+
+def test_init_with_online_redis(temp_dir, monkeypatch):
+    """Should include Redis config when --online redis."""
+    from mlforge.cli import init
+
+    monkeypatch.chdir(temp_dir)
+
+    with patch("mlforge.logging.print_success"):
+        init(name="test-project", online="redis")
+
+    definitions = (
+        temp_dir / "test-project" / "src" / "test_project" / "definitions.py"
+    ).read_text()
+
+    assert "RedisStore" in definitions
+    assert 'host="localhost"' in definitions
+    assert "port=6379" in definitions
+
+
+def test_init_with_online_valkey(temp_dir, monkeypatch):
+    """Should include Valkey config when --online valkey."""
+    from mlforge.cli import init
+
+    monkeypatch.chdir(temp_dir)
+
+    with patch("mlforge.logging.print_success"):
+        init(name="test-project", online="valkey")
+
+    definitions = (
+        temp_dir / "test-project" / "src" / "test_project" / "definitions.py"
+    ).read_text()
+
+    assert "ValkeyStore" in definitions
+
+
+def test_init_with_engine_duckdb(temp_dir, monkeypatch):
+    """Should include duckdb engine when --engine duckdb."""
+    from mlforge.cli import init
+
+    monkeypatch.chdir(temp_dir)
+
+    with patch("mlforge.logging.print_success"):
+        init(name="test-project", engine="duckdb")
+
+    definitions = (
+        temp_dir / "test-project" / "src" / "test_project" / "definitions.py"
+    ).read_text()
+    pyproject = (temp_dir / "test-project" / "pyproject.toml").read_text()
+
+    assert 'engine="duckdb"' in definitions
+    assert "mlforge[duckdb]>=0.6.0" in pyproject
+
+
+def test_init_with_store_s3(temp_dir, monkeypatch):
+    """Should configure S3Store when --store s3."""
+    from mlforge.cli import init
+
+    monkeypatch.chdir(temp_dir)
+
+    with patch("mlforge.logging.print_success"):
+        init(name="test-project", store="s3")
+
+    definitions = (
+        temp_dir / "test-project" / "src" / "test_project" / "definitions.py"
+    ).read_text()
+
+    assert "S3Store" in definitions
+    assert 'bucket="my-bucket"' in definitions
+    assert 'prefix="features"' in definitions
+
+
+def test_init_with_profile(temp_dir, monkeypatch):
+    """Should create mlforge.yaml when --profile."""
+    from mlforge.cli import init
+
+    monkeypatch.chdir(temp_dir)
+
+    with patch("mlforge.logging.print_success"):
+        init(name="test-project", with_profile=True)
+
+    assert (temp_dir / "test-project" / "mlforge.yaml").exists()
+    config = (temp_dir / "test-project" / "mlforge.yaml").read_text()
+    assert "default_profile: dev" in config
+    assert "profiles:" in config
+
+
+def test_init_existing_directory_fails(temp_dir, monkeypatch):
+    """Should fail if directory exists."""
+    from mlforge.cli import init
+
+    monkeypatch.chdir(temp_dir)
+    (temp_dir / "existing").mkdir()
+
+    with pytest.raises(SystemExit) as exc_info:
+        init(name="existing")
+
+    assert exc_info.value.code == 1
+
+
+def test_init_invalid_online_option(temp_dir, monkeypatch):
+    """Should fail with invalid online option."""
+    from mlforge.cli import init
+
+    monkeypatch.chdir(temp_dir)
+
+    with pytest.raises(SystemExit) as exc_info:
+        init(name="test-project", online="invalid")
+
+    assert exc_info.value.code == 1
+
+
+def test_init_invalid_engine_option(temp_dir, monkeypatch):
+    """Should fail with invalid engine option."""
+    from mlforge.cli import init
+
+    monkeypatch.chdir(temp_dir)
+
+    with pytest.raises(SystemExit) as exc_info:
+        init(name="test-project", engine="invalid")
+
+    assert exc_info.value.code == 1
+
+
+def test_init_invalid_store_option(temp_dir, monkeypatch):
+    """Should fail with invalid store option."""
+    from mlforge.cli import init
+
+    monkeypatch.chdir(temp_dir)
+
+    with pytest.raises(SystemExit) as exc_info:
+        init(name="test-project", store="invalid")
+
+    assert exc_info.value.code == 1
+
+
+def test_init_hyphenated_name_converts_to_underscore(temp_dir, monkeypatch):
+    """Should convert hyphenated names to underscores for module."""
+    from mlforge.cli import init
+
+    monkeypatch.chdir(temp_dir)
+
+    with patch("mlforge.logging.print_success"):
+        init(name="my-cool-project")
+
+    # Module name should use underscores
+    assert (
+        temp_dir / "my-cool-project" / "src" / "my_cool_project" / "__init__.py"
+    ).exists()
+
+    # But project name should remain hyphenated in config
+    pyproject = (temp_dir / "my-cool-project" / "pyproject.toml").read_text()
+    assert 'name = "my-cool-project"' in pyproject
+
+
+def test_init_all_options_combined(temp_dir, monkeypatch):
+    """Should handle all options together."""
+    from mlforge.cli import init
+
+    monkeypatch.chdir(temp_dir)
+
+    with patch("mlforge.logging.print_success"):
+        init(
+            name="full-project",
+            online="redis",
+            engine="duckdb",
+            store="s3",
+            with_profile=True,
+        )
+
+    project = temp_dir / "full-project"
+    definitions = (
+        project / "src" / "full_project" / "definitions.py"
+    ).read_text()
+
+    assert "S3Store" in definitions
+    assert "RedisStore" in definitions
+    assert 'engine="duckdb"' in definitions
+    assert (project / "mlforge.yaml").exists()
