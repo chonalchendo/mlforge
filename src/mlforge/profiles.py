@@ -86,11 +86,13 @@ class GCSStoreConfig(BaseModel, frozen=True):
     bucket: str
     prefix: str = ""
 
-    def create(self) -> store_.Store:
+    def create(self) -> store_.GCSStore:
         """Create store instance from this config."""
-        raise NotImplementedError(
-            "GCSStore is not yet implemented. "
-            "Use 'local' or 's3' for offline_store KIND."
+        import mlforge.store as store_
+
+        return store_.GCSStore(
+            bucket=self.bucket,
+            prefix=self.prefix,
         )
 
 

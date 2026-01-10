@@ -53,7 +53,7 @@ from mlforge.metrics import Rolling
 from mlforge.online import OnlineStore, RedisStore
 from mlforge.retrieval import get_online_features, get_training_data
 from mlforge.sources import CSVFormat, DeltaFormat, ParquetFormat, Source
-from mlforge.store import LocalStore, S3Store
+from mlforge.store import GCSStore, LocalStore, S3Store
 from mlforge.timestamps import Timestamp
 from mlforge.types import DataType, TypeKind
 from mlforge.utils import surrogate_key
@@ -77,6 +77,7 @@ __all__ = [
     "Entity",
     "LocalStore",
     "S3Store",
+    "GCSStore",
     "OnlineStore",
     "RedisStore",
     "Timestamp",
