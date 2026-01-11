@@ -8,10 +8,9 @@ import pytest
 from mlforge import (
     Entity,
     LocalStore,
-    get_online_features,
-    get_training_data,
     surrogate_key,
 )
+from mlforge.retrieval import get_online_features, get_training_data
 from mlforge.online import OnlineStore
 from mlforge.results import PolarsResult
 
