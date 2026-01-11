@@ -1,74 +1,97 @@
 # AGENTS.md
 
-IMPORTANT: This project is still in development so no need to worry about introducing backward-compatability when implementing new features. v0.Y.Z will all be development, v1.0.0 will be the first production ready version of Mlforge.
+Instructions for AI coding agents working on mlforge.
 
-Instructions for AI coding agents working on the mlforge codebase.
+> **Development Status**: v0.Y.Z is pre-release. No backward-compatibility concerns until v1.0.0.
 
 ## Project Overview
 
-mlforge is a Python feature store SDK. Key components:
-- `@feature` decorator for defining features
-- `Definitions` class for registering and building features
-- `LocalStore` for Parquet persistence
-- `get_training_data` for point-in-time correct retrieval
+mlforge is a Python feature store SDK for ML pipelines. Core capabilities:
 
-## Build/Lint/Test Commands
+| Component | Purpose |
+|-----------|---------|
+| `@feature` decorator | Define features with transformations, validators, metrics |
+| `Entity` | Entity definition with optional surrogate key generation |
+| `Source` | Data source abstraction (local/S3/GCS, auto-format detection) |
+| `Timestamp` | Timestamp handling with auto-format detection |
+| `Definitions` | Registry for features, builds, and retrieval |
+| `LocalStore` / `S3Store` / `GCSStore` | Versioned offline storage |
+| `RedisStore` | Online store for real-time inference |
+| `get_training_data` | Point-in-time correct feature retrieval |
+| `get_online_features` | Real-time feature serving from Redis |
 
-All commands use `just` (rust-just) with `uv` for package management.
+## Build/Test Commands
 
-### Running Tests
-
-```bash
-# Run all tests (parallel)
-just check-test
-
-# Run tests with coverage (80% minimum required)
-just check-coverage
-
-# Run a single test file
-uv run pytest tests/test_core.py
-
-# Run a single test function
-uv run pytest tests/test_core.py::test_feature_decorator
-
-# Run tests matching a pattern
-uv run pytest tests/ -k "test_feature"
-
-# Run with verbose output
-uv run pytest tests/test_core.py -v
-```
-
-### Linting and Type Checking
+All commands require `uv run` prefix:
 
 ```bash
-# Run ALL checks (required before commits)
-just check
+# Run all checks (required before commits)
+uv run just check
 
 # Individual checks
-just check-code      # ruff linting
-just check-type      # ty type checking
-just check-format    # ruff format check
-just check-security  # bandit security scan
+uv run just check-code       # ruff linting
+uv run just check-type       # ty type checking
+uv run just check-format     # format check
+uv run just check-security   # bandit security scan
+uv run just check-test       # pytest (parallel)
+uv run just check-coverage   # pytest with 80% minimum coverage
+
+# Format code
+uv run just format
+
+# Run specific tests
+uv run pytest tests/test_core.py -v
+uv run pytest tests/ -k "test_feature"
 ```
 
-### Formatting
+## Key Files
+
+| File | Purpose |
+|------|---------|
+| `src/mlforge/core.py` | Feature, Definitions, @feature decorator |
+| `src/mlforge/entities.py` | Entity with surrogate key generation |
+| `src/mlforge/sources/base.py` | Source abstraction (local/s3/gcs) |
+| `src/mlforge/timestamps.py` | Timestamp parsing and detection |
+| `src/mlforge/store.py` | Store ABC, LocalStore, S3Store, GCSStore |
+| `src/mlforge/online.py` | OnlineStore, RedisStore |
+| `src/mlforge/retrieval.py` | get_training_data, point-in-time joins |
+| `src/mlforge/version.py` | Semantic versioning and change detection |
+| `src/mlforge/metrics.py` | Rolling window aggregations |
+| `src/mlforge/validators.py` | Data quality validators |
+| `src/mlforge/cli.py` | CLI commands |
+| `src/mlforge/profiles.py` | YAML-based profile configuration |
+| `src/mlforge/engines/` | Polars and DuckDB engine implementations |
+| `src/mlforge/errors.py` | Custom exception classes |
+
+## CLI Commands
 
 ```bash
-# Auto-format code
-uv run ruff format src tests
+# Project setup
+uv run mlforge init <name> [--online redis] [--store s3] [--profile]
 
-# Fix linting issues
-uv run ruff check --fix src tests
+# Build features
+uv run mlforge build [--features NAME] [--tags TAG] [--online] [--profile NAME]
+
+# Discovery
+uv run mlforge list features|entities|sources|versions
+uv run mlforge inspect feature|entity|source <name>
+
+# Version management
+uv run mlforge diff <feature> [v1] [v2]      # Compare versions
+uv run mlforge rollback <feature> [version]  # Rollback to version
+
+# Validation and sync
+uv run mlforge validate [--features NAME]
+uv run mlforge sync [--dry-run]
 ```
 
-## Code Style Guidelines
+## Code Style
 
 ### Python Version and Types
-
 - Python >= 3.13 required
-- Full type annotations on all functions and methods
-- Use `|` for union types: `str | None` not `Optional[str]`
-- Use modern generic syntax: `list[str]` not `List[str]`
+- Full type annotations on all functions
+- Use `str | None` not `Optional[str]`
+- Use `list[str]` not `List[str]`
 
 ### Import Conventions
 
@@ -76,36 +99,26 @@ uv run ruff check --fix src tests
 # CORRECT: Import mlforge modules as namespaces
 import mlforge.core as core
 import mlforge.errors as errors
-import mlforge.store as store
 
-# WRONG: Don't import individual classes/functions from mlforge
+# WRONG: Don't import individual classes from mlforge
 from mlforge.core import Feature  # Don't do this
 
-# OK: Standard library can use direct imports
+# OK: Standard library direct imports
 from pathlib import Path
-from typing import Any, Callable
 ```
 
-- All imports at file top, never inside functions
-- Group imports: stdlib, third-party, local (mlforge)
+### Naming
 
-### Naming Conventions
-
-- Classes: `PascalCase` (e.g., `LocalStore`, `FeatureMetadata`)
-- Functions/methods: `snake_case` (e.g., `get_training_data`)
-- Constants: `UPPER_SNAKE_CASE`
-- Private methods: `_single_leading_underscore`
-- Type aliases: `PascalCase` (e.g., `WindowFunc`, `EngineKind`)
+| Type | Convention | Example |
+|------|------------|---------|
+| Classes | PascalCase | `LocalStore`, `FeatureMetadata` |
+| Functions | snake_case | `get_training_data` |
+| Constants | UPPER_SNAKE | `DEFAULT_TTL` |
+| Private | _underscore | `_compute_hash` |
 
 ### Error Handling
 
-Define custom exceptions in `errors.py` with:
-- Descriptive message
-- Optional `cause` for chained exceptions
-- Optional `hint` for user guidance
-
 ```python
-# Example error pattern
 raise errors.FeatureMaterializationError(
     feature_name=feature.name,
     message="Feature function returned None",
@@ -113,88 +126,61 @@ raise errors.FeatureMaterializationError(
 )
 ```
 
-### Documentation
-
-Use Google-style docstrings:
+### Docstrings (Google-style)
 
 ```python
 def function_name(param1: str, param2: int | None = None) -> bool:
-    """
-    Short one-line summary (imperative mood).
-
-    Longer description if needed.
+    """Short summary in imperative mood.
 
     Args:
-        param1: Description of param1
-        param2: Description of param2. Defaults to None.
+        param1: Description
+        param2: Description. Defaults to None.
 
     Returns:
         Description of return value
 
     Raises:
         ValueError: When param1 is empty
-
-    Example:
-        result = function_name("test", 42)
     """
 ```
 
-### Code Organization
+## Testing
 
-- Keep interfaces simple, hide complexity in implementation
-- Each feature needs corresponding tests in `tests/`
-- Shared fixtures go in `tests/conftest.py`
-- Prefer composition over inheritance
+- Test files mirror source: `src/mlforge/core.py` → `tests/test_core.py`
+- Fixtures in `tests/conftest.py`: `temp_dir`, `temp_store`, `sample_dataframe`, `sample_parquet_file`
+- Coverage minimum: 80%
+- Engine parity tests validate Polars vs DuckDB produce identical output
 
-## Key Files
+## Example Projects
 
-| File | Purpose |
-|------|---------|
-| `src/mlforge/core.py` | Feature, Definitions, @feature decorator |
-| `src/mlforge/store.py` | Store ABC, LocalStore |
-| `src/mlforge/retrieval.py` | get_training_data, point-in-time joins |
-| `src/mlforge/utils.py` | entity_key, surrogate_key |
-| `src/mlforge/errors.py` | Custom exception classes |
-| `src/mlforge/cli.py` | CLI commands |
-| `src/mlforge/validators.py` | Data validation functions |
+Located in `examples/`:
+- `transactions/` - Basic feature store with LocalStore
+- `transactions-online/` - With Redis online store
+- `fraud-detection/` - Multiple entities use case
+- `recommendation/` - Rolling metrics
 
-## Dependency Management
+## Dependencies
 
-```bash
-# Add production dependency
-uv add package-name
+**Core**: polars, pyarrow, pydantic, cyclopts, loguru, omegaconf, s3fs
 
-# Add to dev group
-uv add package-name --group check
+**Optional**: duckdb, redis, gcsfs
 
-# Sync environment
-uv sync
-```
+**Dev**: pytest, ruff, ty, bandit, mkdocs
 
 ## Commit Messages
 
-Use conventional commits:
-- `feat:` new feature
-- `fix:` bug fix
-- `docs:` documentation only
-- `refactor:` code restructuring
-- `test:` adding/updating tests
-- `chore:` maintenance
+Use conventional commits with emoji:
+- `✨ feat:` new feature
+- `🐛 fix:` bug fix
+- `📝 docs:` documentation
+- `♻️ refactor:` restructuring
+- `✅ test:` tests
+- `🔧 chore:` maintenance
 
 ## Design Principles
 
-When writing or reviewing code, consider:
-
-1. Is the interface simple relative to functionality?
-2. Is complexity hidden inside, not pushed to callers?
-3. Would a new reader understand this quickly?
-4. Are comments explaining *why*, not *what*?
-5. Is this general enough without over-engineering?
-
-## Red Flags to Avoid
-
-- Shallow modules (interface as complex as implementation)
-- Information leakage (same decision in multiple places)
-- Pass-through methods that just forward calls
-- Special-case logic mixed with general code
-- Vague or hard-to-pick names (indicates muddled responsibilities)
+1. Simple interfaces, hidden complexity
+2. Comments explain *why*, not *what*
+3. General enough without over-engineering
+4. No shallow modules (interface as complex as implementation)
+5. No pass-through methods that just forward calls
