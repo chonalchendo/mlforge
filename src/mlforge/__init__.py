@@ -1,35 +1,64 @@
 """
 mlforge: A simple feature store SDK.
 
-This package provides tools for defining, materializing, and retrieving
-features for machine learning workflows.
+Build, version, and serve ML features with point-in-time correctness.
 
-Usage:
-    import mlforge as mlf
+Getting Started:
+    # Initialize a project
+    $ mlforge init my-features --profile
+    $ cd my-features
 
-    @mlf.feature(keys=["user_id"], source="data.parquet")
-    def my_feature(df):
-        return df
+    # Define features in src/my_features/features.py
+    # Build features
+    $ mlforge build --target src/my_features/definitions.py
 
-    defs = mlf.Definitions(
-        name="my-project",
-        features=[my_feature],
-        offline_store=mlf.LocalStore("./store")
+    # Retrieve for training
+    from my_features.definitions import defs
+    training_df = defs.get_training_data(
+        features=["user_spend"],
+        entity_df=labels_df,
+        timestamp="label_time",
     )
 
+Feature Definition:
+    import mlforge as mlf
+    import polars as pl
+
+    @mlf.feature(
+        keys=["user_id"],
+        source="data/transactions.parquet",
+        timestamp="event_time",
+        metrics=[mlf.Rolling(windows=["7d", "30d"], aggregations={"amount": ["sum"]})],
+    )
+    def user_spend(df: pl.DataFrame) -> pl.DataFrame:
+        return df.select(["user_id", "event_time", "amount"])
+
 Public API:
+    Definitions: Central registry for features with get_training_data/get_online_features
     feature: Decorator for defining features
     Feature: Container class for feature definitions
-    Definitions: Central registry for features
-    LocalStore: Local filesystem storage backend
-    S3Store: Amazon S3 storage backend
-    RedisStore: Redis online store for real-time serving
+    Entity: Entity definition with optional surrogate key generation
     Rolling: Rolling window aggregation metric
-    entity_key: Create reusable entity key transforms
-    surrogate_key: Generate surrogate keys from columns
-    get_training_data: Retrieve features with point-in-time correctness
-    get_online_features: Retrieve features from online store for inference
-    Validators: not_null, unique, greater_than, less_than, in_range, etc.
+
+    Offline Stores:
+        LocalStore: Local filesystem storage
+        S3Store: Amazon S3 storage
+        GCSStore: Google Cloud Storage
+
+    Online Stores:
+        RedisStore: Redis for real-time serving
+        OnlineStore: Abstract base class
+
+    Source Configuration:
+        Source: Data source abstraction
+        ParquetFormat, CSVFormat, DeltaFormat: Format configurations
+        Timestamp: Timestamp configuration
+
+    Utilities:
+        surrogate_key: Generate surrogate keys from columns
+
+    Validators:
+        not_null, unique, greater_than, less_than, in_range, is_in, matches_regex
 """
 
 from importlib.metadata import version as _get_version
@@ -37,12 +66,14 @@ from importlib.metadata import version as _get_version
 __version__ = _get_version("mlforge-sdk")
 
 from mlforge.core import Definitions, Feature, feature
+from mlforge.entities import Entity
 from mlforge.metrics import Rolling
 from mlforge.online import OnlineStore, RedisStore
-from mlforge.retrieval import get_online_features, get_training_data
-from mlforge.store import LocalStore, S3Store
+from mlforge.sources import CSVFormat, DeltaFormat, ParquetFormat, Source
+from mlforge.store import GCSStore, LocalStore, S3Store
+from mlforge.timestamps import Timestamp
 from mlforge.types import DataType, TypeKind
-from mlforge.utils import entity_key, surrogate_key
+from mlforge.utils import surrogate_key
 from mlforge.validators import (
     greater_than,
     greater_than_or_equal,
@@ -60,15 +91,19 @@ __all__ = [
     "feature",
     "Feature",
     "Definitions",
+    "Entity",
     "LocalStore",
     "S3Store",
+    "GCSStore",
     "OnlineStore",
     "RedisStore",
-    "entity_key",
+    "Timestamp",
     "surrogate_key",
-    "get_training_data",
-    "get_online_features",
     "Rolling",
+    "Source",
+    "ParquetFormat",
+    "CSVFormat",
+    "DeltaFormat",
     "DataType",
     "TypeKind",
     "greater_than",

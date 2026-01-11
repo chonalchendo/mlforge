@@ -209,5 +209,9 @@ __marimo__/
 
 # Example data files
 examples/**/data/*.parquet
-examples/**/feature_store/*.parquet
+examples/**/feature_store/
 reports/
+
+# Private development files (roadmap specs, AI commands)
+roadmap/
+.opencode/

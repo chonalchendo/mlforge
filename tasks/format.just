@@ -1,6 +1,6 @@
 # run format tasks
 [group('format')]
-format: format-import format-source 
+format: format-import format-source
 
 # format python code import
 [group('format')]

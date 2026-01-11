@@ -1,41 +1,59 @@
 # Retrieving Features
 
-mlforge provides two retrieval functions for different use cases:
+mlforge provides two methods on your `Definitions` object for retrieving features:
 
-| Function | Use Case | Store Type | Point-in-Time |
-|----------|----------|------------|---------------|
-| `get_training_data()` | Training, batch scoring | Offline (LocalStore, S3Store) | Yes |
-| `get_online_features()` | Real-time inference | Online (RedisStore) | No (latest only) |
+| Method | Use Case | Store Type | Point-in-Time |
+|--------|----------|------------|---------------|
+| `defs.get_training_data()` | Training, batch scoring | Offline (LocalStore, S3Store) | Yes |
+| `defs.get_online_features()` | Real-time inference | Online (RedisStore) | No (latest only) |
+
+```python
+from my_project.definitions import defs
+
+# Training data - entities handled automatically
+training_data = defs.get_training_data(
+    features=["user_spend", "merchant_revenue"],
+    entity_df=transactions,
+    timestamp="event_time",
+)
+
+# Online inference - entities handled automatically
+features = defs.get_online_features(
+    features=["user_spend", "merchant_revenue"],
+    entity_df=request_df,
+)
+```
+
+!!! tip "Automatic Entity Key Handling"
+    When retrieving multiple features with **different entities** (e.g., user features and merchant features), the Definitions methods automatically determine the correct entity keys for each feature. This prevents errors where wrong entity keys would cause silent lookup failures.
+
+---
 
 ## Offline Retrieval (Training)
 
 Use `get_training_data()` to join features to your entity DataFrame for training or batch scoring.
 
-## Basic Usage
+### Basic Usage
 
 ```python
-import mlforge as mlf
-import polars as pl
+from my_project.definitions import defs
 
-# Load your entity data (e.g., labels, predictions)
-entities = pl.read_parquet("data/labels.parquet")
-
-# Get features joined to entities
-training_data = mlf.get_training_data(
+training_data = defs.get_training_data(
     features=["user_total_spend", "user_avg_spend"],
-    entity_df=entities
+    entity_df=entities,
+    timestamp="event_time",  # Optional: for point-in-time joins
 )
 ```
 
-## Function Signature
+### Method Signature
 
 ```python
 def get_training_data(
-    features: list[str],
+    self,
+    features: list[str | tuple[str, str]],
     entity_df: pl.DataFrame,
-    store: str | Path | Store = "./feature_store",
-    entities: list[EntityKeyTransform] | None = None,
     timestamp: str | None = None,
+    store: Store | None = None,
 ) -> pl.DataFrame
 ```
 
@@ -46,15 +64,24 @@ def get_training_data(
 List of feature names to retrieve. Must match the names of built features.
 
 ```python
-training_data = mlf.get_training_data(
+training_data = defs.get_training_data(
     features=["user_age", "user_tenure_days"],
+    entity_df=entities
+)
+```
+
+You can also specify a version:
+
+```python
+training_data = defs.get_training_data(
+    features=[("user_age", "1.0.0"), "user_tenure_days"],
     entity_df=entities
 )
 ```
 
 #### entity_df (required)
 
-DataFrame containing entity keys and optionally timestamps. This is typically your:
+DataFrame containing entity source columns and optionally timestamps. This is typically your:
 
 - Training labels
 - Prediction entities
@@ -62,66 +89,21 @@ DataFrame containing entity keys and optionally timestamps. This is typically yo
 
 ```python
 entities = pl.DataFrame({
-    "user_id": ["u1", "u2", "u3"],
-    "label": [0, 1, 0]
+    "first": ["Alice", "Bob"],
+    "last": ["Smith", "Jones"],
+    "dob": ["1990-01-01", "1985-05-15"],
+    "label": [0, 1],
 })
 ```
 
-#### store (optional)
-
-Path to feature store or a `Store` instance. Defaults to `"./feature_store"`.
-
-```python
-import mlforge as mlf
-
-# Using default path
-training_data = mlf.get_training_data(
-    features=["user_age"],
-    entity_df=entities
-)
-
-# Custom path
-training_data = mlf.get_training_data(
-    features=["user_age"],
-    entity_df=entities,
-    store="./my_features"
-)
-
-# Store instance
-store = mlf.LocalStore("./my_features")
-training_data = mlf.get_training_data(
-    features=["user_age"],
-    entity_df=entities,
-    store=store
-)
-```
-
-#### entities (optional)
-
-List of entity key transforms to apply to `entity_df` before joining. Use this when your entity DataFrame doesn't have the required keys.
-
-```python
-import mlforge as mlf
-
-# Define transform
-with_user_id = mlf.entity_key("first", "last", "dob", alias="user_id")
-
-# Apply during retrieval
-training_data = mlf.get_training_data(
-    features=["user_spend_stats"],
-    entity_df=raw_entities,
-    entities=[with_user_id]  # Adds user_id column
-)
-```
-
-See [Entity Keys](entity-keys.md) for details.
+The method automatically generates surrogate keys based on each feature's entity definition.
 
 #### timestamp (optional)
 
 Column name in `entity_df` to use for point-in-time joins. When specified, features with timestamps are joined using asof joins.
 
 ```python
-training_data = mlf.get_training_data(
+training_data = defs.get_training_data(
     features=["user_spend_mean_30d"],
     entity_df=transactions,
     timestamp="transaction_time"  # Point-in-time correct
@@ -129,6 +111,19 @@ training_data = mlf.get_training_data(
 ```
 
 See [Point-in-Time Correctness](point-in-time.md) for details.
+
+#### store (optional)
+
+Override the default offline store. Useful for testing or accessing a different store.
+
+```python
+test_store = mlf.LocalStore("./test_feature_store")
+training_data = defs.get_training_data(
+    features=["user_age"],
+    entity_df=entities,
+    store=test_store
+)
+```
 
 ## Join Behavior
 
@@ -138,16 +133,19 @@ When `timestamp` is not specified, features are joined using standard left joins
 
 ```python
 entities = pl.DataFrame({
-    "user_id": ["u1", "u2", "u3"],
-    "label": [0, 1, 0]
+    "first": ["Alice", "Bob"],
+    "last": ["Smith", "Jones"],
+    "dob": ["1990-01-01", "1985-05-15"],
+    "label": [0, 1],
 })
 
-training_data = mlf.get_training_data(
+training_data = defs.get_training_data(
     features=["user_total_spend"],
     entity_df=entities
 )
 
-# Joins on common columns (user_id)
+# Automatically generates user_id from entity definition
+# Then joins on user_id
 ```
 
 ### Point-in-Time Joins
@@ -156,62 +154,43 @@ When `timestamp` is specified and features have timestamps, asof joins are used:
 
 ```python
 transactions = pl.DataFrame({
-    "user_id": ["u1", "u1", "u2"],
+    "first": ["Alice", "Alice", "Bob"],
+    "last": ["Smith", "Smith", "Jones"],
+    "dob": ["1990-01-01", "1990-01-01", "1985-05-15"],
     "transaction_time": ["2024-01-05", "2024-01-15", "2024-01-10"],
     "label": [0, 1, 0]
 })
 
-training_data = mlf.get_training_data(
-    features=["user_spend_mean_30d"],  # Has feature_timestamp
+training_data = defs.get_training_data(
+    features=["user_spend_mean_30d"],
     entity_df=transactions,
-    timestamp="transaction_time"  # Asof join
+    timestamp="transaction_time"
 )
 
 # Features reflect data available at each transaction_time
 ```
 
-### Join Key Detection
-
-Join keys are automatically detected from common columns:
-
-```python
-# entity_df has: user_id, merchant_id, label
-# feature has: user_id, merchant_id, total_spend
-
-# Joins on: user_id, merchant_id
-training_data = mlf.get_training_data(
-    features=["user_merchant_spend"],
-    entity_df=entities
-)
-```
-
-Timestamp columns are excluded from join keys when performing asof joins.
-
 ## Complete Example
 
 ```python
-import mlforge as mlf
+from my_project.definitions import defs
 import polars as pl
 
-# 1. Load entity data
+# 1. Load entity data with raw columns
 transactions = pl.read_parquet("data/transactions.parquet")
 
-# 2. Define entity transform
-with_user_id = mlf.entity_key("first", "last", "dob", alias="user_id")
-
-# 3. Retrieve features with point-in-time correctness
-training_data = mlf.get_training_data(
-    features=["user_spend_mean_30d", "user_total_spend"],
+# 2. Retrieve features with point-in-time correctness
+# Entity keys are generated automatically from feature definitions
+training_data = defs.get_training_data(
+    features=["user_spend_mean_30d", "user_total_spend", "merchant_revenue"],
     entity_df=transactions,
-    entities=[with_user_id],
     timestamp="trans_date_trans_time",
-    store="./feature_store"
 )
 
-# 4. Use in training
+# 3. Use in training
 from sklearn.ensemble import RandomForestClassifier
 
-X = training_data.select(["user_spend_mean_30d", "user_total_spend"])
+X = training_data.select(["user_spend_mean_30d", "user_total_spend", "merchant_revenue"])
 y = training_data.select("label")
 
 model = RandomForestClassifier()
@@ -225,16 +204,14 @@ model.fit(X.to_pandas(), y.to_pandas())
 If a requested feature hasn't been built:
 
 ```python
-import mlforge as mlf
-
 try:
-    training_data = mlf.get_training_data(
+    training_data = defs.get_training_data(
         features=["nonexistent_feature"],
         entity_df=entities
     )
 except ValueError as e:
     print(e)
-    # Feature 'nonexistent_feature' not found. Run `mlforge build` first.
+    # Unknown feature: 'nonexistent_feature'
 ```
 
 Build the feature first:
@@ -243,34 +220,20 @@ Build the feature first:
 mlforge build
 ```
 
-### Missing Join Keys
+### No Store Configured
 
-If entity_df and features don't share common columns:
+If no offline store is configured:
 
 ```python
-# entity_df has: customer_id, label
-# feature has: user_id, total_spend
-
 try:
-    training_data = mlf.get_training_data(
-        features=["user_total_spend"],
+    training_data = defs.get_training_data(
+        features=["user_spend"],
         entity_df=entities
     )
 except ValueError as e:
     print(e)
-    # No common columns to join 'user_total_spend'.
-```
-
-Solution: Use entity transforms to add required keys:
-
-```python
-with_user_id = mlf.entity_key("customer_id", alias="user_id")
-
-training_data = mlf.get_training_data(
-    features=["user_total_spend"],
-    entity_df=entities,
-    entities=[with_user_id]
-)
+    # No store configured. Either pass store= parameter
+    # or configure store in Definitions/mlforge.yaml.
 ```
 
 ### Timestamp Type Mismatch
@@ -282,50 +245,27 @@ For asof joins, timestamp columns must have matching data types:
 # feature["feature_timestamp"] is Datetime
 
 try:
-    training_data = mlf.get_training_data(
+    training_data = defs.get_training_data(
         features=["temporal_feature"],
         entity_df=entities,
         timestamp="event_time"
     )
 except ValueError as e:
     print(e)
-    # Timestamp dtype mismatch: entity_df['event_time'] is String,
-    # but feature has Datetime.
+    # Timestamp dtype mismatch
 ```
 
-Solution: Convert timestamps before calling `mlf.get_training_data()`:
+Solution: Convert timestamps before retrieval:
 
 ```python
 entities = entities.with_columns(
     pl.col("event_time").str.to_datetime().alias("event_time")
 )
 
-training_data = mlf.get_training_data(
+training_data = defs.get_training_data(
     features=["temporal_feature"],
     entity_df=entities,
     timestamp="event_time"
-)
-```
-
-## Multiple Feature Stores
-
-You can retrieve features from different stores by calling `mlf.get_training_data()` multiple times:
-
-```python
-import mlforge as mlf
-
-# Features from store A
-training_data = mlf.get_training_data(
-    features=["user_age", "user_tenure"],
-    entity_df=entities,
-    store="./store_a"
-)
-
-# Add features from store B
-training_data = mlf.get_training_data(
-    features=["user_spend_stats"],
-    entity_df=training_data,
-    store="./store_b"
 )
 ```
 
@@ -343,43 +283,27 @@ entities = (
     )
 )
 
-training_data = mlf.get_training_data(
+training_data = defs.get_training_data(
     features=["temporal_features"],
     entity_df=entities,
     timestamp="event_time"
 )
 ```
 
-### 2. Use Type Hints
-
-Add type hints for clarity:
-
-```python
-import polars as pl
-import mlforge as mlf
-
-entities: pl.DataFrame = pl.read_parquet("data/labels.parquet")
-
-training_data: pl.DataFrame = mlf.get_training_data(
-    features=["user_age"],
-    entity_df=entities
-)
-```
-
-### 3. Verify Features Exist
+### 2. Verify Features Exist
 
 Check built features before retrieval:
 
 ```bash
-mlforge list
+mlforge list features
 ```
 
-### 4. Handle Missing Values
+### 3. Handle Missing Values
 
 Features may have nulls for entities not in the feature source:
 
 ```python
-training_data = mlf.get_training_data(
+training_data = defs.get_training_data(
     features=["user_total_spend"],
     entity_df=entities
 )
@@ -390,6 +314,8 @@ training_data = training_data.with_columns(
 )
 ```
 
+---
+
 ## Online Retrieval (Inference)
 
 For real-time inference, use `get_online_features()` to retrieve features from an online store like Redis.
@@ -397,42 +323,73 @@ For real-time inference, use `get_online_features()` to retrieve features from a
 ### Basic Usage
 
 ```python
-import mlforge as mlf
-from mlforge.online import RedisStore
+from my_project.definitions import defs
 import polars as pl
 
-# Connect to Redis
-store = RedisStore(host="localhost", port=6379)
-
-# Define entity transform (same as training)
-with_user_id = mlf.entity_key("first", "last", "dob", alias="user_id")
-
-# Inference request
+# Inference request with raw entity columns
 request_df = pl.DataFrame({
     "request_id": ["req_001", "req_002"],
     "first": ["John", "Jane"],
     "last": ["Doe", "Smith"],
     "dob": ["1990-01-15", "1985-06-20"],
+    "merchant_id": ["m_123", "m_456"],
 })
 
-# Retrieve features
-features_df = mlf.get_online_features(
-    features=["user_spend"],
+# Retrieve multiple features with different entities
+# Each feature uses only its own entity keys automatically
+features_df = defs.get_online_features(
+    features=["user_spend", "merchant_revenue", "user_merchant_affinity"],
     entity_df=request_df,
-    store=store,
-    entities=[with_user_id],
 )
 ```
 
-### Function Signature
+### Method Signature
 
 ```python
 def get_online_features(
+    self,
     features: list[str],
     entity_df: pl.DataFrame,
-    store: OnlineStore,
-    entities: list[EntityKeyTransform] | None = None,
+    store: OnlineStore | None = None,
 ) -> pl.DataFrame
+```
+
+### Parameters
+
+#### features (required)
+
+List of feature names to retrieve. Online stores only hold the latest version.
+
+```python
+features_df = defs.get_online_features(
+    features=["user_spend", "merchant_revenue"],
+    entity_df=request_df,
+)
+```
+
+#### entity_df (required)
+
+DataFrame with entity source columns. The method generates surrogate keys automatically based on each feature's entity definition.
+
+```python
+request_df = pl.DataFrame({
+    "first": ["John", "Jane"],
+    "last": ["Doe", "Smith"],
+    "dob": ["1990-01-15", "1985-06-20"],
+})
+```
+
+#### store (optional)
+
+Override the default online store. Useful for testing.
+
+```python
+test_store = mlf.RedisStore(host="localhost", port=6380)
+features_df = defs.get_online_features(
+    features=["user_spend"],
+    entity_df=request_df,
+    store=test_store
+)
 ```
 
 ### Key Differences from Training Retrieval
@@ -441,7 +398,7 @@ def get_online_features(
 |--------|----------------------|------------------------|
 | **Versioning** | Supports `("feature", "1.0.0")` | No versioning (latest only) |
 | **Point-in-time** | Uses `timestamp` parameter | Not applicable |
-| **Store parameter** | Path string or Store instance | OnlineStore instance required |
+| **Store type** | Offline (LocalStore, S3Store) | Online (RedisStore) |
 | **Missing entities** | Returns null | Returns null |
 
 ### Prerequisites
@@ -450,13 +407,13 @@ Before using online retrieval:
 
 1. **Configure online store** in your definitions:
    ```python
-   from mlforge.online import RedisStore
+   import mlforge as mlf
 
    defs = mlf.Definitions(
        name="my-project",
        features=[user_spend],
        offline_store=mlf.LocalStore("./feature_store"),
-       online_store=RedisStore(host="localhost"),
+       online_store=mlf.RedisStore(host="localhost"),
    )
    ```
 
@@ -472,9 +429,40 @@ Before using online retrieval:
 
 See [Online Stores](online-stores.md) for detailed setup instructions.
 
+### Error Handling
+
+#### No Online Store Configured
+
+```python
+try:
+    features_df = defs.get_online_features(
+        features=["user_spend"],
+        entity_df=request_df
+    )
+except ValueError as e:
+    print(e)
+    # No online store configured. Either pass store= parameter
+    # or configure online_store in Definitions/mlforge.yaml.
+```
+
+#### Unknown Feature
+
+```python
+try:
+    features_df = defs.get_online_features(
+        features=["nonexistent_feature"],
+        entity_df=request_df
+    )
+except ValueError as e:
+    print(e)
+    # Unknown feature: 'nonexistent_feature'
+```
+
+---
+
 ## Next Steps
 
-- [Entity Keys](entity-keys.md) - Work with surrogate keys and transforms
+- [Entity Keys](entity-keys.md) - Work with surrogate keys and entities
 - [Point-in-Time Correctness](point-in-time.md) - Understand temporal joins
 - [Online Stores](online-stores.md) - Set up Redis for real-time serving
 - [API Reference](../api/retrieval.md) - Detailed API documentation

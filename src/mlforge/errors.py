@@ -238,6 +238,122 @@ class VersionNotFoundError(VersionError):
         return "\n".join(parts)
 
 
+class AlreadyAtVersionError(VersionError):
+    """
+    Raised when attempting to rollback to the current version.
+
+    Attributes:
+        feature_name: Name of the feature
+        version: The version that is already current
+    """
+
+    def __init__(self, feature_name: str, version: str):
+        """
+        Initialize already at version error.
+
+        Args:
+            feature_name: Name of the feature
+            version: The version that is already current
+        """
+        self.feature_name = feature_name
+        self.version = version
+        super().__init__(
+            f"Feature '{feature_name}' is already at version '{version}'"
+        )
+
+    def __str__(self) -> str:
+        """
+        Format error message.
+
+        Returns:
+            Formatted error message
+        """
+        return (
+            f"Version '{self.version}' is already the latest version "
+            f"for feature '{self.feature_name}'.\n\nNothing to rollback."
+        )
+
+
+class TimestampParseError(Exception):
+    """Raised when timestamp parsing or auto-detection fails."""
+
+    def __init__(
+        self,
+        column: str,
+        sample_values: list[str],
+        message: str | None = None,
+    ):
+        self.column = column
+        self.sample_values = sample_values
+        self.message = message
+        super().__init__(
+            message or f"Could not parse timestamp column '{column}'"
+        )
+
+    def __str__(self) -> str:
+        """Format error with sample values and format suggestions."""
+        if self.message:
+            parts = [f"TimestampParseError: {self.message}"]
+        else:
+            parts = [
+                f"TimestampParseError: Could not auto-detect datetime format "
+                f"for column '{self.column}'."
+            ]
+
+        if self.sample_values:
+            samples_str = ", ".join(repr(v) for v in self.sample_values[:5])
+            parts.append(f"\nSample values: [{samples_str}]")
+
+        parts.append(f"""
+Try specifying format explicitly:
+    timestamp=mlf.Timestamp(column="{self.column}", format="%Y-%m-%d %H:%M:%S")
+
+Common formats:
+    "%Y-%m-%d %H:%M:%S"    -> 2024-01-15 14:30:00
+    "%Y-%m-%dT%H:%M:%S"    -> 2024-01-15T14:30:00
+    "%Y-%m-%d"             -> 2024-01-15""")
+
+        return "\n".join(parts)
+
+
+class ProfileError(Exception):
+    """
+    Raised when profile loading or validation fails.
+
+    Provides context about what went wrong with profile configuration,
+    including missing environment variables, invalid store types, and
+    profile not found errors.
+
+    Attributes:
+        message: Primary error message
+        hint: Suggestion for how to fix the error
+    """
+
+    def __init__(self, message: str, hint: str | None = None):
+        """
+        Initialize profile error.
+
+        Args:
+            message: Primary error message
+            hint: Resolution suggestion. Defaults to None.
+        """
+        self.message = message
+        self.hint = hint
+        super().__init__(message)
+
+    def __str__(self) -> str:
+        """
+        Format error message with hint.
+
+        Returns:
+            Formatted error message
+        """
+        parts = [f"ProfileError: {self.message}"]
+        if self.hint:
+            parts.append(f"\nHint: {self.hint}")
+        return "\n".join(parts)
+
+
 class SourceDataChangedError(Exception):
     """
     Raised when source data has changed since the feature was built.

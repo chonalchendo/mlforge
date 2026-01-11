@@ -615,6 +615,425 @@ def resolve_version(
 
 
 # =============================================================================
+# Version Diff Types
+# =============================================================================
+
+
+@dataclass
+class ColumnInfo:
+    """
+    Information about a column in a schema.
+
+    Attributes:
+        name: Column name
+        dtype: Data type string
+    """
+
+    name: str
+    dtype: str
+
+    def to_dict(self) -> dict[str, str]:
+        """Convert to dictionary."""
+        return {"name": self.name, "dtype": self.dtype}
+
+
+@dataclass
+class ColumnModification:
+    """
+    Information about a column whose dtype changed.
+
+    Attributes:
+        name: Column name
+        dtype_from: Original data type
+        dtype_to: New data type
+    """
+
+    name: str
+    dtype_from: str
+    dtype_to: str
+
+    def to_dict(self) -> dict[str, str]:
+        """Convert to dictionary."""
+        return {
+            "name": self.name,
+            "dtype_from": self.dtype_from,
+            "dtype_to": self.dtype_to,
+        }
+
+
+@dataclass
+class SchemaChanges:
+    """
+    Schema changes between two versions.
+
+    Attributes:
+        added: Columns added in the new version
+        removed: Columns removed from the old version
+        modified: Columns with changed dtypes
+    """
+
+    added: list[ColumnInfo] = field(default_factory=list)
+    removed: list[ColumnInfo] = field(default_factory=list)
+    modified: list[ColumnModification] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, list[dict[str, str]]]:
+        """Convert to dictionary."""
+        return {
+            "added": [c.to_dict() for c in self.added],
+            "removed": [c.to_dict() for c in self.removed],
+            "modified": [c.to_dict() for c in self.modified],
+        }
+
+    def has_changes(self) -> bool:
+        """Check if there are any schema changes."""
+        return bool(self.added or self.removed or self.modified)
+
+
+@dataclass
+class ConfigChange:
+    """
+    A single configuration change.
+
+    Attributes:
+        key: Configuration key that changed
+        value_from: Original value
+        value_to: New value
+    """
+
+    key: str
+    value_from: Any
+    value_to: Any
+
+
+@dataclass
+class DataStatistics:
+    """
+    Data statistics comparison between two versions.
+
+    Attributes:
+        row_count_from: Row count in first version
+        row_count_to: Row count in second version
+        unique_entities_from: Unique entity count in first version
+        unique_entities_to: Unique entity count in second version
+        date_range_from: (min_date, max_date) tuple for first version
+        date_range_to: (min_date, max_date) tuple for second version
+    """
+
+    row_count_from: int
+    row_count_to: int
+    unique_entities_from: int | None = None
+    unique_entities_to: int | None = None
+    date_range_from: tuple[str, str] | None = None
+    date_range_to: tuple[str, str] | None = None
+
+    def row_count_change_pct(self) -> float | None:
+        """Calculate percentage change in row count."""
+        if self.row_count_from == 0:
+            return None
+        return (
+            (self.row_count_to - self.row_count_from) / self.row_count_from
+        ) * 100
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary."""
+        result: dict[str, Any] = {
+            "row_count": {
+                "from": self.row_count_from,
+                "to": self.row_count_to,
+            }
+        }
+        pct = self.row_count_change_pct()
+        if pct is not None:
+            result["row_count"]["change_pct"] = round(pct, 1)
+
+        if (
+            self.unique_entities_from is not None
+            and self.unique_entities_to is not None
+        ):
+            result["unique_entities"] = {
+                "from": self.unique_entities_from,
+                "to": self.unique_entities_to,
+            }
+
+        if self.date_range_from is not None and self.date_range_to is not None:
+            result["date_range"] = {
+                "from": {
+                    "min": self.date_range_from[0],
+                    "max": self.date_range_from[1],
+                },
+                "to": {
+                    "min": self.date_range_to[0],
+                    "max": self.date_range_to[1],
+                },
+            }
+
+        return result
+
+
+@dataclass
+class VersionDiff:
+    """
+    Complete diff between two feature versions.
+
+    Attributes:
+        feature: Feature name
+        version_from: First version compared
+        version_to: Second version compared
+        change_type: Type of change (NONE, PATCH, MINOR, MAJOR)
+        schema_changes: Schema differences
+        config_changes: Configuration differences
+        data_statistics: Data statistics comparison
+    """
+
+    feature: str
+    version_from: str
+    version_to: str
+    change_type: ChangeType
+    schema_changes: SchemaChanges
+    config_changes: list[ConfigChange] = field(default_factory=list)
+    data_statistics: DataStatistics | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for JSON output."""
+        result: dict[str, Any] = {
+            "feature": self.feature,
+            "version_from": self.version_from,
+            "version_to": self.version_to,
+            "change_type": self.change_type.value.upper(),
+            "schema_changes": self.schema_changes.to_dict(),
+            "config_changes": {
+                c.key: {"from": c.value_from, "to": c.value_to}
+                for c in self.config_changes
+            },
+        }
+        if self.data_statistics:
+            result["data_statistics"] = self.data_statistics.to_dict()
+        return result
+
+
+@dataclass
+class RollbackResult:
+    """
+    Result of a rollback operation.
+
+    Attributes:
+        feature: Feature name
+        version_from: Version before rollback
+        version_to: Version after rollback (target)
+        success: Whether rollback succeeded
+        dry_run: Whether this was a dry run
+    """
+
+    feature: str
+    version_from: str
+    version_to: str
+    success: bool
+    dry_run: bool
+
+
+# =============================================================================
+# Version Diff Functions
+# =============================================================================
+
+
+def diff_versions(
+    store_root: Path,
+    feature_name: str,
+    version_from: str,
+    version_to: str,
+    read_metadata_func: Any = None,
+) -> VersionDiff:
+    """
+    Compare two versions of a feature.
+
+    Args:
+        store_root: Root path of the feature store
+        feature_name: Name of the feature to compare
+        version_from: First version to compare
+        version_to: Second version to compare
+        read_metadata_func: Function to read metadata (for testing)
+
+    Returns:
+        VersionDiff containing schema, config, and data differences
+
+    Raises:
+        VersionNotFoundError: If either version doesn't exist
+    """
+    import mlforge.errors as errors
+    import mlforge.manifest as manifest
+
+    read_meta = read_metadata_func or manifest.read_metadata_file
+
+    # Read metadata for both versions
+    meta_from_path = versioned_metadata_path(
+        store_root, feature_name, version_from
+    )
+    meta_to_path = versioned_metadata_path(store_root, feature_name, version_to)
+
+    meta_from = read_meta(meta_from_path)
+    if meta_from is None:
+        available = list_versions(store_root, feature_name)
+        raise errors.VersionNotFoundError(feature_name, version_from, available)
+
+    meta_to = read_meta(meta_to_path)
+    if meta_to is None:
+        available = list_versions(store_root, feature_name)
+        raise errors.VersionNotFoundError(feature_name, version_to, available)
+
+    # Build column maps for comparison
+    cols_from = {
+        c.name: c.dtype or "" for c in meta_from.columns + meta_from.features
+    }
+    cols_to = {
+        c.name: c.dtype or "" for c in meta_to.columns + meta_to.features
+    }
+
+    # Determine schema changes
+    added_names = set(cols_to.keys()) - set(cols_from.keys())
+    removed_names = set(cols_from.keys()) - set(cols_to.keys())
+    common_names = set(cols_from.keys()) & set(cols_to.keys())
+
+    added = [ColumnInfo(name=n, dtype=cols_to[n]) for n in sorted(added_names)]
+    removed = [
+        ColumnInfo(name=n, dtype=cols_from[n]) for n in sorted(removed_names)
+    ]
+    modified = [
+        ColumnModification(name=n, dtype_from=cols_from[n], dtype_to=cols_to[n])
+        for n in sorted(common_names)
+        if cols_from[n] != cols_to[n]
+    ]
+
+    schema_changes = SchemaChanges(
+        added=added, removed=removed, modified=modified
+    )
+
+    # Determine config changes
+    config_changes: list[ConfigChange] = []
+    if meta_from.interval != meta_to.interval:
+        config_changes.append(
+            ConfigChange(
+                key="interval",
+                value_from=meta_from.interval,
+                value_to=meta_to.interval,
+            )
+        )
+    if meta_from.timestamp != meta_to.timestamp:
+        config_changes.append(
+            ConfigChange(
+                key="timestamp",
+                value_from=meta_from.timestamp,
+                value_to=meta_to.timestamp,
+            )
+        )
+    if meta_from.keys != meta_to.keys:
+        config_changes.append(
+            ConfigChange(
+                key="keys",
+                value_from=meta_from.keys,
+                value_to=meta_to.keys,
+            )
+        )
+
+    # Determine change type
+    if removed or modified:
+        change_type = ChangeType.MAJOR
+    elif added:
+        change_type = ChangeType.MINOR
+    elif config_changes:
+        change_type = ChangeType.MINOR
+    elif meta_from.content_hash != meta_to.content_hash:
+        change_type = ChangeType.PATCH
+    else:
+        # No differences - same version essentially
+        change_type = ChangeType.PATCH
+
+    # Build data statistics
+    data_stats = DataStatistics(
+        row_count_from=meta_from.row_count,
+        row_count_to=meta_to.row_count,
+    )
+
+    return VersionDiff(
+        feature=feature_name,
+        version_from=version_from,
+        version_to=version_to,
+        change_type=change_type,
+        schema_changes=schema_changes,
+        config_changes=config_changes,
+        data_statistics=data_stats,
+    )
+
+
+def get_previous_version(store_root: Path, feature_name: str) -> str | None:
+    """
+    Get the version before the latest.
+
+    Args:
+        store_root: Root path of the feature store
+        feature_name: Name of the feature
+
+    Returns:
+        Previous version string, or None if less than 2 versions exist
+    """
+    versions = list_versions(store_root, feature_name)
+    if len(versions) < 2:
+        return None
+    return versions[-2]
+
+
+def rollback_version(
+    store_root: Path,
+    feature_name: str,
+    target_version: str,
+    dry_run: bool = False,
+) -> RollbackResult:
+    """
+    Rollback a feature to a previous version.
+
+    Updates _latest.json to point to the target version.
+    Does NOT delete any version data.
+
+    Args:
+        store_root: Root path of the feature store
+        feature_name: Name of the feature to rollback
+        target_version: Version to rollback to
+        dry_run: If True, don't make changes
+
+    Returns:
+        RollbackResult with details of the operation
+
+    Raises:
+        VersionNotFoundError: If target version doesn't exist
+        AlreadyAtVersionError: If already at target version
+    """
+    import mlforge.errors as errors
+
+    # Check target version exists
+    available = list_versions(store_root, feature_name)
+    if target_version not in available:
+        raise errors.VersionNotFoundError(
+            feature_name, target_version, available
+        )
+
+    # Check not already at target version
+    current = get_latest_version(store_root, feature_name)
+    if current == target_version:
+        raise errors.AlreadyAtVersionError(feature_name, target_version)
+
+    # Perform rollback (update _latest.json)
+    if not dry_run:
+        write_latest_pointer(store_root, feature_name, target_version)
+
+    return RollbackResult(
+        feature=feature_name,
+        version_from=current or "unknown",
+        version_to=target_version,
+        success=True,
+        dry_run=dry_run,
+    )
+
+
+# =============================================================================
 # Git Integration
 # =============================================================================
 

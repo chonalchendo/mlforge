@@ -1,4 +1,5 @@
 import importlib.util
+import os
 import sys
 from pathlib import Path
 
@@ -9,7 +10,10 @@ import mlforge.errors as errors
 import mlforge.logging as log
 
 
-def load_definitions(target: str | None = None) -> core.Definitions:
+def load_definitions(
+    target: str | None = None,
+    profile: str | None = None,
+) -> core.Definitions:
     """
     Load Definitions from a Python file.
 
@@ -18,6 +22,8 @@ def load_definitions(target: str | None = None) -> core.Definitions:
 
     Args:
         target: Path to Python file containing Definitions. Defaults to "definitions.py".
+        profile: Profile name to use for store configuration. If provided, sets
+            MLFORGE_PROFILE environment variable before loading definitions.
 
     Returns:
         The Definitions instance found in the file
@@ -30,7 +36,15 @@ def load_definitions(target: str | None = None) -> core.Definitions:
     Example:
         defs = load_definitions("my_features/definitions.py")
         defs.materialize()
+
+        # With profile override
+        defs = load_definitions("definitions.py", profile="staging")
     """
+    # Set profile env var if provided (before loading definitions)
+    if profile is not None:
+        os.environ["MLFORGE_PROFILE"] = profile
+        logger.debug(f"Set MLFORGE_PROFILE={profile}")
+
     if target is None:
         discovered = _find_definitions_file()
         if discovered is None:

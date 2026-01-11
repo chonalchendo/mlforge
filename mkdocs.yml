@@ -62,6 +62,8 @@ nav:
       - Quickstart: getting-started/quickstart.md
   - User Guide:
       - Defining Features: user-guide/defining-features.md
+      - Source Abstraction: user-guide/source-abstraction.md
+      - Timestamp Handling: user-guide/timestamp-handling.md
       - Building Features: user-guide/building-features.md
       - Validators: user-guide/validators.md
       - Storage Backends: user-guide/storage-backends.md
@@ -75,6 +77,7 @@ nav:
       - Core: api/core.md
       - Version: api/version.md
       - Online: api/online.md
+      - Profiles: api/profiles.md
       - Types: api/types.md
       - Validators: api/validators.md
       - Validation: api/validation.md
@@ -82,3 +85,5 @@ nav:
       - Manifest: api/manifest.md
       - Retrieval: api/retrieval.md
       - Utils: api/utils.md
+  - Comparison:
+      - Feast: comparison/feast.md

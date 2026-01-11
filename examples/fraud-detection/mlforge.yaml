@@ -1,0 +1,17 @@
+default_profile: dev
+
+profiles:
+  dev:
+    offline_store:
+      KIND: local
+      path: ./feature_store
+
+  online:
+    offline_store:
+      KIND: local
+      path: ./feature_store
+    online_store:
+      KIND: redis
+      host: localhost
+      port: 6379
+      prefix: fraud

@@ -1,0 +1,25 @@
+# mlforge environment configuration
+default_profile: dev
+
+profiles:
+  dev:
+    offline_store:
+      KIND: local
+      path: ./feature_store
+
+  staging:
+    offline_store:
+      KIND: local
+      path: ./feature_store_staging
+
+  # Example production profile (commented out - requires AWS credentials)
+  # production:
+  #   offline_store:
+  #     KIND: s3
+  #     bucket: my-company-features
+  #     prefix: transactions
+  #     region: us-west-2
+  #   online_store:
+  #     KIND: redis
+  #     host: ${oc.env:REDIS_HOST}
+  #     password: ${oc.env:REDIS_PASSWORD}

@@ -11,12 +11,17 @@ import polars as pl
 from loguru import logger
 
 import mlforge.engines as engines
+import mlforge.entities as entities_
 import mlforge.errors as errors
 import mlforge.logging as log
 import mlforge.manifest as manifest
 import mlforge.metrics as metrics_
 import mlforge.online as online
+import mlforge.profiles as profiles_
+import mlforge.retrieval as retrieval_
+import mlforge.sources as sources
 import mlforge.store as store
+import mlforge.timestamps as timestamps_
 import mlforge.types as types_
 import mlforge.validation as validation_
 import mlforge.validators as validators_
@@ -65,15 +70,35 @@ class Feature:
 
     fn: FeatureFunction
     name: str
-    source: str
+    source: str | sources.Source
     keys: list[str]
+    entities: list[entities_.Entity] | None
     tags: list[str] | None
-    timestamp: str | None
+    timestamp: str | timestamps_.Timestamp | None
     description: str | None
     interval: str | None
     metrics: list[metrics_.MetricKind] | None
     validators: dict[str, list[validators_.Validator]] | None
     engine: str | None
+
+    @property
+    def source_path(self) -> str:
+        """Get the source path, whether source is a string or Source object."""
+        if isinstance(self.source, sources.Source):
+            return self.source.path
+        return self.source
+
+    @property
+    def source_obj(self) -> sources.Source:
+        """Get source as a Source object, converting string if needed."""
+        if isinstance(self.source, sources.Source):
+            return self.source
+        return sources.Source(self.source)
+
+    @property
+    def timestamp_column(self) -> str | None:
+        """Return the timestamp column name, extracting from Timestamp if needed."""
+        return timestamps_.normalize_timestamp(self.timestamp)
 
     def __call__(self, *args, **kwargs) -> pl.DataFrame:
         """
@@ -88,11 +113,12 @@ class Feature:
 
 
 def feature(
-    keys: list[str],
-    source: str,
+    source: str | sources.Source,
+    keys: list[str] | None = None,
+    entities: list[entities_.Entity] | None = None,
     description: str | None = None,
     tags: list[str] | None = None,
-    timestamp: str | None = None,
+    timestamp: str | timestamps_.Timestamp | None = None,
     interval: str | timedelta | None = None,
     metrics: list[metrics_.MetricKind] | None = None,
     validators: dict[str, list[validators_.Validator]] | None = None,
@@ -105,11 +131,19 @@ def feature(
     with Definitions and materialized to storage.
 
     Args:
-        keys: Column names that uniquely identify entities
-        source: Path to source data file (parquet or csv)
+        source: Path to source data file or Source object. Can be:
+            - A string path: "data/transactions.parquet"
+            - A Source object: Source("s3://bucket/data.parquet")
+            - A Source with format options: Source("data.csv", format=CSVFormat(delimiter="|"))
+        keys: Column names that uniquely identify entities. Either keys or entities required.
+        entities: Entity definitions with optional surrogate key generation.
+            When provided, keys are derived from entity join_keys automatically.
         description: Human-readable feature description. Defaults to None.
         tags: Tags to group feature with other features. Defaults to None.
-        timestamp: Column name for temporal features. Defaults to None.
+        timestamp: Timestamp configuration for temporal features. Can be:
+            - A string column name (format auto-detected)
+            - A Timestamp object with explicit format/alias
+            Defaults to None.
         interval: Time interval for rolling computations (e.g., "1d" or timedelta(days=1)). Defaults to None.
         metrics: Aggregation metrics like Rolling for time-based features. Defaults to None.
         validators: Column validators to run before metrics are computed. Defaults to None.
@@ -121,32 +155,46 @@ def feature(
         Decorator function that converts a function into a Feature
 
     Example:
+        # Using keys (traditional style)
         @feature(
             keys=["user_id"],
             source="data/transactions.parquet",
             tags=['users'],
             timestamp="transaction_time",
             description="User spending statistics",
-            interval=timedelta(days=1),
-            validators={
-                "amount": [not_null(), greater_than(0)],
-                "user_id": [not_null()],
-            },
         )
         def user_spend_stats(df):
-            return df.group_by("user_id").agg(
-                pl.col("amount").mean().alias("avg_spend")
-            )
+            return df.group_by("user_id").agg(...)
 
-        # Use DuckDB for large dataset processing
+        # Using entities (v0.6.0+) - with automatic surrogate key generation
+        user = Entity(name="user", join_key="user_id", from_columns=["first", "last", "dob"])
+
         @feature(
-            keys=["user_id"],
-            source="data/large_transactions.parquet",
-            engine="duckdb",
+            source="data/transactions.parquet",
+            entities=[user],  # Engine generates user_id from first, last, dob
         )
-        def user_large_spend(df):
-            return df.select("user_id", "amount")
+        def user_spend(df):
+            return df.select("user_id", "amount")  # user_id already exists
+
+    Raises:
+        ValueError: If neither keys nor entities is provided
     """
+    # Validate that either keys or entities is provided
+    if keys is None and entities is None:
+        raise ValueError("Either 'keys' or 'entities' must be provided")
+
+    # Derive keys from entities if not explicitly provided
+    derived_keys: list[str] = []
+    if keys is not None:
+        derived_keys = keys
+    elif entities is not None:
+        for entity in entities:
+            derived_keys.extend(entity.key_columns)
+        # Remove duplicates while preserving order
+        seen: set[str] = set()
+        derived_keys = [
+            k for k in derived_keys if not (k in seen or seen.add(k))
+        ]
     # Convert timedelta to string if provided
     interval_str = (
         metrics_.timedelta_to_polars_duration(interval)
@@ -160,7 +208,8 @@ def feature(
             name=fn.__name__,
             description=description,
             source=source,
-            keys=keys,
+            keys=derived_keys,
+            entities=entities,
             tags=tags,
             timestamp=timestamp,
             interval=interval_str,
@@ -204,24 +253,42 @@ class Definitions:
 
         # Build to online store
         defs.build(feature_names=["user_spend"], online=True)
+
+        # Using profiles from mlforge.yaml
+        defs = Definitions(
+            name="my-project",
+            features=[my_features],
+            profile="staging",  # Load stores from mlforge.yaml
+        )
     """
 
     def __init__(
         self,
         name: str,
         features: list[Feature | ModuleType],
-        offline_store: store.OfflineStoreKind,
+        offline_store: store.OfflineStoreKind | None = None,
         online_store: online.OnlineStoreKind | None = None,
+        profile: str | None = None,
         default_engine: Literal["polars", "duckdb"] = "duckdb",
     ) -> None:
         """
         Initialize a feature store registry.
 
+        Store resolution order:
+        1. Explicit offline_store/online_store parameters (highest priority)
+        2. Profile from profile parameter
+        3. Profile from MLFORGE_PROFILE environment variable
+        4. Profile from default_profile in mlforge.yaml
+
         Args:
             name: Project name
             features: List of Feature objects or modules containing features
-            offline_store: Storage backend for materialized features
+            offline_store: Storage backend for materialized features. If None,
+                loads from profile configuration.
             online_store: Optional online store for real-time serving. Defaults to None.
+                If None and profile has online_store configured, loads from profile.
+            profile: Profile name to load from mlforge.yaml. If None, uses
+                MLFORGE_PROFILE env var or default_profile from config.
             default_engine: Default execution engine for features without explicit engine.
                 Defaults to "duckdb" which is optimized for large datasets with rolling
                 windows. Use "polars" for small datasets or when you prefer staying in
@@ -229,6 +296,7 @@ class Definitions:
                 engine parameter in the @feature decorator.
 
         Example:
+            # Explicit stores (traditional)
             defs = Definitions(
                 name="fraud-detection",
                 features=[user_features, transaction_features],
@@ -236,20 +304,52 @@ class Definitions:
                 online_store=RedisStore(host="localhost"),
             )
 
-            # Use Polars for small datasets
+            # Using profiles from mlforge.yaml
             defs = Definitions(
                 name="fraud-detection",
                 features=[user_features],
-                offline_store=LocalStore("./features"),
-                default_engine="polars"
+                profile="staging",  # Load from mlforge.yaml
             )
+
+            # Auto-detect profile (uses MLFORGE_PROFILE or default_profile)
+            defs = Definitions(
+                name="fraud-detection",
+                features=[user_features],
+                # Stores loaded from mlforge.yaml automatically
+            )
+
+        Raises:
+            ProfileError: If no offline_store provided and no mlforge.yaml found,
+                or if profile not found in config.
         """
         self.name = name
-        self.offline_store = offline_store
-        self.online_store = online_store
         self.features: dict[str, Feature] = {}
         self.default_engine = default_engine
         self._engines: dict[str, engines.EngineKind] = {}
+
+        # Indexes for O(1) lookups
+        self._entities: dict[str, entities_.Entity] = {}
+        self._sources: dict[str, sources.Source] = {}
+        self._entity_to_features: dict[str, list[str]] = {}
+        self._source_to_features: dict[str, list[str]] = {}
+
+        # Resolve stores from profile if not explicitly provided
+        resolved_offline: store.Store
+        resolved_online: online.OnlineStore | None = online_store
+
+        if offline_store is not None:
+            # Explicit stores win - use as provided
+            resolved_offline = offline_store
+        else:
+            # Try to load from profile
+            profile_config = profiles_.load_profile(profile)
+            resolved_offline = profile_config.offline_store.create()
+            # Only load online store from profile if not explicitly provided
+            if online_store is None and profile_config.online_store is not None:
+                resolved_online = profile_config.online_store.create()
+
+        self.offline_store = resolved_offline
+        self.online_store = resolved_online
 
         for item in features or []:
             self._register(item)
@@ -419,14 +519,14 @@ class Definitions:
             schema_hash = version.compute_schema_hash(schema_columns)
             config_hash = version.compute_config_hash(
                 keys=feature.keys,
-                timestamp=feature.timestamp,
+                timestamp=feature.timestamp_column,
                 interval=feature.interval,
                 metrics_config=self._serialize_metrics_config(feature.metrics),
             )
             content_hash = version.compute_content_hash(
                 Path(write_metadata["path"])
             )
-            source_hash = version.compute_source_hash(feature.source)
+            source_hash = version.compute_source_hash(feature.source_path)
 
             # Build and write feature metadata
             now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
@@ -555,13 +655,14 @@ class Definitions:
         Returns:
             DataFrame with one row per unique entity (without timestamp)
         """
-        if feature.timestamp:
+        ts_col = feature.timestamp_column
+        if ts_col:
             # Sort by timestamp descending, take first per entity
             result = (
-                df.sort(feature.timestamp, descending=True)
+                df.sort(ts_col, descending=True)
                 .group_by(feature.keys)
                 .first()
-                .drop(feature.timestamp)
+                .drop(ts_col)
             )
         else:
             # No timestamp - take last row per entity
@@ -592,11 +693,19 @@ class Definitions:
 
         # Load and process to get current schema (before metrics)
         engine = self._get_engine_for_feature(feature)
-        source_df = engine._load_source(feature.source)
+        source_df = engine._load_source(feature.source_obj)
 
         if isinstance(source_df, duckdb.DuckDBPyRelation):
             source_df_ = source_df.to_arrow_table()
             source_df = pl.from_arrow(source_df_)
+
+        # Ensure we have a DataFrame (from_arrow can return DataFrame | Series)
+        if not isinstance(source_df, pl.DataFrame):
+            raise TypeError("Expected DataFrame from source")
+
+        # Apply entity key generation if needed (same as engine.execute)
+        if feature.entities:
+            source_df = engine._apply_entity_keys(source_df, feature.entities)
 
         preview_df = feature(source_df)
 
@@ -621,7 +730,7 @@ class Definitions:
         )
         current_config_hash = version.compute_config_hash(
             keys=feature.keys,
-            timestamp=feature.timestamp,
+            timestamp=feature.timestamp_column,
             interval=feature.interval,
             metrics_config=self._serialize_metrics_config(feature.metrics),
         )
@@ -715,7 +824,7 @@ class Definitions:
             try:
                 # Load and process data (without metrics)
                 engine = self._get_engine_for_feature(feature)
-                source_df = engine._load_source(feature.source)
+                source_df = engine._load_source(feature.source_obj)
                 processed_df = feature(source_df)
 
                 # Collect if LazyFrame
@@ -823,7 +932,7 @@ class Definitions:
             if metadata.source_hash:
                 try:
                     current_source_hash = version.compute_source_hash(
-                        feature.source
+                        feature.source_path
                     )
                     if current_source_hash != metadata.source_hash:
                         source_changed.append(feature.name)
@@ -832,12 +941,12 @@ class Definitions:
                                 feature_name=feature.name,
                                 expected_hash=metadata.source_hash,
                                 current_hash=current_source_hash,
-                                source_path=feature.source,
+                                source_path=feature.source_path,
                             )
                 except FileNotFoundError:
                     # Source file not found - can't sync
                     logger.warning(
-                        f"Source file not found for {feature.name}: {feature.source}"
+                        f"Source file not found for {feature.name}: {feature.source_path}"
                     )
                     continue
 
@@ -991,6 +1100,96 @@ class Definitions:
         features = self.list_features()
         return [tag for feat in features if feat.tags for tag in feat.tags]
 
+    def list_entities(self) -> list[str]:
+        """
+        List all unique entity names from registered features.
+
+        Returns:
+            Sorted list of unique entity names
+
+        Example:
+            defs = Definitions(features=[user_spend, merchant_spend], offline_store=store)
+            entities = defs.list_entities()  # ["merchant", "user"]
+        """
+        return sorted(self._entities.keys())
+
+    def list_sources(self) -> list[str]:
+        """
+        List all unique source names from registered features.
+
+        Returns:
+            Sorted list of unique source names
+
+        Example:
+            defs = Definitions(features=[user_spend, merchant_spend], offline_store=store)
+            sources = defs.list_sources()  # ["transactions"]
+        """
+        return sorted(self._sources.keys())
+
+    def get_entity(self, name: str) -> entities_.Entity | None:
+        """
+        Get entity by name from registered features.
+
+        Args:
+            name: Entity name to retrieve
+
+        Returns:
+            Entity object if found, None otherwise
+
+        Example:
+            user_entity = defs.get_entity("user")
+            if user_entity:
+                print(user_entity.join_key)  # "user_id"
+        """
+        return self._entities.get(name)
+
+    def get_source(self, name: str) -> sources.Source | None:
+        """
+        Get source by name from registered features.
+
+        Args:
+            name: Source name to retrieve
+
+        Returns:
+            Source object if found, None otherwise
+
+        Example:
+            txn_source = defs.get_source("transactions")
+            if txn_source:
+                print(txn_source.path)  # "data/transactions.parquet"
+        """
+        return self._sources.get(name)
+
+    def features_using_entity(self, entity_name: str) -> list[str]:
+        """
+        List features that use a specific entity.
+
+        Args:
+            entity_name: Name of the entity to search for
+
+        Returns:
+            List of feature names using the entity
+
+        Example:
+            features = defs.features_using_entity("user")  # ["user_spend", "user_transactions"]
+        """
+        return self._entity_to_features.get(entity_name, [])
+
+    def features_using_source(self, source_name: str) -> list[str]:
+        """
+        List features that use a specific source.
+
+        Args:
+            source_name: Name of the source to search for
+
+        Returns:
+            List of feature names using the source
+
+        Example:
+            features = defs.features_using_source("transactions")  # ["user_spend", "merchant_spend"]
+        """
+        return self._source_to_features.get(source_name, [])
+
     def _get_feature(self, name: str) -> Feature:
         """
         Get a feature by name.
@@ -1042,6 +1241,31 @@ class Definitions:
 
         logger.debug(f"Registered feature: {feature.name}")
         self.features[feature.name] = feature
+
+        # Index entities
+        if feature.entities:
+            for entity in feature.entities:
+                if entity.name not in self._entities:
+                    self._entities[entity.name] = entity
+                if entity.name not in self._entity_to_features:
+                    self._entity_to_features[entity.name] = []
+                self._entity_to_features[entity.name].append(feature.name)
+
+        # Index sources
+        if feature.source:
+            if isinstance(feature.source, sources.Source):
+                source_name = feature.source.name
+                if source_name not in self._sources:
+                    self._sources[source_name] = feature.source
+            else:
+                # Legacy string source
+                source_name = Path(feature.source).stem
+                if source_name not in self._sources:
+                    self._sources[source_name] = sources.Source(feature.source)
+
+            if source_name not in self._source_to_features:
+                self._source_to_features[source_name] = []
+            self._source_to_features[source_name].append(feature.name)
 
     def _register_module(self, module: ModuleType) -> None:
         """
@@ -1109,7 +1333,7 @@ class Definitions:
             path=write_metadata["path"],
             entity=feature.keys[0],
             keys=feature.keys,
-            source=feature.source,
+            source=feature.source_path,
             row_count=write_metadata["row_count"],
             created_at=created_at or now,
             updated_at=updated_at or now,
@@ -1117,7 +1341,7 @@ class Definitions:
             schema_hash=schema_hash,
             config_hash=config_hash,
             source_hash=source_hash,
-            timestamp=feature.timestamp,
+            timestamp=feature.timestamp_column,
             interval=feature.interval,
             columns=base_columns,
             features=feature_columns,
@@ -1125,3 +1349,197 @@ class Definitions:
             description=feature.description,
             change_summary=change_summary.to_dict() if change_summary else None,
         )
+
+    # =========================================================================
+    # Feature Retrieval Methods
+    # =========================================================================
+
+    def get_online_features(
+        self,
+        features: list[str],
+        entity_df: pl.DataFrame,
+        store: online.OnlineStore | None = None,
+    ) -> pl.DataFrame:
+        """
+        Retrieve features from online store for inference.
+
+        Unlike the standalone get_online_features(), this method automatically
+        determines the correct entity keys for each feature from the feature
+        definitions. This prevents the common error of using wrong entity keys
+        when retrieving multiple features with different entities.
+
+        Args:
+            features: List of feature names to retrieve
+            entity_df: DataFrame with entity source columns (e.g., first, last, dob
+                for user entity). The method will generate surrogate keys automatically
+                based on each feature's entity definition.
+            store: Optional online store override. Defaults to self.online_store.
+
+        Returns:
+            entity_df with feature columns joined. Missing entities have None values.
+
+        Raises:
+            ValueError: If no online store configured, or if feature name unknown
+
+        Example:
+            # Retrieve multiple features with different entities in one call
+            result = defs.get_online_features(
+                features=["user_spend", "merchant_spend", "card_velocity"],
+                entity_df=request_df,
+            )
+
+            # Override store (e.g., for testing)
+            result = defs.get_online_features(
+                features=["user_spend"],
+                entity_df=request_df,
+                store=test_store,
+            )
+        """
+        online_store = store or self.online_store
+        if online_store is None:
+            raise ValueError(
+                "No online store configured. Either pass store= parameter "
+                "or configure online_store in Definitions/mlforge.yaml."
+            )
+
+        # Collect all unique entities needed across requested features
+        all_entities: list[entities_.Entity] = []
+        seen_entity_names: set[str] = set()
+
+        for feature_name in features:
+            if feature_name not in self.features:
+                raise ValueError(f"Unknown feature: '{feature_name}'")
+            feature = self.features[feature_name]
+            if feature.entities:
+                for entity in feature.entities:
+                    if entity.name not in seen_entity_names:
+                        all_entities.append(entity)
+                        seen_entity_names.add(entity.name)
+
+        # Apply entity key generation (surrogate keys) for all entities
+        result = retrieval_._apply_entities(entity_df, all_entities)
+
+        # Join each feature using only its specific entity keys
+        for feature_name in features:
+            feature = self.features[feature_name]
+            if feature.entities:
+                entity_key_columns = retrieval_._get_entity_key_columns(
+                    feature.entities
+                )
+            else:
+                entity_key_columns = feature.keys
+
+            result = self._join_online_feature_with_keys(
+                result, feature_name, online_store, entity_key_columns
+            )
+
+        return result
+
+    def _join_online_feature_with_keys(
+        self,
+        result: pl.DataFrame,
+        feature_name: str,
+        online_store: online.OnlineStore,
+        entity_key_columns: list[str],
+    ) -> pl.DataFrame:
+        """
+        Join a single feature from online store using specific entity key columns.
+
+        Delegates to the shared join_online_feature_by_keys() helper in retrieval.
+
+        Args:
+            result: Current result DataFrame with entity keys
+            feature_name: Name of feature to retrieve
+            online_store: Online store instance
+            entity_key_columns: Specific entity key columns for this feature
+
+        Returns:
+            Result DataFrame with feature columns joined
+        """
+        return retrieval_.join_online_feature_by_keys(
+            result, feature_name, online_store, entity_key_columns
+        )
+
+    def get_training_data(
+        self,
+        features: list[retrieval_.FeatureSpec],
+        entity_df: pl.DataFrame,
+        timestamp: str | None = None,
+        store: store.Store | None = None,
+    ) -> pl.DataFrame:
+        """
+        Retrieve features from offline store for training.
+
+        Unlike the standalone get_training_data(), this method automatically
+        determines the correct entity keys for each feature from the feature
+        definitions.
+
+        Args:
+            features: Feature specifications. Can be:
+                - "feature_name" - uses latest version
+                - ("feature_name", "1.0.0") - uses specific version
+            entity_df: DataFrame with entity source columns
+            timestamp: Column in entity_df for point-in-time joins.
+                If provided, features with timestamps will be asof-joined.
+            store: Optional store override. Defaults to self.offline_store.
+
+        Returns:
+            entity_df with feature columns joined
+
+        Raises:
+            ValueError: If no store configured, or if feature not found
+
+        Example:
+            # Point-in-time correct training data
+            training_df = defs.get_training_data(
+                features=["user_spend", ("merchant_features", "1.0.0")],
+                entity_df=transactions,
+                timestamp="event_time",
+            )
+        """
+        offline_store = store or self.offline_store
+        if offline_store is None:
+            raise ValueError(
+                "No store configured. Either pass store= parameter "
+                "or configure store in Definitions/mlforge.yaml."
+            )
+
+        # Collect all entities from requested features
+        feature_names = [f if isinstance(f, str) else f[0] for f in features]
+        all_entities = self._collect_entities_for_features(feature_names)
+
+        # Delegate to standalone function with collected entities
+        return retrieval_.get_training_data(
+            features=features,
+            entity_df=entity_df,
+            store=offline_store,
+            entities=all_entities,
+            timestamp=timestamp,
+        )
+
+    def _collect_entities_for_features(
+        self,
+        feature_names: list[str],
+    ) -> list[entities_.Entity]:
+        """
+        Collect unique entities from a list of features.
+
+        Args:
+            feature_names: List of feature names to collect entities from
+
+        Returns:
+            List of unique Entity objects
+        """
+        entities: list[entities_.Entity] = []
+        seen: set[str] = set()
+
+        for name in feature_names:
+            if name in self.features:
+                feature = self.features[name]
+                if feature.entities:
+                    for entity in feature.entities:
+                        if entity.name not in seen:
+                            entities.append(entity)
+                            seen.add(entity.name)
+
+        return entities

@@ -10,24 +10,36 @@ This module provides two main functions for retrieving features:
   Returns latest values with low-latency key lookups.
 
 Example (training):
-    from mlforge import get_training_data, LocalStore
+    import mlforge as mlf
 
-    training_df = get_training_data(
+    user = mlf.Entity(
+        name="user",
+        join_key="user_id",
+        from_columns=["first", "last", "dob"],
+    )
+
+    training_df = mlf.get_training_data(
         features=["user_spend", ("merchant_risk", "1.0.0")],
         entity_df=transactions,
-        store=LocalStore("./feature_store"),
-        entities=[with_user_id],
+        store=mlf.LocalStore("./feature_store"),
+        entities=[user],
         timestamp="event_time",
     )
 
 Example (inference):
-    from mlforge import get_online_features, RedisStore
+    import mlforge as mlf
 
-    features_df = get_online_features(
+    user = mlf.Entity(
+        name="user",
+        join_key="user_id",
+        from_columns=["first", "last", "dob"],
+    )
+
+    features_df = mlf.get_online_features(
         features=["user_spend", "merchant_risk"],
         entity_df=request_df,
-        store=RedisStore(host="localhost"),
-        entities=[with_user_id],
+        store=mlf.RedisStore(host="localhost"),
+        entities=[user],
     )
 """
 
@@ -36,6 +48,7 @@ from pathlib import Path
 
 import polars as pl
 
+import mlforge.entities as entities_
 import mlforge.online as online_
 import mlforge.store as store_
 import mlforge.types as types_
@@ -49,7 +62,7 @@ def get_training_data(
     features: list[FeatureSpec],
     entity_df: pl.DataFrame,
     store: str | Path | store_.Store = "./feature_store",
-    entities: list[utils.EntityKeyTransform] | None = None,
+    entities: list[entities_.Entity] | None = None,
     timestamp: str | None = None,
 ) -> pl.DataFrame:
     """
@@ -61,7 +74,9 @@ def get_training_data(
             - ("feature_name", "1.0.0") - uses specific version
         entity_df: DataFrame with entity keys to join on
         store: Path to feature store or Store instance
-        entities: Entity key transforms to apply to entity_df before joining
+        entities: Entity definitions for key generation/validation.
+            When an entity has from_columns, a surrogate key is generated.
+            Otherwise, validates that join_key columns exist.
         timestamp: Column in entity_df to use for point-in-time joins.
                    If provided, features with timestamps will be asof-joined.
 
@@ -69,26 +84,31 @@ def get_training_data(
         entity_df with feature columns joined
 
     Example:
-        from mlforge import get_training_data
-        from transactions.entities import with_user_id
+        import mlforge as mlf
+
+        user = mlf.Entity(
+            name="user",
+            join_key="user_id",
+            from_columns=["first", "last", "dob"],
+        )
 
         transactions = pl.read_parquet("data/transactions.parquet")
 
         # Point-in-time correct training data with mixed versions
-        training_df = get_training_data(
+        training_df = mlf.get_training_data(
             features=[
                 "user_spend_mean_30d",              # latest version
                 ("merchant_features", "1.0.0"),    # pinned version
             ],
             entity_df=transactions,
-            entities=[with_user_id],
+            entities=[user],
             timestamp="trans_date_trans_time",
         )
     """
     if isinstance(store, (str, Path)):
         store = store_.LocalStore(path=store)
 
-    result = _apply_entity_transforms(entity_df, entities)
+    result = _apply_entities(entity_df, entities)
 
     for feature_spec in features:
         # Parse feature specification
@@ -247,7 +267,7 @@ def get_online_features(
     features: list[str],
     entity_df: pl.DataFrame,
     store: online_.OnlineStore,
-    entities: list[utils.EntityKeyTransform] | None = None,
+    entities: list[entities_.Entity] | None = None,
 ) -> pl.DataFrame:
     """
     Retrieve features from an online store for inference.
@@ -257,30 +277,55 @@ def get_online_features(
     - Does not support versioning (online stores hold latest only)
     - Uses direct key lookups instead of DataFrame joins
 
+    Note:
+        For retrieving multiple features with different entities (e.g., user_spend
+        and merchant_spend), use Definitions.get_online_features() instead. It
+        automatically determines the correct entity keys for each feature, avoiding
+        the common error of entity key mismatches.
+
     Args:
         features: List of feature names to retrieve
         entity_df: DataFrame with entity keys (e.g., inference requests)
         store: Online store instance (e.g., RedisStore)
-        entities: Optional entity key transforms to apply before lookup
+        entities: Entity definitions for key generation/validation.
+            When an entity has from_columns, a surrogate key is generated.
+            Otherwise, validates that join_key columns exist.
+            Important: All features will use ALL entity keys for lookup.
+            For multi-entity scenarios, use Definitions.get_online_features().
 
     Returns:
         entity_df with feature columns joined (None for missing entities)
 
     Example:
-        from mlforge import get_online_features, RedisStore
-        from myproject.entities import with_user_id
+        import mlforge as mlf
 
-        store = RedisStore(host="localhost")
-        request_df = pl.DataFrame({"user_id": ["user_123", "user_456"]})
+        user = mlf.Entity(
+            name="user",
+            join_key="user_id",
+            from_columns=["first", "last", "dob"],
+        )
 
-        features_df = get_online_features(
+        store = mlf.RedisStore(host="localhost")
+        request_df = pl.DataFrame({
+            "first": ["John", "Jane"],
+            "last": ["Doe", "Smith"],
+            "dob": ["1990-01-01", "1985-06-20"],
+        })
+
+        features_df = mlf.get_online_features(
             features=["user_spend"],
             entity_df=request_df,
-            entities=[with_user_id],
+            entities=[user],
             store=store,
         )
+
+        # For multiple features with different entities, prefer:
+        # result = defs.get_online_features(
+        #     features=["user_spend", "merchant_spend"],
+        #     entity_df=request_df,
+        # )
     """
-    result = _apply_entity_transforms(entity_df, entities)
+    result = _apply_entities(entity_df, entities)
 
     # Retrieve each feature and join to result
     for feature_name in features:
@@ -289,44 +334,55 @@ def get_online_features(
     return result
 
 
-def _apply_entity_transforms(
+def _apply_entities(
     df: pl.DataFrame,
-    entities: list[utils.EntityKeyTransform] | None,
+    entities: list[entities_.Entity] | None,
 ) -> pl.DataFrame:
     """
-    Apply entity key transforms with validation.
+    Apply entity key generation and validation.
+
+    For entities with from_columns: validates source columns exist,
+    then generates surrogate key using utils.surrogate_key().
+
+    For entities without from_columns: validates join_key columns exist.
 
     Args:
         df: DataFrame to transform
-        entities: List of entity key transform functions
+        entities: List of entity definitions
 
     Returns:
-        Transformed DataFrame with entity key columns added
+        DataFrame with surrogate key columns added (where needed)
 
     Raises:
-        ValueError: If any transform is missing metadata or required columns
+        ValueError: If required columns are missing
     """
     result = df
 
-    for entity_fn in entities or []:
-        if not hasattr(entity_fn, "_entity_key_columns"):
-            raise ValueError(
-                f"Entity transform '{entity_fn.__name__}' is missing metadata. "
-                f"Use mlforge.entity_key() to create entity transforms."
+    for entity in entities or []:
+        if entity.requires_generation and entity.from_columns is not None:
+            from_columns = entity.from_columns
+
+            # Validate source columns exist
+            missing = [c for c in from_columns if c not in result.columns]
+            if missing:
+                raise ValueError(
+                    f"Entity '{entity.name}' requires columns "
+                    f"{list(from_columns)}, "
+                    f"but entity_df is missing: {missing}"
+                )
+            # Generate surrogate key
+            result = result.with_columns(
+                utils.surrogate_key(*from_columns).alias(entity.join_key)
             )
-
-        required_columns = entity_fn._entity_key_columns
-        missing_columns = [
-            c for c in required_columns if c not in result.columns
-        ]
-
-        if missing_columns:
-            raise ValueError(
-                f"Entity '{entity_fn._entity_key_alias}' requires columns "
-                f"{list(required_columns)}, but entity_df is missing: {missing_columns}"
-            )
-
-        result = result.pipe(entity_fn)
+        else:
+            # Validate join key columns exist
+            missing = [c for c in entity.key_columns if c not in result.columns]
+            if missing:
+                raise ValueError(
+                    f"Entity '{entity.name}' requires columns "
+                    f"{entity.key_columns}, "
+                    f"but entity_df is missing: {missing}"
+                )
 
     return result
 
@@ -335,7 +391,7 @@ def _join_online_feature(
     result: pl.DataFrame,
     feature_name: str,
     store: online_.OnlineStore,
-    entities: list[utils.EntityKeyTransform] | None,
+    entities: list[entities_.Entity] | None,
 ) -> pl.DataFrame:
     """
     Retrieve a single feature from online store and join to result.
@@ -362,6 +418,33 @@ def _join_online_feature(
             "Provide entity transforms via the 'entities' parameter."
         )
 
+    return join_online_feature_by_keys(
+        result, feature_name, store, entity_key_columns
+    )
+
+
+def join_online_feature_by_keys(
+    result: pl.DataFrame,
+    feature_name: str,
+    store: online_.OnlineStore,
+    entity_key_columns: list[str],
+) -> pl.DataFrame:
+    """
+    Join a single feature from online store using specific entity key columns.
+
+    This is the core join logic used by both the standalone get_online_features()
+    and Definitions.get_online_features(). It extracts unique entity combinations,
+    batch-reads from the store, and joins the feature values back.
+
+    Args:
+        result: Current result DataFrame with entity keys
+        feature_name: Name of feature to retrieve
+        store: Online store instance
+        entity_key_columns: Specific entity key columns for this feature
+
+    Returns:
+        Result DataFrame with feature columns joined
+    """
     # Extract unique entity combinations
     unique_entities = result.select(entity_key_columns).unique()
     entity_dicts = [
@@ -397,18 +480,21 @@ def _join_online_feature(
 
 
 def _get_entity_key_columns(
-    entities: list[utils.EntityKeyTransform] | None,
+    entities: list[entities_.Entity] | None,
 ) -> list[str]:
     """
-    Extract entity key column names (aliases) from transforms.
+    Extract all entity key column names.
 
     Args:
-        entities: List of entity key transforms
+        entities: List of entity definitions
 
     Returns:
-        List of entity key alias column names
+        Flat list of all join key column names
     """
     if not entities:
         return []
 
-    return [entity_fn._entity_key_alias for entity_fn in entities]
+    columns = []
+    for entity in entities:
+        columns.extend(entity.key_columns)
+    return columns

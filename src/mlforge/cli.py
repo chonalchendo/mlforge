@@ -6,9 +6,167 @@ import cyclopts
 import mlforge.errors as errors
 import mlforge.loader as loader
 import mlforge.logging as log
+import mlforge.profiles as profiles_
 import mlforge.store as store_
 
 app = cyclopts.App(name="mlforge", help="A simple feature store SDK")
+
+# =============================================================================
+# Project initialization templates
+# =============================================================================
+
+DEFINITIONS_TEMPLATE = '''"""Definitions for {name}."""
+
+import mlforge as mlf
+from {module_name} import features
+
+defs = mlf.Definitions(
+    name="{name}",
+    features=[features],
+    offline_store=mlf.LocalStore(path="./feature_store"),{online_store}{engine}
+)
+'''
+
+DEFINITIONS_ONLINE_REDIS = """
+    online_store=mlf.RedisStore(host="localhost", port=6379),"""
+
+DEFINITIONS_ONLINE_VALKEY = """
+    online_store=mlf.ValkeyStore(host="localhost", port=6379),"""
+
+DEFINITIONS_ENGINE_DUCKDB = """
+    engine="duckdb","""
+
+DEFINITIONS_S3_STORE = '''"""Definitions for {name}."""
+
+import mlforge as mlf
+from {module_name} import features
+
+defs = mlf.Definitions(
+    name="{name}",
+    features=[features],
+    offline_store=mlf.S3Store(
+        bucket="my-bucket",
+        prefix="features",
+    ),{online_store}{engine}
+)
+'''
+
+FEATURES_TEMPLATE = '''"""Feature definitions for {name}."""
+
+import mlforge as mlf
+import polars as pl
+
+
+# Example feature - replace with your own
+@mlf.feature(
+    source="data/example.parquet",
+    keys=["entity_id"],
+    timestamp="event_time",
+    interval="1d",
+)
+def example_feature(df: pl.DataFrame) -> pl.DataFrame:
+    """Example feature - replace with your implementation."""
+    return df.select("entity_id", "event_time", "value")
+'''
+
+ENTITIES_TEMPLATE = '''"""Entity definitions for {name}."""
+
+import mlforge as mlf  # noqa: F401
+
+# Example entity - replace with your own
+# user = mlf.Entity(
+#     name="user",
+#     join_key="user_id",
+#     from_columns=["first_name", "last_name"],
+# )
+'''
+
+PYPROJECT_TEMPLATE = """[project]
+name = "{name}"
+version = "0.1.0"
+requires-python = ">=3.13"
+dependencies = [
+    "{mlforge_dep}",
+    "polars>=1.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "ruff>=0.4.0",
+]
+
+[tool.ruff]
+line-length = 88
+target-version = "py313"
+"""
+
+README_TEMPLATE = """# {name}
+
+Feature store built with [mlforge](https://github.com/chonalchendo/mlforge).
+
+## Setup
+
+```bash
+uv sync
+```
+
+## Build Features
+
+```bash
+mlforge build --target src/{module_name}/definitions.py
+```
+
+## List Features
+
+```bash
+mlforge list features --target src/{module_name}/definitions.py
+```
+"""
+
+GITIGNORE_TEMPLATE = """# Python
+__pycache__/
+*.py[cod]
+.venv/
+
+# mlforge
+feature_store/*.parquet
+
+# IDE
+.idea/
+.vscode/
+"""
+
+FEATURE_STORE_GITIGNORE = """# Ignore parquet files but keep directory
+*.parquet
+!.gitignore
+"""
+
+MLFORGE_YAML_TEMPLATE = """default_profile: dev
+
+profiles:
+  dev:
+    offline_store:
+      KIND: local
+      path: ./feature_store
+
+  production:
+    offline_store:
+      KIND: s3
+      bucket: ${{oc.env:S3_BUCKET}}
+      prefix: features
+"""
+
+# Sub-apps for command groups
+list_app = cyclopts.App(
+    name="list", help="List features, entities, sources, or versions."
+)
+app.command(list_app)
+
+inspect_app = cyclopts.App(
+    name="inspect", help="Inspect features, entities, or sources."
+)
+app.command(inspect_app)
 
 
 @app.meta.default
@@ -81,6 +239,13 @@ def build(
             help="Write to online store instead of offline store.",
         ),
     ] = False,
+    profile: Annotated[
+        str | None,
+        cyclopts.Parameter(
+            name="--profile",
+            help="Profile name from mlforge.yaml to use for stores.",
+        ),
+    ] = None,
 ):
     """
     Materialize features to offline storage with versioning.
@@ -102,6 +267,7 @@ def build(
         no_preview: Disable feature preview output. Defaults to False.
         preview_rows: Number of preview rows to display. Defaults to 5.
         online: Write to online store instead of offline. Defaults to False.
+        profile: Profile name from mlforge.yaml. Defaults to None (uses env var or config default).
 
     Raises:
         SystemExit: If loading definitions or materialization fails
@@ -112,7 +278,7 @@ def build(
         )
 
     try:
-        defs = loader.load_definitions(target)
+        defs = loader.load_definitions(target, profile=profile)
         feature_names = (
             [f.strip() for f in features.split(",")] if features else None
         )
@@ -149,6 +315,7 @@ def build(
     except (
         errors.DefinitionsLoadError,
         errors.FeatureMaterializationError,
+        errors.ProfileError,
     ) as e:
         log.print_error(str(e))
         raise SystemExit(1)
@@ -173,6 +340,13 @@ def validate(
         str | None,
         cyclopts.Parameter(name="--tags", help="Comma-separated feature tags"),
     ] = None,
+    profile: Annotated[
+        str | None,
+        cyclopts.Parameter(
+            name="--profile",
+            help="Profile name from mlforge.yaml to use for stores.",
+        ),
+    ] = None,
 ):
     """
     Run validation checks on features without building.
@@ -184,6 +358,7 @@ def validate(
         target: Path to definitions file. Defaults to "definitions.py".
         features: Comma-separated list of feature names. Defaults to None (all).
         tags: Comma-separated list of feature tags. Defaults to None.
+        profile: Profile name from mlforge.yaml. Defaults to None (uses env var or config default).
 
     Raises:
         SystemExit: If loading definitions fails or any validation fails
@@ -194,7 +369,7 @@ def validate(
         )
 
     try:
-        defs = loader.load_definitions(target)
+        defs = loader.load_definitions(target, profile=profile)
         feature_names = (
             [f.strip() for f in features.split(",")] if features else None
         )
@@ -222,13 +397,13 @@ def validate(
         if failed > 0:
             raise SystemExit(1)
 
-    except errors.DefinitionsLoadError as e:
+    except (errors.DefinitionsLoadError, errors.ProfileError) as e:
         log.print_error(str(e))
         raise SystemExit(1)
 
 
-@app.command
-def list_(
+@list_app.command
+def features(
     target: Annotated[
         str | None,
         cyclopts.Parameter(
@@ -237,35 +412,120 @@ def list_(
     ] = None,
     tags: Annotated[
         str | None,
-        cyclopts.Parameter(help="Comma-separated list of feature tags."),
+        cyclopts.Parameter(
+            name="--tags", help="Comma-separated list of feature tags."
+        ),
+    ] = None,
+    profile: Annotated[
+        str | None,
+        cyclopts.Parameter(
+            name="--profile",
+            help="Profile name from mlforge.yaml to use for stores.",
+        ),
     ] = None,
 ):
     """
-    Display all registered features in a table.
+    List all registered features.
 
     Loads feature definitions and prints their metadata including
     names, keys, sources, and descriptions.
     """
-
-    defs = loader.load_definitions(target)
-    features = defs.features
+    try:
+        defs = loader.load_definitions(target, profile=profile)
+    except (errors.DefinitionsLoadError, errors.ProfileError) as e:
+        log.print_error(str(e))
+        raise SystemExit(1)
+    feature_dict = defs.features
 
     if tags:
         tag_set = {t.strip() for t in tags.split(",")}
-        features = {
+        feature_dict = {
             name: feature
-            for name, feature in features.items()
+            for name, feature in feature_dict.items()
             if feature.tags and tag_set.intersection(feature.tags)
         }
 
-        if not features:
-            raise ValueError(f"Unknown tags: {tags}")
+        if not feature_dict:
+            log.print_warning(f"No features found with tags: {tags}")
+            return
 
-    log.print_features_table(features)
+    log.print_features_table(feature_dict)
 
 
-@app.command
-def inspect(
+@list_app.command
+def entities(
+    target: Annotated[
+        str | None,
+        cyclopts.Parameter(
+            help="Path to definitions.py file - automatically handled."
+        ),
+    ] = None,
+    profile: Annotated[
+        str | None,
+        cyclopts.Parameter(
+            name="--profile",
+            help="Profile name from mlforge.yaml to use for stores.",
+        ),
+    ] = None,
+):
+    """
+    List all entities used by features.
+
+    Shows entity names, join keys, and source columns for surrogate key generation.
+    """
+    try:
+        defs = loader.load_definitions(target, profile=profile)
+    except (errors.DefinitionsLoadError, errors.ProfileError) as e:
+        log.print_error(str(e))
+        raise SystemExit(1)
+
+    entity_names = defs.list_entities()
+    if not entity_names:
+        log.print_warning("No entities found.")
+        return
+
+    entities_dict = {name: defs.get_entity(name) for name in entity_names}
+    log.print_entities_table(entities_dict)
+
+
+@list_app.command
+def sources(
+    target: Annotated[
+        str | None,
+        cyclopts.Parameter(
+            help="Path to definitions.py file - automatically handled."
+        ),
+    ] = None,
+    profile: Annotated[
+        str | None,
+        cyclopts.Parameter(
+            name="--profile",
+            help="Profile name from mlforge.yaml to use for stores.",
+        ),
+    ] = None,
+):
+    """
+    List all sources used by features.
+
+    Shows source names, paths, formats, and storage locations.
+    """
+    try:
+        defs = loader.load_definitions(target, profile=profile)
+    except (errors.DefinitionsLoadError, errors.ProfileError) as e:
+        log.print_error(str(e))
+        raise SystemExit(1)
+
+    source_names = defs.list_sources()
+    if not source_names:
+        log.print_warning("No sources found.")
+        return
+
+    sources_dict = {name: defs.get_source(name) for name in source_names}
+    log.print_sources_table(sources_dict)
+
+
+@inspect_app.command
+def feature(
     feature_name: Annotated[
         str,
         cyclopts.Parameter(help="Name of the feature to inspect"),
@@ -281,9 +541,16 @@ def inspect(
             help="Specific version to inspect. Defaults to latest.",
         ),
     ] = None,
+    profile: Annotated[
+        str | None,
+        cyclopts.Parameter(
+            name="--profile",
+            help="Profile name from mlforge.yaml to use for stores.",
+        ),
+    ] = None,
 ):
     """
-    Display detailed metadata for a specific feature version.
+    Inspect a feature's detailed metadata.
 
     Shows feature configuration, storage details, column information,
     version info, and hashes from the feature's metadata file.
@@ -292,12 +559,13 @@ def inspect(
         feature_name: Name of the feature to inspect
         target: Path to definitions file. Defaults to "definitions.py".
         version: Specific version to inspect. Defaults to latest.
+        profile: Profile name from mlforge.yaml. Defaults to None (uses env var or config default).
 
     Raises:
         SystemExit: If feature metadata is not found
     """
     try:
-        defs = loader.load_definitions(target)
+        defs = loader.load_definitions(target, profile=profile)
         metadata = defs.offline_store.read_metadata(feature_name, version)
 
         if not metadata:
@@ -310,12 +578,108 @@ def inspect(
 
         log.print_feature_metadata(feature_name, metadata)
 
-    except errors.DefinitionsLoadError as e:
+    except (errors.DefinitionsLoadError, errors.ProfileError) as e:
         log.print_error(str(e))
         raise SystemExit(1)
 
 
-@app.command
+@inspect_app.command
+def entity(
+    entity_name: Annotated[
+        str,
+        cyclopts.Parameter(help="Name of the entity to inspect"),
+    ],
+    target: Annotated[
+        str | None,
+        cyclopts.Parameter(name="--target", help="Path to definitions.py file"),
+    ] = None,
+    profile: Annotated[
+        str | None,
+        cyclopts.Parameter(
+            name="--profile",
+            help="Profile name from mlforge.yaml to use for stores.",
+        ),
+    ] = None,
+):
+    """
+    Inspect an entity's details.
+
+    Shows entity configuration including join key, source columns,
+    and which features use this entity.
+
+    Args:
+        entity_name: Name of the entity to inspect
+        target: Path to definitions file. Defaults to "definitions.py".
+        profile: Profile name from mlforge.yaml. Defaults to None (uses env var or config default).
+
+    Raises:
+        SystemExit: If entity is not found
+    """
+    try:
+        defs = loader.load_definitions(target, profile=profile)
+        ent = defs.get_entity(entity_name)
+
+        if ent is None:
+            log.print_error(f"Entity '{entity_name}' not found.")
+            raise SystemExit(1)
+
+        used_in = defs.features_using_entity(entity_name)
+        log.print_entity_detail(ent, used_in)
+
+    except (errors.DefinitionsLoadError, errors.ProfileError) as e:
+        log.print_error(str(e))
+        raise SystemExit(1)
+
+
+@inspect_app.command
+def source(
+    source_name: Annotated[
+        str,
+        cyclopts.Parameter(help="Name of the source to inspect"),
+    ],
+    target: Annotated[
+        str | None,
+        cyclopts.Parameter(name="--target", help="Path to definitions.py file"),
+    ] = None,
+    profile: Annotated[
+        str | None,
+        cyclopts.Parameter(
+            name="--profile",
+            help="Profile name from mlforge.yaml to use for stores.",
+        ),
+    ] = None,
+):
+    """
+    Inspect a source's details.
+
+    Shows source configuration including path, format, location,
+    and which features use this source.
+
+    Args:
+        source_name: Name of the source to inspect
+        target: Path to definitions file. Defaults to "definitions.py".
+        profile: Profile name from mlforge.yaml. Defaults to None (uses env var or config default).
+
+    Raises:
+        SystemExit: If source is not found
+    """
+    try:
+        defs = loader.load_definitions(target, profile=profile)
+        src = defs.get_source(source_name)
+
+        if src is None:
+            log.print_error(f"Source '{source_name}' not found.")
+            raise SystemExit(1)
+
+        used_in = defs.features_using_source(source_name)
+        log.print_source_detail(src, used_in)
+
+    except (errors.DefinitionsLoadError, errors.ProfileError) as e:
+        log.print_error(str(e))
+        raise SystemExit(1)
+
+
+@list_app.command
 def versions(
     feature_name: Annotated[
         str,
@@ -324,6 +688,13 @@ def versions(
     target: Annotated[
         str | None,
         cyclopts.Parameter(name="--target", help="Path to definitions.py file"),
+    ] = None,
+    profile: Annotated[
+        str | None,
+        cyclopts.Parameter(
+            name="--profile",
+            help="Profile name from mlforge.yaml to use for stores.",
+        ),
     ] = None,
 ):
     """
@@ -334,12 +705,13 @@ def versions(
     Args:
         feature_name: Name of the feature to list versions for
         target: Path to definitions file. Defaults to "definitions.py".
+        profile: Profile name from mlforge.yaml. Defaults to None (uses env var or config default).
 
     Raises:
         SystemExit: If loading definitions fails
     """
     try:
-        defs = loader.load_definitions(target)
+        defs = loader.load_definitions(target, profile=profile)
         version_list = defs.offline_store.list_versions(feature_name)
 
         if not version_list:
@@ -351,7 +723,7 @@ def versions(
         latest = defs.offline_store.get_latest_version(feature_name)
         log.print_versions_table(feature_name, version_list, latest)
 
-    except errors.DefinitionsLoadError as e:
+    except (errors.DefinitionsLoadError, errors.ProfileError) as e:
         log.print_error(str(e))
         raise SystemExit(1)
 
@@ -369,6 +741,13 @@ def manifest(
             help="Regenerate consolidated manifest.json from .meta.json files",
         ),
     ] = False,
+    profile: Annotated[
+        str | None,
+        cyclopts.Parameter(
+            name="--profile",
+            help="Profile name from mlforge.yaml to use for stores.",
+        ),
+    ] = None,
 ):
     """
     Display or regenerate the feature manifest.
@@ -379,12 +758,13 @@ def manifest(
     Args:
         target: Path to definitions file. Defaults to "definitions.py".
         regenerate: Rebuild manifest from metadata files. Defaults to False.
+        profile: Profile name from mlforge.yaml. Defaults to None (uses env var or config default).
 
     Raises:
         SystemExit: If loading definitions fails
     """
     try:
-        defs = loader.load_definitions(target)
+        defs = loader.load_definitions(target, profile=profile)
         metadata_list = defs.offline_store.list_metadata()
 
         if not metadata_list:
@@ -424,7 +804,7 @@ def manifest(
         else:
             log.print_manifest_summary(metadata_list)
 
-    except errors.DefinitionsLoadError as e:
+    except (errors.DefinitionsLoadError, errors.ProfileError) as e:
         log.print_error(str(e))
         raise SystemExit(1)
 
@@ -457,6 +837,13 @@ def sync(
             help="Rebuild even if source data has changed since original build",
         ),
     ] = False,
+    profile: Annotated[
+        str | None,
+        cyclopts.Parameter(
+            name="--profile",
+            help="Profile name from mlforge.yaml to use for stores.",
+        ),
+    ] = None,
 ):
     """
     Rebuild features that have metadata but no data.
@@ -473,12 +860,13 @@ def sync(
         features: Comma-separated list of feature names. Defaults to None (all).
         dry_run: Show what would be synced without doing it. Defaults to False.
         force: Rebuild even if source data has changed. Defaults to False.
+        profile: Profile name from mlforge.yaml. Defaults to None (uses env var or config default).
 
     Raises:
         SystemExit: If store is not LocalStore or sync fails
     """
     try:
-        defs = loader.load_definitions(target)
+        defs = loader.load_definitions(target, profile=profile)
 
         # Verify store is LocalStore
         if not isinstance(defs.offline_store, store_.LocalStore):
@@ -519,9 +907,513 @@ def sync(
             else:
                 log.print_success("All features are up to date.")
 
-    except errors.DefinitionsLoadError as e:
+    except (
+        errors.DefinitionsLoadError,
+        errors.ProfileError,
+        errors.SourceDataChangedError,
+    ) as e:
         log.print_error(str(e))
         raise SystemExit(1)
-    except errors.SourceDataChangedError as e:
+
+
+@app.command
+def profile(
+    profile_name: Annotated[
+        str | None,
+        cyclopts.Parameter(
+            name="--profile",
+            help="Profile name to display. Defaults to current profile.",
+        ),
+    ] = None,
+    validate_: Annotated[
+        bool,
+        cyclopts.Parameter(
+            name="--validate",
+            help="Validate connectivity to configured stores.",
+        ),
+    ] = False,
+):
+    """
+    Display current profile configuration.
+
+    Shows the active profile and its store configurations. Use --validate
+    to test connectivity to configured stores.
+
+    Args:
+        profile_name: Profile name to display. Defaults to current profile.
+        validate_: Test connectivity to stores. Defaults to False.
+
+    Raises:
+        SystemExit: If profile not found or validation fails
+    """
+    try:
+        # Get profile info (single load_config call)
+        info = profiles_.get_profile_info()
+        if info is None:
+            log.print_warning(
+                f"No {profiles_.CONFIG_FILENAME} found in current directory."
+            )
+            log.print_info(
+                "Create mlforge.yaml to configure environment profiles."
+            )
+            return
+
+        current_name, source, config = info
+        target_name = profile_name or current_name
+
+        # Determine source description
+        if profile_name:
+            source_str = "explicitly requested"
+        elif source == "env":
+            source_str = "from MLFORGE_PROFILE env var"
+        else:
+            source_str = f"from {profiles_.CONFIG_FILENAME} default"
+
+        # Load and display profile
+        profile_config = profiles_.load_profile(target_name)
+        log.print_info(f"Profile: {target_name} ({source_str})")
+        log.print_info("")
+        profiles_.print_store_config(profile_config)
+
+        if validate_:
+            profiles_.validate_stores(profile_config)
+
+    except errors.ProfileError as e:
         log.print_error(str(e))
         raise SystemExit(1)
+
+
+@app.command
+def init(
+    name: Annotated[
+        str,
+        cyclopts.Parameter(help="Name of the project to create"),
+    ],
+    online: Annotated[
+        str | None,
+        cyclopts.Parameter(
+            name="--online",
+            help="Include online store config (redis, valkey)",
+        ),
+    ] = None,
+    engine: Annotated[
+        str | None,
+        cyclopts.Parameter(
+            name="--engine",
+            help="Default compute engine (duckdb)",
+        ),
+    ] = None,
+    store: Annotated[
+        str | None,
+        cyclopts.Parameter(
+            name="--store",
+            help="Offline store type (local, s3). Defaults to local.",
+        ),
+    ] = None,
+    with_profile: Annotated[
+        bool,
+        cyclopts.Parameter(
+            name="--profile",
+            help="Include mlforge.yaml with environment profiles",
+        ),
+    ] = False,
+):
+    """
+    Initialize a new mlforge project.
+
+    Creates a project directory with boilerplate structure including
+    source files, pyproject.toml, README, and configuration files.
+
+    Args:
+        name: Name of the project to create
+        online: Include online store config (redis, valkey)
+        engine: Default compute engine (duckdb)
+        store: Offline store type (local, s3). Defaults to local.
+        with_profile: Include mlforge.yaml with environment profiles
+
+    Raises:
+        SystemExit: If directory already exists or invalid options provided
+    """
+    project_dir = Path(name)
+    module_name = name.replace("-", "_")
+
+    # Validate directory doesn't exist
+    if project_dir.exists():
+        log.print_error(f"Directory '{name}' already exists")
+        raise SystemExit(1)
+
+    # Validate options
+    if online and online not in ("redis", "valkey"):
+        log.print_error(
+            f"Invalid online store: '{online}'. Use 'redis' or 'valkey'."
+        )
+        raise SystemExit(1)
+
+    if engine and engine != "duckdb":
+        log.print_error(f"Invalid engine: '{engine}'. Use 'duckdb'.")
+        raise SystemExit(1)
+
+    if store and store not in ("local", "s3"):
+        log.print_error(f"Invalid store: '{store}'. Use 'local' or 's3'.")
+        raise SystemExit(1)
+
+    # Create directory structure
+    src_dir = project_dir / "src" / module_name
+    src_dir.mkdir(parents=True)
+    (project_dir / "data").mkdir()
+    (project_dir / "feature_store").mkdir()
+
+    # Build definitions content
+    online_store = ""
+    if online == "redis":
+        online_store = DEFINITIONS_ONLINE_REDIS
+    elif online == "valkey":
+        online_store = DEFINITIONS_ONLINE_VALKEY
+
+    engine_str = DEFINITIONS_ENGINE_DUCKDB if engine == "duckdb" else ""
+
+    if store == "s3":
+        definitions_content = DEFINITIONS_S3_STORE.format(
+            name=name,
+            module_name=module_name,
+            online_store=online_store,
+            engine=engine_str,
+        )
+    else:
+        definitions_content = DEFINITIONS_TEMPLATE.format(
+            name=name,
+            module_name=module_name,
+            online_store=online_store,
+            engine=engine_str,
+        )
+
+    # Determine mlforge dependency
+    mlforge_dep = "mlforge>=0.6.0"
+    if engine == "duckdb":
+        mlforge_dep = "mlforge[duckdb]>=0.6.0"
+
+    # Write source files
+    (src_dir / "__init__.py").write_text("")
+    (src_dir / "definitions.py").write_text(definitions_content)
+    (src_dir / "features.py").write_text(FEATURES_TEMPLATE.format(name=name))
+    (src_dir / "entities.py").write_text(ENTITIES_TEMPLATE.format(name=name))
+
+    # Write project files
+    (project_dir / "pyproject.toml").write_text(
+        PYPROJECT_TEMPLATE.format(name=name, mlforge_dep=mlforge_dep)
+    )
+    (project_dir / "README.md").write_text(
+        README_TEMPLATE.format(name=name, module_name=module_name)
+    )
+    (project_dir / ".gitignore").write_text(GITIGNORE_TEMPLATE)
+    (project_dir / "data" / ".gitkeep").write_text("")
+    (project_dir / "feature_store" / ".gitignore").write_text(
+        FEATURE_STORE_GITIGNORE
+    )
+
+    # Write profile config if requested
+    if with_profile:
+        (project_dir / "mlforge.yaml").write_text(MLFORGE_YAML_TEMPLATE)
+
+    log.print_success(f"Created project '{name}'")
+    log.console.print("")
+    log.console.print("Next steps:")
+    log.console.print(f"  cd {name}")
+    log.console.print("  uv sync")
+    log.console.print(
+        f"  mlforge build --target src/{module_name}/definitions.py"
+    )
+
+
+@app.command
+def diff(
+    feature_name: Annotated[
+        str,
+        cyclopts.Parameter(help="Name of the feature to compare"),
+    ],
+    version1: Annotated[
+        str | None,
+        cyclopts.Parameter(help="First version to compare"),
+    ] = None,
+    version2: Annotated[
+        str | None,
+        cyclopts.Parameter(help="Second version to compare"),
+    ] = None,
+    target: Annotated[
+        str | None,
+        cyclopts.Parameter(name="--target", help="Path to definitions.py file"),
+    ] = None,
+    format_: Annotated[
+        str,
+        cyclopts.Parameter(
+            name="--format",
+            help="Output format (table, json)",
+        ),
+    ] = "table",
+    quiet: Annotated[
+        bool,
+        cyclopts.Parameter(
+            name="--quiet",
+            help="Quiet mode (exit code only)",
+        ),
+    ] = False,
+    profile: Annotated[
+        str | None,
+        cyclopts.Parameter(
+            name="--profile",
+            help="Profile name from mlforge.yaml to use for stores.",
+        ),
+    ] = None,
+):
+    """
+    Compare two versions of a feature.
+
+    Shows schema changes, config changes, and data statistics between versions.
+
+    Examples:
+        mlforge diff user_spend 1.0.0 2.0.0  # Compare specific versions
+        mlforge diff user_spend 1.0.0        # Compare with latest
+        mlforge diff user_spend              # Compare latest with previous
+
+    Exit codes:
+        0: No differences (same version)
+        1: PATCH differences (data only)
+        2: MINOR differences (additive)
+        3: MAJOR differences (breaking)
+        4: Error
+
+    Args:
+        feature_name: Name of the feature to compare
+        version1: First version to compare. If not specified, compares latest with previous.
+        version2: Second version to compare. If not specified, compares version1 with latest.
+        target: Path to definitions file. Defaults to "definitions.py".
+        format_: Output format (table, json). Defaults to "table".
+        quiet: Quiet mode (exit code only). Defaults to False.
+        profile: Profile name from mlforge.yaml. Defaults to None.
+
+    Raises:
+        SystemExit: With exit code based on diff result or error
+    """
+    import mlforge.version as version
+
+    try:
+        defs = loader.load_definitions(target, profile=profile)
+
+        # Get store root path - must be LocalStore
+        if not isinstance(defs.offline_store, store_.LocalStore):
+            log.print_error("diff command requires LocalStore")
+            raise SystemExit(4)
+
+        store_root = defs.offline_store.path
+
+        # Resolve versions
+        if version1 is None and version2 is None:
+            # Compare latest with previous
+            latest = defs.offline_store.get_latest_version(feature_name)
+            if latest is None:
+                log.print_error(
+                    f"No versions found for feature '{feature_name}'"
+                )
+                raise SystemExit(4)
+
+            prev = version.get_previous_version(store_root, feature_name)
+            if prev is None:
+                log.print_error(
+                    f"Only one version exists for '{feature_name}'. "
+                    "Need at least 2 versions to compare."
+                )
+                raise SystemExit(4)
+
+            version_from: str = prev
+            version_to: str = latest
+        elif version1 is not None and version2 is None:
+            # Compare version1 with latest
+            latest = defs.offline_store.get_latest_version(feature_name)
+            if latest is None:
+                log.print_error(
+                    f"No versions found for feature '{feature_name}'"
+                )
+                raise SystemExit(4)
+            version_from = version1
+            version_to = latest
+        elif version1 is not None and version2 is not None:
+            # Compare version1 with version2
+            version_from = version1
+            version_to = version2
+        else:
+            # version1 is None but version2 is not - invalid
+            log.print_error("Cannot specify version2 without version1")
+            raise SystemExit(4)
+
+        # Perform diff
+        diff_result = version.diff_versions(
+            store_root, feature_name, version_from, version_to
+        )
+
+        # Output result
+        if not quiet:
+            if format_ == "json":
+                log.print_version_diff_json(diff_result)
+            else:
+                log.print_version_diff(diff_result)
+
+        # Exit code based on change type
+        change_type = diff_result.change_type
+        if change_type == version.ChangeType.MAJOR:
+            raise SystemExit(3)
+        elif change_type == version.ChangeType.MINOR:
+            raise SystemExit(2)
+        elif change_type == version.ChangeType.PATCH:
+            raise SystemExit(1)
+        else:
+            raise SystemExit(0)
+
+    except errors.VersionNotFoundError as e:
+        log.print_error(str(e))
+        raise SystemExit(4)
+    except (errors.DefinitionsLoadError, errors.ProfileError) as e:
+        log.print_error(str(e))
+        raise SystemExit(4)
+
+
+@app.command
+def rollback(
+    feature_name: Annotated[
+        str,
+        cyclopts.Parameter(help="Name of the feature to rollback"),
+    ],
+    version: Annotated[
+        str | None,
+        cyclopts.Parameter(help="Version to rollback to"),
+    ] = None,
+    previous: Annotated[
+        bool,
+        cyclopts.Parameter(
+            name="--previous",
+            help="Rollback to the version before latest",
+        ),
+    ] = False,
+    dry_run: Annotated[
+        bool,
+        cyclopts.Parameter(
+            name="--dry-run",
+            help="Show what would happen without making changes",
+        ),
+    ] = False,
+    force: Annotated[
+        bool,
+        cyclopts.Parameter(
+            name=["--force", "-f"],
+            help="Skip confirmation prompt",
+        ),
+    ] = False,
+    target: Annotated[
+        str | None,
+        cyclopts.Parameter(name="--target", help="Path to definitions.py file"),
+    ] = None,
+    profile: Annotated[
+        str | None,
+        cyclopts.Parameter(
+            name="--profile",
+            help="Profile name from mlforge.yaml to use for stores.",
+        ),
+    ] = None,
+):
+    """
+    Rollback a feature to a previous version.
+
+    Updates _latest.json to point to the target version.
+    Does NOT delete any version data.
+
+    Examples:
+        mlforge rollback user_spend 1.0.0     # Rollback to specific version
+        mlforge rollback user_spend --previous  # Rollback to previous version
+        mlforge rollback user_spend 1.0.0 --dry-run  # Preview without changes
+
+    Exit codes:
+        0: Rollback successful
+        1: Version not found
+        2: Already at target version
+        3: User cancelled
+        4: Error
+
+    Args:
+        feature_name: Name of the feature to rollback
+        version: Version to rollback to
+        previous: Rollback to the version before latest. Defaults to False.
+        dry_run: Show what would happen without making changes. Defaults to False.
+        force: Skip confirmation prompt. Defaults to False.
+        target: Path to definitions file. Defaults to "definitions.py".
+        profile: Profile name from mlforge.yaml. Defaults to None.
+
+    Raises:
+        SystemExit: With exit code based on result
+    """
+    import mlforge.version as version_mod
+
+    try:
+        defs = loader.load_definitions(target, profile=profile)
+
+        # Get store root path - must be LocalStore
+        if not isinstance(defs.offline_store, store_.LocalStore):
+            log.print_error("rollback command requires LocalStore")
+            raise SystemExit(4)
+
+        store_root = defs.offline_store.path
+
+        # Determine target version
+        if previous:
+            prev = version_mod.get_previous_version(store_root, feature_name)
+            if prev is None:
+                log.print_error(
+                    f"No previous version found for '{feature_name}'. "
+                    "Need at least 2 versions to rollback."
+                )
+                raise SystemExit(1)
+            target_version: str = prev
+        elif version is None:
+            log.print_error("Must specify either a version or --previous flag")
+            raise SystemExit(4)
+        else:
+            target_version = version
+
+        # Get current version for confirmation
+        current_version = defs.offline_store.get_latest_version(feature_name)
+        if current_version is None:
+            log.print_error(f"No versions found for feature '{feature_name}'")
+            raise SystemExit(1)
+
+        # Show confirmation unless force or dry_run
+        if not force and not dry_run:
+            log.print_rollback_confirmation(
+                feature_name, current_version, target_version
+            )
+            log.console.print("")
+            response = input("Proceed? [y/N]: ")
+            if response.lower() not in ("y", "yes"):
+                log.print_info("Rollback cancelled.")
+                raise SystemExit(3)
+
+        # Perform rollback
+        result = version_mod.rollback_version(
+            store_root, feature_name, target_version, dry_run=dry_run
+        )
+
+        log.print_rollback_result(result)
+
+        if result.success:
+            if not dry_run:
+                log.print_success(
+                    f"Rolled back {feature_name} to version {target_version}"
+                )
+            raise SystemExit(0)
+
+    except errors.VersionNotFoundError as e:
+        log.print_error(str(e))
+        raise SystemExit(1)
+    except errors.AlreadyAtVersionError as e:
+        log.print_error(str(e))
+        raise SystemExit(2)
+    except (errors.DefinitionsLoadError, errors.ProfileError) as e:
+        log.print_error(str(e))
+        raise SystemExit(4)

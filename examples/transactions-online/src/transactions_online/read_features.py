@@ -17,8 +17,7 @@ import polars as pl
 
 from mlforge import get_online_features
 from mlforge.online import RedisStore
-
-from transactions_online.features import with_user_id
+from transactions_online.features import user
 
 
 def main() -> None:
@@ -87,7 +86,7 @@ def main() -> None:
         features=["user_spend"],
         entity_df=request_df,
         store=store,
-        entities=[with_user_id],
+        entities=[user],
     )
 
     print("\nResult with features joined:")
@@ -112,6 +111,7 @@ def main() -> None:
     print("""
     from mlforge import get_online_features
     from mlforge.online import RedisStore
+    from transactions_online.features import user
 
     store = RedisStore(host="localhost")
 
@@ -119,7 +119,7 @@ def main() -> None:
         features=["user_spend"],
         entity_df=request_df,
         store=store,
-        entities=[with_user_id],
+        entities=[user],
     )
     """)
 

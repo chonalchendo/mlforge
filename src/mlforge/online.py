@@ -26,7 +26,24 @@ Example:
 import hashlib
 import json
 from abc import ABC, abstractmethod
+from decimal import Decimal
 from typing import Any, cast, override
+
+
+class _FeatureEncoder(json.JSONEncoder):
+    """JSON encoder for feature values with non-standard types.
+
+    Handles types that json.dumps() doesn't support natively:
+    - Decimal: Converted to float (common in financial/aggregation features)
+
+    Used internally by RedisStore.write() and write_batch() for serialization.
+    """
+
+    def default(self, o: Any) -> Any:
+        """Convert non-JSON-serializable types to JSON-compatible values."""
+        if isinstance(o, Decimal):
+            return float(o)
+        return super().default(o)
 
 
 class OnlineStore(ABC):
@@ -273,7 +290,7 @@ class RedisStore(OnlineStore):
             values: Feature column values to store
         """
         key = self._build_key(feature_name, entity_keys)
-        value_json = json.dumps(values)
+        value_json = json.dumps(values, cls=_FeatureEncoder)
 
         if self.ttl:
             self._client.setex(key, self.ttl, value_json)
@@ -313,7 +330,7 @@ class RedisStore(OnlineStore):
             }
 
             key = self._build_key(feature_name, entity_keys)
-            value_json = json.dumps(values)
+            value_json = json.dumps(values, cls=_FeatureEncoder)
 
             if self.ttl:
                 pipe.setex(key, self.ttl, value_json)
@@ -433,4 +450,4 @@ class RedisStore(OnlineStore):
 
 
 # Type alias for online store implementations
-type OnlineStoreKind = RedisStore
+type OnlineStoreKind = OnlineStore
