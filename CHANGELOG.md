@@ -1,3 +1,77 @@
+## v0.6.0 (2025-01-11)
+
+### ✨ Features
+
+- **Entity Abstraction**: Declarative entity definitions with surrogate key generation
+  - `Entity` class for defining entities with `name`, `join_key`, and optional `from_columns`
+  - Automatic surrogate key generation from multiple source columns
+  - Engine integration for key generation during feature computation
+  - `mlforge list entities` and `mlforge inspect entity <name>` commands
+
+- **Source Abstraction**: Unified data source configuration with auto-detection
+  - `Source` class with automatic location inference (local, S3, GCS)
+  - Format auto-detection from file extension (Parquet, CSV, Delta)
+  - `ParquetFormat`, `CSVFormat`, `DeltaFormat` configuration classes
+  - `mlforge list sources` and `mlforge inspect source <name>` commands
+
+- **Timestamp Handling**: Automatic timestamp format detection
+  - `Timestamp` class with auto-detection of 11+ datetime formats
+  - Optional explicit format specification with `strftime` patterns
+  - Column aliasing for renaming timestamp output
+  - Helpful error messages with format suggestions
+
+- **GCS Storage Backend**: Google Cloud Storage support for offline features
+  - `GCSStore` with versioned storage layout
+  - Consistent API with `LocalStore` and `S3Store`
+  - Optional `gcsfs` dependency
+
+- **Version Management Commands**: CLI commands for version control
+  - `mlforge diff <feature> [v1] [v2]` to compare versions with semantic exit codes
+  - `mlforge rollback <feature> [version]` to rollback to previous versions
+  - `--dry-run` support for safe previews
+
+- **Environment Profiles**: YAML-based configuration with `mlforge.yaml`
+  - Define `dev`, `staging`, `production` profiles
+  - Configure offline and online stores per environment
+  - Environment variable interpolation with `${oc.env:VAR}`
+  - `mlforge profile` command to display current configuration
+
+- **Project Initialization**: Scaffolding for new projects
+  - `mlforge init <name>` creates project structure
+  - Options: `--online {redis|valkey}`, `--engine duckdb`, `--store {local|s3}`, `--profile`
+
+- **Definitions Enhancement**: High-level API methods on Definitions class
+  - `get_training_data()` method for point-in-time feature retrieval
+  - `get_online_features()` method for real-time inference
+  - Discovery methods: `get_features()`, `get_entities()`, `get_sources()`
+
+### ♻️ Refactorings
+
+- Remove `entity_key` in favor of `Entity` abstraction
+- Move profile helpers from CLI to profiles module
+- Update examples to use Entity and Source abstractions
+
+### ✅🤡🧪 Tests
+
+- Add comprehensive tests for Entity class and entity-based features
+- Add tests for Definitions discovery methods
+
+### 📝💡 Documentation
+
+- Add comparison documentation (vs Feast, etc.)
+- Update user guide for Entity abstraction
+- Update examples to use Entity and Source abstractions
+- Add CLAUDE.md for AI agent instructions
+
+### 🔧🔨📦️ Configuration, Scripts, Packages
+
+- Add mlforge.yaml for online example
+- Ignore feature_store directories in examples
+
+### 📌➕⬇️➖⬆️ Dependencies
+
+- Add optional `gcsfs>=2025.12.0` dependency for GCS support
+
 ## v0.5.0 (2025-01-04)
 
 ### 💥 Breaking Changes
