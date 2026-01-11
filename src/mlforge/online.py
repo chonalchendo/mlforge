@@ -31,9 +31,16 @@ from typing import Any, cast, override
 
 
 class _FeatureEncoder(json.JSONEncoder):
-    """Custom JSON encoder that handles feature value types."""
+    """JSON encoder for feature values with non-standard types.
+
+    Handles types that json.dumps() doesn't support natively:
+    - Decimal: Converted to float (common in financial/aggregation features)
+
+    Used internally by RedisStore.write() and write_batch() for serialization.
+    """
 
     def default(self, o: Any) -> Any:
+        """Convert non-JSON-serializable types to JSON-compatible values."""
         if isinstance(o, Decimal):
             return float(o)
         return super().default(o)
