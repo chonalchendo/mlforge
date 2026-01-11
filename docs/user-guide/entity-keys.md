@@ -88,7 +88,36 @@ def user_total_spend(df: pl.DataFrame) -> pl.DataFrame:
 
 ## Using Entities in Retrieval
 
-Pass entities to `get_training_data()` or `get_online_features()` when your entity DataFrame needs key generation or validation:
+### Recommended: Definitions Methods
+
+When using `Definitions.get_training_data()` or `Definitions.get_online_features()`, entity handling is automatic. The methods look up each feature's entities from the definitions:
+
+```python
+from my_project.definitions import defs
+import polars as pl
+
+# Entity data without user_id - will be generated automatically
+# based on the feature's entity definition
+entities = pl.DataFrame({
+    "first": ["Alice", "Bob"],
+    "last": ["Smith", "Jones"],
+    "dob": ["1990-01-01", "1985-05-15"],
+    "label": [0, 1],
+})
+
+# Retrieve features - entities handled automatically
+training_data = defs.get_training_data(
+    features=["user_total_spend"],
+    entity_df=entities,
+)
+```
+
+!!! tip "Multiple entities with different keys"
+    The Definitions methods automatically use the correct entity keys for each feature. This is especially useful when retrieving features like `user_spend` and `merchant_revenue` together - each uses only its own entity keys.
+
+### Standalone Functions
+
+When using standalone functions, pass entities explicitly:
 
 ```python
 import mlforge as mlf
@@ -150,9 +179,10 @@ training_data = mlf.get_training_data(
 )
 ```
 
-### Multiple Entities
+### Multiple Entities with Standalone Functions
 
-Use multiple entities when joining features with different keys:
+!!! warning "Entity key coordination"
+    When using standalone `mlf.get_training_data()` or `mlf.get_online_features()` with multiple entities, **all** entity keys are used for **every** feature lookup. For features with different entities, use `defs.get_training_data()` or `defs.get_online_features()` instead.
 
 ```python
 user = mlf.Entity(
@@ -162,10 +192,17 @@ user = mlf.Entity(
 )
 merchant = mlf.Entity(name="merchant", join_key="merchant_id")
 
+# Works, but all features will use both user_id AND merchant_id for joins
 training_data = mlf.get_training_data(
     features=["user_spend", "merchant_revenue"],
     entity_df=transactions,
     entities=[user, merchant],
+)
+
+# Better: Use Definitions method for automatic per-feature entity handling
+training_data = defs.get_training_data(
+    features=["user_spend", "merchant_revenue"],
+    entity_df=transactions,
 )
 ```
 

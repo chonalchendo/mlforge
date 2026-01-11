@@ -1,30 +1,36 @@
 # Quickstart
 
-This guide will walk you through creating your first feature store in under 5 minutes.
+Build your first feature store in under 5 minutes.
 
-## Setup
+## 1. Initialize a Project
 
-First, install mlforge:
+```bash
+mlforge init my-features --profile
+cd my-features
+```
 
-=== "pip"
-    ```bash
-    pip install mlforge-sdk
-    ```
+This creates:
 
-=== "uv"
-    ```bash
-    uv add mlforge-sdk
-    ```
+```
+my-features/
+├── src/my_features/
+│   ├── definitions.py    # Feature registry
+│   ├── features.py       # Feature definitions
+│   └── entities.py       # Entity definitions
+├── data/                 # Source data
+├── feature_store/        # Built features
+├── mlforge.yaml          # Environment profiles
+└── pyproject.toml
+```
 
-## 1. Prepare Your Data
+## 2. Add Sample Data
 
-Create a simple dataset. For this example, we'll use transaction data:
+Create sample transaction data:
 
 ```python
 import polars as pl
 from pathlib import Path
 
-# Create sample transaction data
 transactions = pl.DataFrame({
     "user_id": ["u1", "u1", "u2", "u2", "u3"],
     "amount": [10.0, 25.0, 50.0, 15.0, 100.0],
@@ -37,14 +43,13 @@ transactions = pl.DataFrame({
     ]
 })
 
-# Save to parquet
 Path("data").mkdir(exist_ok=True)
 transactions.write_parquet("data/transactions.parquet")
 ```
 
-## 2. Define Features
+## 3. Define Features
 
-Create a file called `features.py`:
+Edit `src/my_features/features.py`:
 
 ```python
 import mlforge as mlf
@@ -53,7 +58,6 @@ import polars as pl
 @mlf.feature(
     keys=["user_id"],
     source="data/transactions.parquet",
-    tags=["spending"],
     description="Total spend per user"
 )
 def user_total_spend(df: pl.DataFrame) -> pl.DataFrame:
@@ -64,7 +68,6 @@ def user_total_spend(df: pl.DataFrame) -> pl.DataFrame:
 @mlf.feature(
     keys=["user_id"],
     source="data/transactions.parquet",
-    tags=["spending"],
     description="Average transaction amount per user"
 )
 def user_avg_transaction(df: pl.DataFrame) -> pl.DataFrame:
@@ -73,30 +76,13 @@ def user_avg_transaction(df: pl.DataFrame) -> pl.DataFrame:
     )
 ```
 
-## 3. Create Feature Definitions
-
-Create `definitions.py`:
-
-```python
-import mlforge as mlf
-import features
-
-defs = mlf.Definitions(
-    name="quickstart",
-    features=[features],
-    offline_store=mlf.LocalStore("./feature_store")
-)
-```
-
 ## 4. Build Features
-
-Materialize your features using the CLI:
 
 ```bash
 mlforge build
 ```
 
-You should see output like:
+Output:
 
 ```
 Materializing user_total_spend
@@ -125,17 +111,17 @@ Built 2 features
 Use features in your training pipeline:
 
 ```python
-import mlforge as mlf
+from my_features.definitions import defs
 import polars as pl
 
-# Load entity data (e.g., labels for training)
+# Entity data (e.g., labels for training)
 entities = pl.DataFrame({
     "user_id": ["u1", "u2", "u3"],
     "label": [0, 1, 0]
 })
 
-# Get training data with features
-training_data = mlf.get_training_data(
+# Get training data
+training_data = defs.get_training_data(
     features=["user_total_spend", "user_avg_transaction"],
     entity_df=entities
 )
@@ -155,16 +141,56 @@ Output:
 └─────────┴───────┴─────────────┴─────────────────┘
 ```
 
-## What Just Happened?
+## 6. Explore Your Features
 
-1. You defined features using the `@mlf.feature` decorator
-2. Registered them with a `mlf.Definitions` object
-3. Materialized them to local Parquet storage with `mlforge build`
-4. Retrieved them for training using `mlf.get_training_data()`
+```bash
+# List features
+mlforge list features
+
+# Inspect a feature
+mlforge inspect feature user_total_spend
+
+# List versions
+mlforge list versions user_total_spend
+```
+
+## What You Built
+
+1. **Initialized** a project with `mlforge init`
+2. **Defined** features using the `@mlf.feature` decorator
+3. **Built** features to local storage with `mlforge build`
+4. **Retrieved** features for training with `defs.get_training_data()`
+
+## Environment Profiles
+
+Your `mlforge.yaml` configures different environments:
+
+```yaml
+default_profile: dev
+
+profiles:
+  dev:
+    offline_store:
+      KIND: local
+      path: ./feature_store
+
+  production:
+    offline_store:
+      KIND: s3
+      bucket: ${oc.env:S3_BUCKET}
+      prefix: features
+```
+
+Build to production:
+
+```bash
+S3_BUCKET=my-bucket mlforge build --profile production
+```
 
 ## Next Steps
 
-- [Learn more about defining features](../user-guide/defining-features.md)
-- [Explore entity keys for complex joins](../user-guide/entity-keys.md)
-- [Understand point-in-time correctness](../user-guide/point-in-time.md)
-- [Browse the CLI reference](../cli.md)
+- [Defining Features](../user-guide/defining-features.md) - Feature options and patterns
+- [Entity Keys](../user-guide/entity-keys.md) - Surrogate key generation
+- [Point-in-Time Correctness](../user-guide/point-in-time.md) - Temporal joins
+- [Online Stores](../user-guide/online-stores.md) - Redis for real-time serving
+- [CLI Reference](../cli.md) - All CLI commands

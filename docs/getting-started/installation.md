@@ -14,27 +14,33 @@ pip install mlforge-sdk
 uv add mlforge-sdk
 ```
 
-## Dependencies
+## Optional Dependencies
 
-mlforge has the following core dependencies:
+Install extras for additional backends:
 
-- **polars** (>=1.35.2) - DataFrame library for data transformations
-- **pyarrow** (>=22.0.0) - Parquet file support
-- **pydantic** (>=2.12.4) - Data validation
-- **cyclopts** (>=4.2.1) - CLI framework
-- **loguru** (>=0.7.3) - Logging
+```bash
+# Redis for online serving
+pip install mlforge-sdk[redis]
 
-These will be installed automatically when you install mlforge.
+# Google Cloud Storage
+pip install mlforge-sdk[gcs]
+
+# DuckDB compute engine
+pip install mlforge-sdk[duckdb]
+
+# All extras
+pip install mlforge-sdk[all]
+```
 
 ## Verify Installation
 
-Check that mlforge is installed correctly:
+Check that mlforge is installed:
 
 ```bash
 mlforge --help
 ```
 
-You should see the CLI help output:
+You should see:
 
 ```
 Usage: mlforge [OPTIONS] COMMAND
@@ -42,26 +48,24 @@ Usage: mlforge [OPTIONS] COMMAND
 A simple feature store SDK
 
 Commands:
-  build  Materialize features to offline storage
-  list   Display all registered features in a table
+  init       Initialize a new mlforge project
+  build      Materialize features to offline storage
+  validate   Run validation checks on features
+  list       List features, entities, sources, or versions
+  inspect    Inspect features, entities, or sources
+  ...
 ```
 
 ## Development Installation
 
-If you want to contribute to mlforge or run it from source:
+To contribute or run from source:
 
 ```bash
-# Clone the repository
 git clone https://github.com/chonalchendo/mlforge.git
 cd mlforge
-
-# Install with uv (recommended)
 uv sync
-
-# Or install with pip
-pip install -e .
 ```
 
 ## Next Steps
 
-Continue to the [Quickstart Guide](quickstart.md) to build your first feature.
+Continue to the [Quickstart Guide](quickstart.md) to build your first feature store.

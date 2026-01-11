@@ -8,10 +8,8 @@ A detailed comparison of mlforge and Feast, the most popular open-source feature
 |--------|---------|-------|
 | **Philosophy** | Simple, local-first, Python-native | Infrastructure-heavy, Kubernetes-focused |
 | **Learning curve** | Minutes | Hours to days |
-| **Setup complexity** | `pip install mlforge-sdk` | Registry, offline store, online store, Kubernetes |
+| **Setup complexity** | `mlforge init` | Registry, offline store, online store, Kubernetes |
 | **Primary use case** | Small-to-medium teams, rapid iteration | Enterprise, large-scale production |
-| **GitHub stars** | Growing | 6.6K+ |
-| **Downloads** | Growing | 12M+ |
 
 ## Feature Definition: Side-by-Side
 
@@ -95,88 +93,42 @@ user_spend_fv = FeatureView(
 
 ---
 
-## Versioning: The Biggest Gap
+## Project Setup
 
-### mlforge: Automatic Semantic Versioning
-
-mlforge automatically versions features using semantic versioning:
-
-```python
-# First build creates v1.0.0
-defs.build()
-
-# Add a column → v1.1.0 (MINOR)
-# Remove a column → v2.0.0 (MAJOR)
-# Same schema, new data → v1.0.1 (PATCH)
-
-# Retrieve specific version
-training_df = mlf.get_training_data(
-    features=[
-        "user_spend",                    # Latest version
-        ("merchant_risk", "1.0.0"),      # Pinned version
-    ],
-    entity_df=labels_df,
-    store=store,
-)
-```
-
-**Version detection is automatic:**
-- Schema hash detects column changes
-- Config hash detects metric/key changes
-- Content hash detects data changes
-
-### Feast: No Explicit Versioning
-
-Feast has no built-in feature versioning. Users must:
-
-1. Create new FeatureView names manually (`user_spend_v2`)
-2. Manage version history externally
-3. No automatic change detection
-
-**From Feast GitHub Issue #5789:**
-> "Feature version support requested - users want to manage multiple versions of the same feature"
-
-This is a frequently requested feature that Feast hasn't implemented.
-
----
-
-## Local Development
-
-### mlforge: Works Out of the Box
+### mlforge: One Command
 
 ```bash
-# Install
-pip install mlforge-sdk
-
-# Build features
+mlforge init my-features --profile
+cd my-features
 mlforge build
-
-# That's it. No infrastructure needed.
 ```
 
-Features are stored as Parquet files:
+Creates a complete project with environment profiles:
+
 ```
-feature_store/
-├── user_spend/
-│   ├── 1.0.0/
-│   │   ├── data.parquet
-│   │   └── .meta.json
-│   └── _latest.json
+my-features/
+├── src/my_features/
+│   ├── definitions.py
+│   ├── features.py
+│   └── entities.py
+├── mlforge.yaml          # Environment profiles
+├── feature_store/
+└── pyproject.toml
 ```
 
-### Feast: Requires Infrastructure
+### Feast: Multi-Step Setup
 
 ```bash
-# Install
 pip install feast
-
-# Initialize project
 feast init my_project
+cd my_project
 
-# Apply configuration (creates registry)
+# Edit feature_store.yaml
+# Define entities, sources, feature views
+# Apply configuration
 feast apply
 
-# Materialize to online store (requires online store setup)
+# Materialize (requires online store)
 feast materialize-incremental $(date +%Y-%m-%d)
 ```
 
@@ -185,6 +137,100 @@ feast materialize-incremental $(date +%Y-%m-%d)
 - Offline store (file, BigQuery, Snowflake, etc.)
 - Online store (Redis, DynamoDB, etc.) for serving
 - Kubernetes for production deployment
+
+---
+
+## Environment Configuration
+
+### mlforge: YAML Profiles
+
+```yaml
+# mlforge.yaml
+default_profile: dev
+
+profiles:
+  dev:
+    offline_store:
+      KIND: local
+      path: ./feature_store
+
+  production:
+    offline_store:
+      KIND: s3
+      bucket: ${oc.env:S3_BUCKET}
+      prefix: features
+    online_store:
+      KIND: redis
+      host: ${oc.env:REDIS_HOST}
+```
+
+Switch environments:
+
+```bash
+mlforge build --profile production
+# or
+export MLFORGE_PROFILE=production
+mlforge build
+```
+
+### Feast: Single Config File
+
+```yaml
+# feature_store.yaml
+project: my_project
+registry: s3://my-bucket/registry.db
+provider: aws
+online_store:
+  type: redis
+  connection_string: redis://...
+offline_store:
+  type: file
+```
+
+No built-in profile switching - requires separate config files or environment variable substitution.
+
+---
+
+## Versioning: The Biggest Gap
+
+### mlforge: Automatic Semantic Versioning
+
+```bash
+# First build creates v1.0.0
+mlforge build
+
+# Add a column → v1.1.0 (MINOR)
+# Remove a column → v2.0.0 (MAJOR)
+# Same schema, new data → v1.0.1 (PATCH)
+
+# Compare versions
+mlforge diff user_spend
+
+# Rollback if needed
+mlforge rollback user_spend --previous
+```
+
+Retrieve specific versions:
+
+```python
+from my_features.definitions import defs
+
+training_df = defs.get_training_data(
+    features=[
+        "user_spend",                    # Latest version
+        ("merchant_risk", "1.0.0"),      # Pinned version
+    ],
+    entity_df=labels_df,
+)
+```
+
+### Feast: No Built-in Versioning
+
+Feast has no built-in feature versioning. Users must:
+
+1. Create new FeatureView names manually (`user_spend_v2`)
+2. Manage version history externally
+3. No automatic change detection
 
 ---
 
@@ -201,7 +247,7 @@ git push
 
 # Developer 2: Pull and sync
 git pull
-mlforge sync  # Rebuilds data.parquet from metadata
+mlforge sync  # Rebuilds data from metadata
 ```
 
 **What gets committed:**
@@ -213,62 +259,60 @@ mlforge sync  # Rebuilds data.parquet from metadata
 
 ### Feast: Central Registry
 
-Feast requires a central registry that all team members connect to:
+Requires a shared registry that all team members connect to:
 
-```python
-# feast_repo/feature_store.yaml
-project: my_project
-registry: s3://my-bucket/registry.db  # Shared registry
-provider: aws
-online_store:
-  type: redis
-  connection_string: redis://...
+```yaml
+registry: s3://my-bucket/registry.db
 ```
 
 **Challenges:**
 - Registry conflicts when multiple developers push changes
 - No built-in sync mechanism
-- Requires cloud infrastructure for team collaboration
+- Requires cloud infrastructure for collaboration
 
 ---
 
-## Compute Engines
+## Feature Retrieval
 
-### mlforge: Polars + DuckDB
+### mlforge: Definitions Methods
 
 ```python
-# Default: DuckDB (optimized for rolling aggregations)
-defs = mlf.Definitions(
-    features=[features],
-    offline_store=store,
-    default_engine="duckdb",  # or "polars"
+from my_features.definitions import defs
+
+# Training data with point-in-time correctness
+training_df = defs.get_training_data(
+    features=["user_spend", "merchant_revenue"],
+    entity_df=labels_df,
+    timestamp="label_time",
 )
 
-# Per-feature override
-@mlf.feature(
-    keys=["user_id"],
-    source="data.parquet",
-    engine="polars",  # Use Polars for this feature
+# Online inference
+features_df = defs.get_online_features(
+    features=["user_spend", "merchant_revenue"],
+    entity_df=request_df,
 )
-def my_feature(df): ...
 ```
 
-**Both engines:**
-- Work locally without cluster setup
-- Handle datasets up to ~100GB
-- Use the same Polars API for user code
+Entity keys are handled automatically based on feature definitions.
 
-### Feast: External Compute
-
-Feast doesn't compute features - it stores and serves them. You need:
-
-- **Spark** for batch transformations
-- **Flink** for streaming transformations
-- **dbt** for SQL transformations
+### Feast: Store Methods
 
 ```python
-# Feast just stores pre-computed features
-# You need a separate pipeline to compute them
+from feast import FeatureStore
+
+store = FeatureStore(repo_path=".")
+
+# Historical features
+training_df = store.get_historical_features(
+    entity_df=labels_df,
+    features=["user_spend:amount_sum_7d", "user_spend:amount_mean_7d"],
+).to_df()
+
+# Online features
+features = store.get_online_features(
+    features=["user_spend:amount_sum_7d"],
+    entity_rows=[{"user_id": "u1"}],
+).to_dict()
 ```
 
 ---
@@ -290,88 +334,55 @@ Feast doesn't compute features - it stores and serves them. You need:
 def validated_feature(df): ...
 ```
 
-**9 built-in validators:**
-- `not_null()`, `unique()`
-- `greater_than()`, `less_than()`, `in_range()`
-- `greater_than_or_equal()`, `less_than_or_equal()`
-- `matches_regex()`, `is_in()`
+Run validation:
+
+```bash
+mlforge validate
+```
 
 ### Feast: External Integration
 
-Feast recommends integrating with Great Expectations:
-
-```python
-# Requires separate Great Expectations setup
-# No built-in validation
-```
-
----
-
-## Point-in-Time Correctness
-
-### mlforge: Built-in Asof Joins
-
-```python
-training_df = mlf.get_training_data(
-    features=["user_spend"],
-    entity_df=labels_df,
-    store=store,
-    timestamp="label_time",  # Point-in-time join
-)
-```
-
-**Automatic behavior:**
-- Detects timestamp columns
-- Uses backward-looking asof join
-- Prevents future data leakage
-
-### Feast: Also Supported
-
-```python
-training_df = store.get_historical_features(
-    entity_df=labels_df,
-    features=["user_spend:amount_sum_7d"],
-).to_df()
-```
-
-Both tools support point-in-time correctness - this is table stakes for feature stores.
+Feast recommends integrating with Great Expectations - no built-in validation.
 
 ---
 
 ## Online Serving
 
-### mlforge: Simple Redis Integration
+### mlforge: Redis via Profiles
+
+```yaml
+# mlforge.yaml
+profiles:
+  production:
+    offline_store:
+      KIND: s3
+      bucket: my-features
+    online_store:
+      KIND: redis
+      host: ${oc.env:REDIS_HOST}
+```
+
+```bash
+mlforge build --online --profile production
+```
 
 ```python
-from mlforge.online import RedisStore
-
-# Build to online store
-defs.build(online=True)
-
-# Retrieve for inference
-features_df = mlf.get_online_features(
+features_df = defs.get_online_features(
     features=["user_spend"],
     entity_df=request_df,
-    store=RedisStore(host="localhost"),
 )
 ```
 
 ### Feast: Multiple Online Stores
 
-```python
-# feast_repo/feature_store.yaml
+```yaml
 online_store:
   type: redis
   connection_string: redis://localhost:6379
+```
 
-# Materialize to online store
+```bash
 feast materialize-incremental $(date +%Y-%m-%d)
-
-# Retrieve
-features = store.get_online_features(
-    features=["user_spend:amount_sum_7d"],
-    entity_rows=[{"user_id": "u1"}],
-).to_dict()
 ```
 
 Feast supports more online stores (DynamoDB, Bigtable, etc.), but requires more setup.
@@ -383,26 +394,28 @@ Feast supports more online stores (DynamoDB, Bigtable, etc.), but requires more 
 ### mlforge CLI
 
 ```bash
-mlforge build                    # Build all features
-mlforge build --features user_spend
-mlforge build --tags users
-mlforge build --version 2.0.0    # Override version
-
-mlforge validate                 # Run validators
-mlforge list                     # List features
-mlforge inspect user_spend       # Show metadata
-mlforge versions user_spend      # List versions
-mlforge sync                     # Rebuild from metadata
+mlforge init my-project --profile  # Initialize project
+mlforge build                      # Build all features
+mlforge build --online             # Build to online store
+mlforge build --profile production # Use specific profile
+mlforge validate                   # Run validators
+mlforge list features              # List features
+mlforge list entities              # List entities
+mlforge inspect feature user_spend # Show metadata
+mlforge diff user_spend            # Compare versions
+mlforge rollback user_spend 1.0.0  # Rollback version
+mlforge sync                       # Rebuild from metadata
+mlforge profile --validate         # Validate store connectivity
 ```
 
 ### Feast CLI
 
 ```bash
-feast init my_project            # Initialize project
-feast apply                      # Apply configuration
-feast materialize-incremental    # Materialize to online
-feast materialize                # Full materialization
-feast ui                         # Start web UI
+feast init my_project              # Initialize project
+feast apply                        # Apply configuration
+feast materialize-incremental      # Materialize to online
+feast materialize                  # Full materialization
+feast ui                           # Start web UI
 ```
 
 ---
@@ -418,6 +431,7 @@ feast ui                         # Start web UI
 - You prefer **Git-native workflows**
 - You don't want to manage **Kubernetes infrastructure**
 - You need **built-in aggregations** (rolling windows)
+- You want **environment profiles** (dev/staging/prod)
 
 ### Choose Feast When:
 
@@ -432,9 +446,13 @@ feast ui                         # Start web UI
 
 ## Migration from Feast to mlforge
 
-If you're considering migrating from Feast:
+### Step 1: Initialize Project
 
-### Step 1: Convert Feature Views to @feature Decorators
+```bash
+mlforge init my-features --profile
+```
+
+### Step 2: Convert Feature Views
 
 **Feast:**
 ```python
@@ -458,17 +476,31 @@ def user_spend(df):
     return df.select(["user_id", "transaction_date", "amount"])
 ```
 
-### Step 2: Replace Registry with Git
+### Step 3: Configure Profiles
 
-- Remove Feast registry configuration
-- Commit `.meta.json` files to Git
-- Use `mlforge sync` for team collaboration
+```yaml
+# mlforge.yaml
+profiles:
+  dev:
+    offline_store:
+      KIND: local
+      path: ./feature_store
+  production:
+    offline_store:
+      KIND: s3
+      bucket: my-features
+    online_store:
+      KIND: redis
+      host: ${oc.env:REDIS_HOST}
+```
 
-### Step 3: Simplify Infrastructure
+### Step 4: Build and Validate
 
-- Remove Kubernetes deployment
-- Use local Parquet files or S3
-- Use Redis for online serving (same as Feast)
+```bash
+mlforge build
+mlforge validate
+mlforge profile --validate
+```
 
 ---
 
@@ -476,9 +508,11 @@ def user_spend(df):
 
 | Capability | mlforge | Feast |
 |-----------|---------|-------|
-| **Setup time** | 5 minutes | Hours |
+| **Setup time** | 1 command | Hours |
 | **Feature definition** | 15 lines | 35+ lines |
+| **Environment profiles** | Built-in YAML | Manual |
 | **Versioning** | Automatic semantic | Manual/none |
+| **Version diff/rollback** | Built-in CLI | None |
 | **Local development** | First-class | Afterthought |
 | **Team collaboration** | Git-native | Central registry |
 | **Aggregations** | Built-in | External |

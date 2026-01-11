@@ -28,10 +28,12 @@ mlforge build [TARGET] [OPTIONS]
 
 - `--features NAMES`: Comma-separated list of feature names to build. Defaults to all features.
 - `--tags TAGS`: Comma-separated list of feature tags to build. Mutually exclusive with `--features`.
+- `--version VERSION`: Explicit version override (e.g., '2.0.0'). If not specified, auto-detects based on schema changes.
 - `--force`, `-f`: Overwrite existing features. Defaults to `False`.
 - `--online`: Build to online store (e.g., Redis) instead of offline store. Defaults to `False`.
 - `--no-preview`: Disable feature preview output. Defaults to `False` (preview enabled).
 - `--preview-rows N`: Number of preview rows to display. Defaults to `5`.
+- `--profile NAME`: Profile name from mlforge.yaml to use for stores.
 - `--verbose`, `-v`: Enable debug logging. Defaults to `False`.
 
 #### Examples
@@ -92,6 +94,18 @@ mlforge build --online
 
 This extracts the latest value per entity and writes to the configured online store.
 
+Build with explicit version:
+
+```bash
+mlforge build --version 2.0.0
+```
+
+Build with a specific profile from mlforge.yaml:
+
+```bash
+mlforge build --profile production
+```
+
 #### Output
 
 The command displays:
@@ -148,42 +162,44 @@ Hint: Make sure your feature function returns a DataFrame.
 
 ### inspect
 
+Inspect features, entities, or sources in detail.
+
+```bash
+mlforge inspect <subcommand> NAME [OPTIONS]
+```
+
+#### Subcommands
+
+- `feature FEATURE_NAME`: Inspect a feature's detailed metadata
+- `entity ENTITY_NAME`: Inspect an entity's configuration
+- `source SOURCE_NAME`: Inspect a source's configuration
+
+#### inspect feature
+
 Display detailed metadata for a specific feature.
 
 ```bash
-mlforge inspect FEATURE_NAME [TARGET]
+mlforge inspect feature FEATURE_NAME [OPTIONS]
 ```
 
-#### Arguments
+**Arguments:**
 
 - `FEATURE_NAME` (required): Name of the feature to inspect
-- `TARGET` (optional): Path to definitions file. Auto-discovers `definitions.py` if not specified.
 
-#### Examples
+**Options:**
 
-Inspect a specific feature:
+- `--target PATH`: Path to definitions.py file.
+- `--version VERSION`: Specific version to inspect. Defaults to latest.
+- `--profile NAME`: Profile name from mlforge.yaml.
 
-```bash
-mlforge inspect user_spend
-```
-
-Inspect with custom definitions file:
+**Examples:**
 
 ```bash
-mlforge inspect user_spend definitions.py
+mlforge inspect feature user_spend
+mlforge inspect feature user_spend --version 1.0.0
 ```
 
-#### Output
-
-Displays detailed feature metadata including:
-
-- Feature configuration (entity, keys, timestamp, interval)
-- Storage details (path, source, row count)
-- Column information with types and aggregations
-- Tags and description
-- Last build timestamp
-
-Example output:
+**Output:**
 
 ```
 ┌─ Feature: user_spend ──────────────────────────────────────┐
@@ -212,15 +228,67 @@ Columns
 └──────────────────────────┴────────┴────────┴─────────────┴────────┘
 ```
 
-#### Error Handling
-
-**No metadata found**: If the feature hasn't been built yet:
+**Error Handling:**
 
 ```bash
-$ mlforge inspect user_spend
+$ mlforge inspect feature user_spend
 Error: No metadata found for feature 'user_spend'.
 Run 'mlforge build' to generate metadata.
 ```
+
+#### inspect entity
+
+Display detailed information for an entity.
+
+```bash
+mlforge inspect entity ENTITY_NAME [OPTIONS]
+```
+
+**Arguments:**
+
+- `ENTITY_NAME` (required): Name of the entity to inspect
+
+**Options:**
+
+- `--target PATH`: Path to definitions.py file.
+- `--profile NAME`: Profile name from mlforge.yaml.
+
+**Examples:**
+
+```bash
+mlforge inspect entity user
+```
+
+**Output:**
+
+Shows entity configuration including join key, source columns for surrogate key generation, and which features use this entity.
+
+#### inspect source
+
+Display detailed information for a source.
+
+```bash
+mlforge inspect source SOURCE_NAME [OPTIONS]
+```
+
+**Arguments:**
+
+- `SOURCE_NAME` (required): Name of the source to inspect
+
+**Options:**
+
+- `--target PATH`: Path to definitions.py file.
+- `--profile NAME`: Profile name from mlforge.yaml.
+
+**Examples:**
+
+```bash
+mlforge inspect source transactions
+```
+
+**Output:**
+
+Shows source configuration including path, format, location, and which features use this source.
 
 ### manifest
 
@@ -527,92 +595,378 @@ mlforge sync --dry-run
 - **Source data changed intentionally**: Use `mlforge build --force` to create a new version
 - **Initial setup**: Use `mlforge build` for first-time feature creation
 
-### versions
+### init
 
-List all versions of a feature.
+Initialize a new mlforge project with boilerplate structure.
 
 ```bash
-mlforge versions FEATURE_NAME [TARGET]
+mlforge init NAME [OPTIONS]
 ```
 
 #### Arguments
 
-- `FEATURE_NAME` (required): Name of the feature to list versions for
-- `TARGET` (optional): Path to definitions file. Auto-discovers `definitions.py` if not specified.
+- `NAME` (required): Name of the project to create
+
+#### Options
+
+- `--online TYPE`: Include online store config (`redis` or `valkey`)
+- `--engine ENGINE`: Default compute engine (`duckdb`)
+- `--store TYPE`: Offline store type (`local` or `s3`). Defaults to `local`.
+- `--profile`: Include mlforge.yaml with environment profiles
 
 #### Examples
 
-List versions of a feature:
+Create a basic project:
 
 ```bash
-mlforge versions user_spend
+mlforge init my-features
+```
+
+Create with Redis online store:
+
+```bash
+mlforge init my-features --online redis
+```
+
+Create with DuckDB engine and S3 storage:
+
+```bash
+mlforge init my-features --engine duckdb --store s3
+```
+
+Create with environment profiles:
+
+```bash
+mlforge init my-features --profile
 ```
 
 #### Output
 
-Displays a table of all versions:
+Creates the following structure:
 
 ```
-Versions of user_spend
-┌─────────┬─────────────────────┬─────────────────────┬────────────┐
-│ Version │ Created             │ Updated             │ Rows       │
-├─────────┼─────────────────────┼─────────────────────┼────────────┤
-│ 1.0.0   │ 2024-01-10T08:00:00│ 2024-01-10T08:00:00│ 50,000     │
-│ 1.1.0   │ 2024-01-15T10:30:00│ 2024-01-15T10:30:00│ 52,500     │
-│ 2.0.0   │ 2024-01-20T14:00:00│ 2024-01-20T14:00:00│ 55,000     │
-└─────────┴─────────────────────┴─────────────────────┴────────────┘
-
-Latest: 2.0.0
+my-features/
+├── src/
+│   └── my_features/
+│       ├── __init__.py
+│       ├── definitions.py
+│       ├── features.py
+│       └── entities.py
+├── data/
+├── feature_store/
+├── pyproject.toml
+├── README.md
+├── .gitignore
+└── mlforge.yaml  # if --profile used
 ```
+
+---
+
+### profile
+
+Display current profile configuration from mlforge.yaml.
+
+```bash
+mlforge profile [OPTIONS]
+```
+
+#### Options
+
+- `--profile NAME`: Profile name to display. Defaults to current profile.
+- `--validate`: Test connectivity to configured stores.
+
+#### Examples
+
+Show current profile:
+
+```bash
+mlforge profile
+```
+
+Show a specific profile:
+
+```bash
+mlforge profile --profile production
+```
+
+Validate store connectivity:
+
+```bash
+mlforge profile --validate
+```
+
+#### Output
+
+```
+Profile: dev (from mlforge.yaml default)
+
+Offline Store:
+  Type: local
+  Path: ./feature_store
+
+Online Store: not configured
+```
+
+With `--validate`:
+
+```
+Validating stores...
+  offline_store: local - OK
+  online_store: redis - OK
+
+Profile valid.
+```
+
+---
+
+### diff
+
+Compare two versions of a feature.
+
+```bash
+mlforge diff FEATURE_NAME [VERSION1] [VERSION2] [OPTIONS]
+```
+
+#### Arguments
+
+- `FEATURE_NAME` (required): Name of the feature to compare
+- `VERSION1` (optional): First version. If omitted, compares latest with previous.
+- `VERSION2` (optional): Second version. If omitted, compares VERSION1 with latest.
+
+#### Options
+
+- `--target PATH`: Path to definitions.py file.
+- `--format FORMAT`: Output format (`table` or `json`). Defaults to `table`.
+- `--quiet`: Quiet mode (exit code only).
+- `--profile NAME`: Profile name from mlforge.yaml.
+
+#### Examples
+
+Compare latest with previous version:
+
+```bash
+mlforge diff user_spend
+```
+
+Compare specific versions:
+
+```bash
+mlforge diff user_spend 1.0.0 2.0.0
+```
+
+Compare a version with latest:
+
+```bash
+mlforge diff user_spend 1.0.0
+```
+
+JSON output for scripting:
+
+```bash
+mlforge diff user_spend --format json
+```
+
+#### Exit Codes
+
+- `0`: No differences (same version)
+- `1`: PATCH differences (data only)
+- `2`: MINOR differences (additive changes)
+- `3`: MAJOR differences (breaking changes)
+- `4`: Error
+
+---
+
+### rollback
+
+Rollback a feature to a previous version.
+
+```bash
+mlforge rollback FEATURE_NAME [VERSION] [OPTIONS]
+```
+
+Updates `_latest.json` to point to the target version. Does NOT delete any version data.
+
+#### Arguments
+
+- `FEATURE_NAME` (required): Name of the feature to rollback
+- `VERSION` (optional): Version to rollback to
+
+#### Options
+
+- `--previous`: Rollback to the version before latest
+- `--dry-run`: Show what would happen without making changes
+- `--force`, `-f`: Skip confirmation prompt
+- `--target PATH`: Path to definitions.py file.
+- `--profile NAME`: Profile name from mlforge.yaml.
+
+#### Examples
+
+Rollback to specific version:
+
+```bash
+mlforge rollback user_spend 1.0.0
+```
+
+Rollback to previous version:
+
+```bash
+mlforge rollback user_spend --previous
+```
+
+Preview without making changes:
+
+```bash
+mlforge rollback user_spend 1.0.0 --dry-run
+```
+
+Skip confirmation:
+
+```bash
+mlforge rollback user_spend 1.0.0 --force
+```
+
+#### Exit Codes
+
+- `0`: Rollback successful
+- `1`: Version not found
+- `2`: Already at target version
+- `3`: User cancelled
+- `4`: Error
+
+---
 
 ### list
+
+List features, entities, sources, or versions.
+
+```bash
+mlforge list <subcommand> [OPTIONS]
+```
+
+#### Subcommands
+
+- `features`: List all registered features
+- `entities`: List all entities used by features
+- `sources`: List all sources used by features
+- `versions FEATURE_NAME`: List all versions of a specific feature
+
+#### list features
 
 Display all registered features in a table.
 
 ```bash
-mlforge list [TARGET] [OPTIONS]
+mlforge list features [OPTIONS]
 ```
 
-#### Arguments
+**Options:**
 
-- `TARGET` (optional): Path to definitions file. Auto-discovers `definitions.py` if not specified.
+- `--target PATH`: Path to definitions.py file. Auto-discovers if not specified.
+- `--tags TAGS`: Comma-separated list of tags to filter features by.
+- `--profile NAME`: Profile name from mlforge.yaml.
 
-#### Options
-
-- `--tags TAGS`: Comma-separated list of tags to filter features by. Defaults to showing all features.
-
-#### Examples
-
-List all features:
+**Examples:**
 
 ```bash
-mlforge list definitions.py
+mlforge list features
+mlforge list features --tags user_metrics
 ```
 
-List from current directory (auto-discovers definitions.py):
-
-```bash
-mlforge list
-```
-
-List features by tag:
-
-```bash
-mlforge list --tags user_metrics
-```
-
-#### Output
-
-Displays a formatted table with feature metadata:
+**Output:**
 
 ```
 ┌──────────────────────┬──────────────────┬──────────────────────────┬──────────────┬───────────────────────────┐
 │ Name                 │ Keys             │ Source                   │ Tags         │ Description               │
 ├──────────────────────┼──────────────────┼──────────────────────────┼──────────────┼───────────────────────────┤
 │ user_total_spend     │ [user_id]        │ data/transactions.parquet│ user_metrics │ Total spend by user       │
-│ user_spend_mean_30d  │ [user_id]        │ data/transactions.parquet│ user_metrics │ 30d rolling avg spend     │
 │ merchant_total_spend │ [merchant_id]    │ data/transactions.parquet│ -            │ Total spend by merchant   │
 └──────────────────────┴──────────────────┴──────────────────────────┴──────────────┴───────────────────────────┘
+```
+
+#### list entities
+
+List all entities used by features.
+
+```bash
+mlforge list entities [OPTIONS]
+```
+
+**Options:**
+
+- `--target PATH`: Path to definitions.py file.
+- `--profile NAME`: Profile name from mlforge.yaml.
+
+**Examples:**
+
+```bash
+mlforge list entities
+```
+
+**Output:**
+
+```
+┌──────────┬──────────────┬───────────────────────────┐
+│ Name     │ Join Key     │ From Columns              │
+├──────────┼──────────────┼───────────────────────────┤
+│ user     │ user_id      │ [first, last, dob]        │
+│ merchant │ merchant_id  │ -                         │
+└──────────┴──────────────┴───────────────────────────┘
+```
+
+#### list sources
+
+List all sources used by features.
+
+```bash
+mlforge list sources [OPTIONS]
+```
+
+**Options:**
+
+- `--target PATH`: Path to definitions.py file.
+- `--profile NAME`: Profile name from mlforge.yaml.
+
+**Examples:**
+
+```bash
+mlforge list sources
+```
+
+#### list versions
+
+List all versions of a feature.
+
+```bash
+mlforge list versions FEATURE_NAME [OPTIONS]
+```
+
+**Arguments:**
+
+- `FEATURE_NAME` (required): Name of the feature to list versions for
+
+**Options:**
+
+- `--target PATH`: Path to definitions.py file.
+- `--profile NAME`: Profile name from mlforge.yaml.
+
+**Examples:**
+
+```bash
+mlforge list versions user_spend
+```
+
+**Output:**
+
+```
+Versions of user_spend
+┌─────────┬─────────────────────┬────────────┐
+│ Version │ Created             │ Rows       │
+├─────────┼─────────────────────┼────────────┤
+│ 1.0.0   │ 2024-01-10T08:00:00│ 50,000     │
+│ 1.1.0   │ 2024-01-15T10:30:00│ 52,500     │
+│ 2.0.0   │ 2024-01-20T14:00:00│ 55,000     │
+└─────────┴─────────────────────┴────────────┘
+
+Latest: 2.0.0
 ```
 
 ## Global Options
@@ -723,10 +1077,19 @@ fi
 
 ## Environment Variables
 
-Currently, mlforge does not use environment variables for configuration. All settings are specified via:
+- `MLFORGE_PROFILE`: Override the default profile from mlforge.yaml. Takes precedence over `default_profile` in the config file but can be overridden by `--profile` command-line option.
 
-1. Command-line options
-2. Definitions file configuration
+```bash
+# Use production profile for all commands
+export MLFORGE_PROFILE=production
+mlforge build
+```
+
+Profile resolution order (highest to lowest priority):
+
+1. `--profile` command-line option
+2. `MLFORGE_PROFILE` environment variable
+3. `default_profile` from mlforge.yaml
 
 ## Shell Completion
 
