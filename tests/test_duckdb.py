@@ -10,13 +10,11 @@ from pathlib import Path
 import polars as pl
 import pytest
 
+import mlforge.errors as errors
 from mlforge import Definitions, LocalStore, Rolling, Source, feature
 from mlforge.compilers import DuckDBCompiler, DuckDBComputeContext
 from mlforge.engines import DuckDBEngine
 from mlforge.results import DuckDBResult
-
-import mlforge.errors as errors
-
 
 # =============================================================================
 # Fixtures

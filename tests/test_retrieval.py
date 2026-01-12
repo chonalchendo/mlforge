@@ -10,9 +10,9 @@ from mlforge import (
     LocalStore,
     surrogate_key,
 )
-from mlforge.retrieval import get_online_features, get_training_data
 from mlforge.online import OnlineStore
 from mlforge.results import PolarsResult
+from mlforge.retrieval import get_online_features, get_training_data
 
 
 def test_asof_join_point_in_time():

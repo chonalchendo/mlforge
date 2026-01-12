@@ -40,7 +40,6 @@ from mlforge.sources.formats import (
     ParquetFormat,
 )
 
-
 # Valid location types
 Location = Literal["local", "s3", "gcs"]
 

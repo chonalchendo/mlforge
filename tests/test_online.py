@@ -7,7 +7,6 @@ import pytest
 
 from mlforge.online import OnlineStore, RedisStore, _compute_entity_hash
 
-
 # =============================================================================
 # Entity Hash Tests
 # =============================================================================

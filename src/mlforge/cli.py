@@ -1417,3 +1417,117 @@ def rollback(
     except (errors.DefinitionsLoadError, errors.ProfileError) as e:
         log.print_error(str(e))
         raise SystemExit(4)
+
+
+# =============================================================================
+# serve - REST API server
+# =============================================================================
+
+
+@app.command
+def serve(
+    target: Annotated[
+        str | None,
+        cyclopts.Parameter(
+            name="--target",
+            help="Path to definitions.py file",
+        ),
+    ] = None,
+    profile: Annotated[
+        str | None,
+        cyclopts.Parameter(
+            name="--profile",
+            help="Profile name from mlforge.yaml to use for stores",
+        ),
+    ] = None,
+    host: Annotated[
+        str,
+        cyclopts.Parameter(
+            name="--host",
+            help="Host to bind the server to",
+        ),
+    ] = "127.0.0.1",
+    port: Annotated[
+        int,
+        cyclopts.Parameter(
+            name="--port",
+            help="Port to bind the server to",
+        ),
+    ] = 8000,
+    workers: Annotated[
+        int,
+        cyclopts.Parameter(
+            name="--workers",
+            help="Number of uvicorn workers",
+        ),
+    ] = 1,
+    no_metrics: Annotated[
+        bool,
+        cyclopts.Parameter(
+            name="--no-metrics",
+            help="Disable Prometheus metrics endpoint",
+        ),
+    ] = False,
+    no_docs: Annotated[
+        bool,
+        cyclopts.Parameter(
+            name="--no-docs",
+            help="Disable OpenAPI documentation at /docs",
+        ),
+    ] = False,
+    cors_origins: Annotated[
+        str | None,
+        cyclopts.Parameter(
+            name="--cors-origins",
+            help="Comma-separated list of allowed CORS origins",
+        ),
+    ] = None,
+):
+    """
+    Start the REST API server for feature serving.
+
+    Launches a FastAPI server that exposes feature retrieval endpoints.
+    Features are served from the configured online store.
+
+    Examples:
+        mlforge serve --target src/features/definitions.py
+
+        mlforge serve --profile production --port 8080
+
+        mlforge serve --target definitions.py --cors-origins "http://localhost:3000"
+    """
+    import uvicorn
+
+    from mlforge.serve import create_app
+
+    try:
+        defs = loader.load_definitions(target=target, profile=profile)
+
+        if defs.online_store is None:
+            log.print_warning(
+                "No online store configured. "
+                "Feature retrieval endpoints will return 503."
+            )
+
+        origins = cors_origins.split(",") if cors_origins else None
+
+        application = create_app(
+            definitions=defs,
+            enable_metrics=not no_metrics,
+            enable_docs=not no_docs,
+            cors_origins=origins,
+        )
+
+        log.print_info(f"Starting mlforge server on {host}:{port}")
+        log.print_info(
+            f"OpenAPI docs: {'enabled' if not no_docs else 'disabled'}"
+        )
+        log.print_info(
+            f"Metrics: {'enabled' if not no_metrics else 'disabled'}"
+        )
+
+        uvicorn.run(application, host=host, port=port, workers=workers)
+
+    except (errors.DefinitionsLoadError, errors.ProfileError) as e:
+        log.print_error(str(e))
+        raise SystemExit(1)

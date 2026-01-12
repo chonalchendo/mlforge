@@ -10,8 +10,8 @@ This module tests:
 - JSON serialization/deserialization
 """
 
-import pytest
 import polars as pl
+import pytest
 
 from mlforge.types import (
     DataType,
