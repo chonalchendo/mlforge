@@ -1462,7 +1462,7 @@ class Definitions:
 
     def get_training_data(
         self,
-        features: list[retrieval_.FeatureSpec],
+        features: list[retrieval_.FeatureInput],
         entity_df: pl.DataFrame,
         timestamp: str | None = None,
         store: store.Store | None = None,
@@ -1505,7 +1505,14 @@ class Definitions:
             )
 
         # Collect all entities from requested features
-        feature_names = [f if isinstance(f, str) else f[0] for f in features]
+        feature_names = [
+            f
+            if isinstance(f, str)
+            else f.name
+            if isinstance(f, retrieval_.FeatureSpec)
+            else f[0]
+            for f in features
+        ]
         all_entities = self._collect_entities_for_features(feature_names)
 
         # Delegate to standalone function with collected entities

@@ -4,7 +4,7 @@ Feature retrieval functions for training and inference.
 This module provides two main functions for retrieving features:
 
 - get_training_data(): Retrieve features from offline stores for training.
-  Supports versioning and point-in-time correct joins.
+  Supports versioning, point-in-time correct joins, and column selection.
 
 - get_online_features(): Retrieve features from online stores for inference.
   Returns latest values with low-latency key lookups.
@@ -18,8 +18,21 @@ Example (training):
         from_columns=["first", "last", "dob"],
     )
 
+    # Basic usage
     training_df = mlf.get_training_data(
         features=["user_spend", ("merchant_risk", "1.0.0")],
+        entity_df=transactions,
+        store=mlf.LocalStore("./feature_store"),
+        entities=[user],
+        timestamp="event_time",
+    )
+
+    # With column selection using FeatureSpec
+    training_df = mlf.get_training_data(
+        features=[
+            mlf.FeatureSpec("user_spend", columns=["amt_sum_7d", "amt_mean_7d"]),
+            mlf.FeatureSpec("merchant_risk", version="1.0.0"),
+        ],
         entity_df=transactions,
         store=mlf.LocalStore("./feature_store"),
         entities=[user],
@@ -47,19 +60,111 @@ import warnings
 from pathlib import Path
 
 import polars as pl
+from pydantic import BaseModel, field_validator
 
 import mlforge.entities as entities_
+import mlforge.errors as errors
 import mlforge.online as online_
 import mlforge.store as store_
 import mlforge.types as types_
 import mlforge.utils as utils
 
-# Type alias for feature specification: "feature_name" or ("feature_name", "1.0.0")
-FeatureSpec = str | tuple[str, str]
+
+class FeatureSpec(BaseModel, frozen=True):
+    """
+    Specification for retrieving a feature with column selection and version pinning.
+
+    Use FeatureSpec to select specific columns from a feature or pin to a specific
+    version. This provides memory efficiency (only requested columns are loaded)
+    and explicit intent in code.
+
+    Attributes:
+        name: Feature name.
+        columns: Columns to retrieve. None means all columns.
+        version: Feature version. None means latest version.
+
+    Example:
+        import mlforge as mlf
+
+        # All columns, latest version
+        mlf.FeatureSpec("user_spend")
+
+        # Specific columns, latest version
+        mlf.FeatureSpec("user_spend", columns=["amt_sum_7d", "amt_mean_7d"])
+
+        # All columns, specific version
+        mlf.FeatureSpec("user_spend", version="1.0.0")
+
+        # Specific columns and version
+        mlf.FeatureSpec(
+            "user_spend",
+            columns=["amt_sum_7d"],
+            version="1.0.0",
+        )
+    """
+
+    name: str
+    columns: list[str] | None = None
+    version: str | None = None
+
+    @field_validator("columns")
+    @classmethod
+    def validate_columns(cls, v: list[str] | None) -> list[str] | None:
+        """Validate columns is not an empty list."""
+        if v is not None and len(v) == 0:
+            raise ValueError(
+                "columns cannot be empty list; use None for all columns"
+            )
+        return v
+
+    @field_validator("version")
+    @classmethod
+    def validate_version(cls, v: str | None) -> str | None:
+        """Validate version follows semver format."""
+        if v is not None:
+            parts = v.split(".")
+            if len(parts) != 3 or not all(p.isdigit() for p in parts):
+                raise ValueError(f"Invalid version format: {v}. Expected X.Y.Z")
+        return v
+
+
+# Type alias for feature input: supports string, tuple, or FeatureSpec
+FeatureInput = str | FeatureSpec | tuple[str, str]
+"""Type for feature specification in get_training_data.
+
+Can be:
+- str: Feature name (all columns, latest version)
+- FeatureSpec: Full specification with optional columns/version
+- tuple[str, str]: Legacy (name, version) syntax
+"""
+
+
+def _normalize_feature_input(feature_input: FeatureInput) -> FeatureSpec:
+    """
+    Convert any feature input format to FeatureSpec.
+
+    Args:
+        feature_input: Feature specification in any supported format.
+
+    Returns:
+        Normalized FeatureSpec instance.
+
+    Raises:
+        TypeError: If feature_input is not a supported type.
+    """
+    if isinstance(feature_input, str):
+        return FeatureSpec(name=feature_input)
+    elif isinstance(feature_input, FeatureSpec):
+        return feature_input
+    elif isinstance(feature_input, tuple):
+        name, version = feature_input
+        return FeatureSpec(name=name, version=version)
+    else:
+        raise TypeError(f"Invalid feature input type: {type(feature_input)}")
 
 
 def get_training_data(
-    features: list[FeatureSpec],
+    features: list[FeatureInput],
     entity_df: pl.DataFrame,
     store: str | Path | store_.Store = "./feature_store",
     entities: list[entities_.Entity] | None = None,
@@ -70,8 +175,11 @@ def get_training_data(
 
     Args:
         features: Feature specifications. Can be:
-            - "feature_name" - uses latest version
-            - ("feature_name", "1.0.0") - uses specific version
+            - "feature_name" - all columns, latest version
+            - ("feature_name", "1.0.0") - all columns, specific version
+            - FeatureSpec("feature_name", columns=[...]) - specific columns
+            - FeatureSpec("feature_name", version="1.0.0") - specific version
+            - FeatureSpec("feature_name", columns=[...], version="1.0.0") - both
         entity_df: DataFrame with entity keys to join on
         store: Path to feature store or Store instance
         entities: Entity definitions for key generation/validation.
@@ -104,29 +212,40 @@ def get_training_data(
             entities=[user],
             timestamp="trans_date_trans_time",
         )
+
+        # With column selection
+        training_df = mlf.get_training_data(
+            features=[
+                mlf.FeatureSpec("user_spend", columns=["amt_sum_7d", "amt_mean_7d"]),
+            ],
+            entity_df=transactions,
+            entities=[user],
+            timestamp="trans_date_trans_time",
+        )
     """
     if isinstance(store, (str, Path)):
         store = store_.LocalStore(path=store)
 
     result = _apply_entities(entity_df, entities)
 
-    for feature_spec in features:
-        # Parse feature specification
-        if isinstance(feature_spec, tuple):
-            feature_name, feature_version = feature_spec
-        else:
-            feature_name = feature_spec
-            feature_version = None  # Use latest
+    for feature_input in features:
+        spec = _normalize_feature_input(feature_input)
 
-        if not store.exists(feature_name, feature_version):
-            version_str = (
-                f" version '{feature_version}'" if feature_version else ""
-            )
+        if not store.exists(spec.name, spec.version):
+            version_str = f" version '{spec.version}'" if spec.version else ""
             raise ValueError(
-                f"Feature '{feature_name}'{version_str} not found. Run `mlforge build` first."
+                f"Feature '{spec.name}'{version_str} not found. Run `mlforge build` first."
             )
 
-        feature_df = store.read(feature_name, feature_version)
+        # Determine columns to load (need join keys + timestamp + requested columns)
+        columns_to_load = _get_columns_to_load(
+            store, spec, result.columns, timestamp
+        )
+
+        feature_df = store.read(
+            spec.name, spec.version, columns=columns_to_load
+        )
+
         join_keys = list(set(result.columns) & set(feature_df.columns))
 
         # Remove timestamp columns from join keys—they're handled separately
@@ -135,7 +254,7 @@ def get_training_data(
 
         if not join_keys:
             raise ValueError(
-                f"No common columns to join '{feature_name}'. "
+                f"No common columns to join '{spec.name}'. "
                 f"entity_df has: {result.columns}, feature has: {feature_df.columns}"
             )
 
@@ -156,6 +275,85 @@ def get_training_data(
             result = result.join(feature_df, on=join_keys, how="left")
 
     return result
+
+
+def _get_columns_to_load(
+    store: store_.Store,
+    spec: FeatureSpec,
+    entity_columns: list[str],
+    timestamp: str | None,
+) -> list[str] | None:
+    """
+    Determine which columns to load from the feature.
+
+    If spec.columns is None, returns None (load all columns).
+    Otherwise, returns the union of:
+    - Requested columns (validated against available columns)
+    - Entity key columns (needed for joins)
+    - Timestamp column (if present and needed for point-in-time joins)
+
+    Args:
+        store: Feature store instance
+        spec: Feature specification
+        entity_columns: Columns in the entity DataFrame
+        timestamp: Timestamp column name for point-in-time joins
+
+    Returns:
+        List of columns to load, or None for all columns
+
+    Raises:
+        FeatureSpecError: If any requested columns don't exist
+    """
+    if spec.columns is None:
+        return None
+
+    # Read schema to find join keys and timestamp column
+    # We need to read all columns to get schema, but only once per feature
+    full_df = store.read(spec.name, spec.version)
+    feature_columns = full_df.columns
+
+    # Validate requested columns exist before building column list
+    _validate_columns(spec.name, spec.columns, feature_columns)
+
+    # Find join key columns (intersection of entity and feature columns)
+    join_keys = list(set(entity_columns) & set(feature_columns))
+
+    # Find timestamp column
+    feature_timestamp = _get_feature_timestamp(full_df)
+
+    # Build column set
+    columns_to_load = set(spec.columns)
+    columns_to_load.update(join_keys)
+
+    if timestamp and feature_timestamp:
+        columns_to_load.add(feature_timestamp)
+
+    return list(columns_to_load)
+
+
+def _validate_columns(
+    feature_name: str,
+    requested: list[str],
+    available: list[str],
+) -> None:
+    """
+    Validate that requested columns exist in the feature.
+
+    Args:
+        feature_name: Name of the feature
+        requested: List of requested column names
+        available: List of available column names
+
+    Raises:
+        FeatureSpecError: If any requested columns don't exist
+    """
+    missing = set(requested) - set(available)
+    if missing:
+        raise errors.FeatureSpecError(
+            feature_name=feature_name,
+            message=f"Columns not found in feature '{feature_name}': {sorted(missing)}",
+            available_columns=sorted(available),
+        )
 
 
 def _get_feature_timestamp(df: pl.DataFrame) -> str | None:

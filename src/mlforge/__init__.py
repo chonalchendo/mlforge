@@ -37,6 +37,7 @@ Public API:
     Definitions: Central registry for features with get_training_data/get_online_features
     feature: Decorator for defining features
     Feature: Container class for feature definitions
+    FeatureSpec: Column selection and version pinning for feature retrieval
     Entity: Entity definition with optional surrogate key generation
     Rolling: Rolling window aggregation metric
 
@@ -68,6 +69,7 @@ __version__ = _get_version("mlforge-sdk")
 from mlforge.core import Definitions, Feature, feature
 from mlforge.entities import Entity
 from mlforge.metrics import Rolling
+from mlforge.retrieval import FeatureSpec
 from mlforge.online import DynamoDBStore, OnlineStore, RedisStore
 from mlforge.sources import CSVFormat, DeltaFormat, ParquetFormat, Source
 from mlforge.store import GCSStore, LocalStore, S3Store
@@ -90,6 +92,7 @@ __all__ = [
     "__version__",
     "feature",
     "Feature",
+    "FeatureSpec",
     "Definitions",
     "Entity",
     "LocalStore",
