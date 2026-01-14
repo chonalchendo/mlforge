@@ -49,6 +49,7 @@ from pathlib import Path
 import polars as pl
 
 import mlforge.entities as entities_
+import mlforge.integrations.mlflow as mlflow_integration
 import mlforge.online as online_
 import mlforge.store as store_
 import mlforge.types as types_
@@ -154,6 +155,14 @@ def get_training_data(
         else:
             # Standard join
             result = result.join(feature_df, on=join_keys, how="left")
+
+    # Auto-log to MLflow if enabled
+    if mlflow_integration.is_autolog_enabled():
+        feature_names = [f if isinstance(f, str) else f[0] for f in features]
+        try:
+            mlflow_integration.log_features_to_mlflow(feature_names, store)
+        except Exception:  # nosec B110 - intentional silent skip for optional integration
+            pass
 
     return result
 
