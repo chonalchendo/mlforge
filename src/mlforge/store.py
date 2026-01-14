@@ -48,6 +48,7 @@ class Store(ABC):
         self,
         feature_name: str,
         feature_version: str | None = None,
+        columns: list[str] | None = None,
     ) -> pl.DataFrame:
         """
         Retrieve a materialized feature from storage.
@@ -55,6 +56,8 @@ class Store(ABC):
         Args:
             feature_name: Unique identifier for the feature
             feature_version: Specific version to read. If None, reads latest.
+            columns: Specific columns to read. If None, reads all columns.
+                Uses Parquet column projection for efficiency.
 
         Returns:
             Feature data as a DataFrame
@@ -292,6 +295,7 @@ class LocalStore(Store):
         self,
         feature_name: str,
         feature_version: str | None = None,
+        columns: list[str] | None = None,
     ) -> pl.DataFrame:
         """
         Read feature data from versioned parquet file.
@@ -299,6 +303,7 @@ class LocalStore(Store):
         Args:
             feature_name: Unique identifier for the feature
             feature_version: Specific version to read. If None, reads latest.
+            columns: Specific columns to read. If None, reads all columns.
 
         Returns:
             Feature data as a DataFrame
@@ -322,7 +327,7 @@ class LocalStore(Store):
                 f"Feature '{feature_name}' version '{resolved}' not found."
             )
 
-        return pl.read_parquet(path)
+        return pl.read_parquet(path, columns=columns)
 
     @override
     def exists(
@@ -695,6 +700,7 @@ class S3Store(Store):
         self,
         feature_name: str,
         feature_version: str | None = None,
+        columns: list[str] | None = None,
     ) -> pl.DataFrame:
         """
         Read feature data from versioned S3 parquet file.
@@ -702,6 +708,7 @@ class S3Store(Store):
         Args:
             feature_name: Unique identifier for the feature
             feature_version: Specific version to read. If None, reads latest.
+            columns: Specific columns to read. If None, reads all columns.
 
         Returns:
             Feature data as a DataFrame
@@ -723,7 +730,7 @@ class S3Store(Store):
                 f"Feature '{feature_name}' version '{resolved}' not found."
             )
 
-        return pl.read_parquet(path)
+        return pl.read_parquet(path, columns=columns)
 
     @override
     def exists(
@@ -1082,6 +1089,7 @@ class GCSStore(Store):
         self,
         feature_name: str,
         feature_version: str | None = None,
+        columns: list[str] | None = None,
     ) -> pl.DataFrame:
         """
         Read feature data from versioned GCS parquet file.
@@ -1089,6 +1097,7 @@ class GCSStore(Store):
         Args:
             feature_name: Unique identifier for the feature
             feature_version: Specific version to read. If None, reads latest.
+            columns: Specific columns to read. If None, reads all columns.
 
         Returns:
             Feature data as a DataFrame
@@ -1110,7 +1119,7 @@ class GCSStore(Store):
                 f"Feature '{feature_name}' version '{resolved}' not found."
             )
 
-        return pl.read_parquet(path)
+        return pl.read_parquet(path, columns=columns)
 
     @override
     def exists(

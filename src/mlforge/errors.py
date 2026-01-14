@@ -149,6 +149,52 @@ class FeatureValidationError(Exception):
         return "\n".join(parts)
 
 
+class FeatureSpecError(Exception):
+    """
+    Raised when feature specification is invalid.
+
+    Typically occurs when requested columns don't exist in the feature.
+
+    Attributes:
+        feature_name: Name of the feature
+        message: Error description
+        available_columns: List of valid column names (if known)
+    """
+
+    def __init__(
+        self,
+        feature_name: str,
+        message: str,
+        available_columns: list[str] | None = None,
+    ):
+        """
+        Initialize feature spec error.
+
+        Args:
+            feature_name: Name of the feature
+            message: Error description
+            available_columns: Valid columns for this feature. Defaults to None.
+        """
+        self.feature_name = feature_name
+        self.message = message
+        self.available_columns = available_columns
+        super().__init__(message)
+
+    def __str__(self) -> str:
+        """
+        Format error message with available columns.
+
+        Returns:
+            Formatted error message
+        """
+        parts = [f"FeatureSpecError: {self.message}"]
+        if self.available_columns:
+            parts.append("\nAvailable columns:")
+            for col in self.available_columns:
+                parts.append(f"  - {col}")
+        return "\n".join(parts)
+
+
 class VersionError(Exception):
     """Base class for version-related errors."""
 

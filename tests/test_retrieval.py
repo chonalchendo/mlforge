@@ -773,3 +773,407 @@ def test_definitions_get_online_features_store_override():
 
         # Should get value from override store
         assert result["total"][0] == 999.0
+
+
+# =============================================================================
+# FeatureSpec Tests
+# =============================================================================
+
+
+def test_feature_spec_basic_construction():
+    """FeatureSpec with just name returns all columns, latest version."""
+    from mlforge.retrieval import FeatureSpec
+
+    # Given a feature spec with just a name
+    spec = FeatureSpec(name="user_spend")
+
+    # Then it should have default values
+    assert spec.name == "user_spend"
+    assert spec.columns is None
+    assert spec.version is None
+
+
+def test_feature_spec_with_columns():
+    """FeatureSpec should accept column list."""
+    from mlforge.retrieval import FeatureSpec
+
+    # Given a feature spec with columns
+    spec = FeatureSpec(name="user_spend", columns=["amt_sum_7d", "amt_mean_7d"])
+
+    # Then columns should be set
+    assert spec.columns == ["amt_sum_7d", "amt_mean_7d"]
+
+
+def test_feature_spec_with_version():
+    """FeatureSpec should accept version."""
+    from mlforge.retrieval import FeatureSpec
+
+    # Given a feature spec with version
+    spec = FeatureSpec(name="user_spend", version="1.0.0")
+
+    # Then version should be set
+    assert spec.version == "1.0.0"
+
+
+def test_feature_spec_with_columns_and_version():
+    """FeatureSpec should accept both columns and version."""
+    from mlforge.retrieval import FeatureSpec
+
+    # Given a feature spec with both
+    spec = FeatureSpec(
+        name="user_spend",
+        columns=["amt_sum_7d"],
+        version="2.1.0",
+    )
+
+    # Then both should be set
+    assert spec.columns == ["amt_sum_7d"]
+    assert spec.version == "2.1.0"
+
+
+def test_feature_spec_empty_columns_raises_error():
+    """Empty columns list should raise error."""
+    from mlforge.retrieval import FeatureSpec
+    from pydantic import ValidationError
+
+    # When creating with empty columns list
+    # Then ValidationError should be raised
+    with pytest.raises(ValidationError, match="columns cannot be empty"):
+        FeatureSpec(name="user_spend", columns=[])
+
+
+def test_feature_spec_invalid_version_format_raises_error():
+    """Invalid version format should raise error."""
+    from mlforge.retrieval import FeatureSpec
+    from pydantic import ValidationError
+
+    # When creating with invalid version
+    # Then ValidationError should be raised
+    with pytest.raises(ValidationError, match="Invalid version format"):
+        FeatureSpec(name="user_spend", version="1.0")
+
+    with pytest.raises(ValidationError, match="Invalid version format"):
+        FeatureSpec(name="user_spend", version="v1.0.0")
+
+
+def test_feature_spec_is_frozen():
+    """FeatureSpec should be immutable."""
+    from mlforge.retrieval import FeatureSpec
+
+    spec = FeatureSpec(name="user_spend")
+
+    # When trying to modify
+    # Then error should be raised
+    with pytest.raises(
+        Exception
+    ):  # Pydantic raises ValidationError on mutation
+        spec.name = "other_feature"  # type: ignore[misc]
+
+
+def test_normalize_feature_input_string():
+    """String input should become FeatureSpec."""
+    from mlforge.retrieval import FeatureSpec, _normalize_feature_input
+
+    # Given a string input
+    spec = _normalize_feature_input("user_spend")
+
+    # Then it should be normalized to FeatureSpec
+    assert isinstance(spec, FeatureSpec)
+    assert spec.name == "user_spend"
+    assert spec.columns is None
+    assert spec.version is None
+
+
+def test_normalize_feature_input_tuple():
+    """Tuple input should become FeatureSpec with version."""
+    from mlforge.retrieval import FeatureSpec, _normalize_feature_input
+
+    # Given a tuple input
+    spec = _normalize_feature_input(("user_spend", "1.0.0"))
+
+    # Then it should be normalized with version
+    assert isinstance(spec, FeatureSpec)
+    assert spec.name == "user_spend"
+    assert spec.version == "1.0.0"
+    assert spec.columns is None
+
+
+def test_normalize_feature_input_feature_spec():
+    """FeatureSpec input should pass through unchanged."""
+    from mlforge.retrieval import FeatureSpec, _normalize_feature_input
+
+    # Given a FeatureSpec input
+    original = FeatureSpec(name="user_spend", columns=["amt_sum_7d"])
+
+    # Then it should pass through
+    spec = _normalize_feature_input(original)
+    assert spec is original
+
+
+def test_normalize_feature_input_invalid_type():
+    """Invalid input type should raise TypeError."""
+    from mlforge.retrieval import _normalize_feature_input
+
+    # When passing invalid type
+    # Then TypeError should be raised
+    with pytest.raises(TypeError, match="Invalid feature input type"):
+        _normalize_feature_input(123)  # type: ignore[arg-type]
+
+
+def test_get_training_data_with_feature_spec_columns():
+    """get_training_data should only return requested columns."""
+    from mlforge.retrieval import FeatureSpec
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        store = LocalStore(path=tmpdir)
+
+        # Given a feature with multiple columns
+        feature_df = pl.DataFrame(
+            {
+                "user_id": ["user_1", "user_2"],
+                "amt_sum_7d": [100.0, 200.0],
+                "amt_sum_30d": [500.0, 600.0],
+                "amt_mean_7d": [50.0, 100.0],
+            }
+        )
+        store.write(
+            "user_spend",
+            PolarsResult(feature_df),
+            feature_version="1.0.0",
+        )
+
+        # And an entity DataFrame
+        entity_df = pl.DataFrame({"user_id": ["user_1", "user_2"]})
+
+        # When retrieving with column selection
+        result = get_training_data(
+            features=[FeatureSpec(name="user_spend", columns=["amt_sum_7d"])],
+            entity_df=entity_df,
+            store=store,
+        )
+
+        # Then only requested columns should be present
+        assert "amt_sum_7d" in result.columns
+        assert "amt_sum_30d" not in result.columns
+        assert "amt_mean_7d" not in result.columns
+
+
+def test_get_training_data_with_feature_spec_version():
+    """get_training_data should use specified version."""
+    from mlforge.retrieval import FeatureSpec
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        store = LocalStore(path=tmpdir)
+
+        # Given two versions of a feature
+        v1_df = pl.DataFrame(
+            {
+                "user_id": ["user_1"],
+                "value": [100.0],
+            }
+        )
+        v2_df = pl.DataFrame(
+            {
+                "user_id": ["user_1"],
+                "value": [999.0],
+            }
+        )
+        store.write("my_feature", PolarsResult(v1_df), feature_version="1.0.0")
+        store.write("my_feature", PolarsResult(v2_df), feature_version="2.0.0")
+
+        entity_df = pl.DataFrame({"user_id": ["user_1"]})
+
+        # When retrieving specific version
+        result = get_training_data(
+            features=[FeatureSpec(name="my_feature", version="1.0.0")],
+            entity_df=entity_df,
+            store=store,
+        )
+
+        # Then should get v1 value
+        assert result["value"][0] == 100.0
+
+
+def test_get_training_data_invalid_column_raises_error():
+    """Invalid column name should raise FeatureSpecError."""
+    from mlforge.errors import FeatureSpecError
+    from mlforge.retrieval import FeatureSpec
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        store = LocalStore(path=tmpdir)
+
+        # Given a feature
+        feature_df = pl.DataFrame(
+            {
+                "user_id": ["user_1"],
+                "amt_sum_7d": [100.0],
+            }
+        )
+        store.write(
+            "user_spend",
+            PolarsResult(feature_df),
+            feature_version="1.0.0",
+        )
+
+        entity_df = pl.DataFrame({"user_id": ["user_1"]})
+
+        # When requesting invalid column
+        # Then FeatureSpecError should be raised
+        with pytest.raises(FeatureSpecError) as exc_info:
+            get_training_data(
+                features=[
+                    FeatureSpec(
+                        name="user_spend", columns=["nonexistent_column"]
+                    )
+                ],
+                entity_df=entity_df,
+                store=store,
+            )
+
+        # And error should list available columns
+        assert "nonexistent_column" in str(exc_info.value)
+        assert "amt_sum_7d" in str(exc_info.value)
+
+
+def test_get_training_data_backwards_compatible_string():
+    """String feature input should still work."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        store = LocalStore(path=tmpdir)
+
+        feature_df = pl.DataFrame(
+            {
+                "user_id": ["user_1"],
+                "value": [100.0],
+            }
+        )
+        store.write(
+            "my_feature", PolarsResult(feature_df), feature_version="1.0.0"
+        )
+
+        entity_df = pl.DataFrame({"user_id": ["user_1"]})
+
+        # When using string input (backwards compatible)
+        result = get_training_data(
+            features=["my_feature"],
+            entity_df=entity_df,
+            store=store,
+        )
+
+        # Then should work
+        assert result["value"][0] == 100.0
+
+
+def test_get_training_data_backwards_compatible_tuple():
+    """Tuple feature input should still work."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        store = LocalStore(path=tmpdir)
+
+        feature_df = pl.DataFrame(
+            {
+                "user_id": ["user_1"],
+                "value": [100.0],
+            }
+        )
+        store.write(
+            "my_feature", PolarsResult(feature_df), feature_version="1.0.0"
+        )
+
+        entity_df = pl.DataFrame({"user_id": ["user_1"]})
+
+        # When using tuple input (backwards compatible)
+        result = get_training_data(
+            features=[("my_feature", "1.0.0")],
+            entity_df=entity_df,
+            store=store,
+        )
+
+        # Then should work
+        assert result["value"][0] == 100.0
+
+
+def test_get_training_data_mixed_feature_inputs():
+    """Should accept mixed feature input types."""
+    from mlforge.retrieval import FeatureSpec
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        store = LocalStore(path=tmpdir)
+
+        # Given multiple features
+        store.write(
+            "feature_a",
+            PolarsResult(pl.DataFrame({"user_id": ["user_1"], "a": [1.0]})),
+            feature_version="1.0.0",
+        )
+        store.write(
+            "feature_b",
+            PolarsResult(pl.DataFrame({"user_id": ["user_1"], "b": [2.0]})),
+            feature_version="1.0.0",
+        )
+        store.write(
+            "feature_c",
+            PolarsResult(pl.DataFrame({"user_id": ["user_1"], "c": [3.0]})),
+            feature_version="1.0.0",
+        )
+
+        entity_df = pl.DataFrame({"user_id": ["user_1"]})
+
+        # When using mixed input types
+        result = get_training_data(
+            features=[
+                "feature_a",  # string
+                ("feature_b", "1.0.0"),  # tuple
+                FeatureSpec(name="feature_c"),  # FeatureSpec
+            ],
+            entity_df=entity_df,
+            store=store,
+        )
+
+        # Then all should be joined
+        assert result["a"][0] == 1.0
+        assert result["b"][0] == 2.0
+        assert result["c"][0] == 3.0
+
+
+def test_get_training_data_with_timestamp_and_columns():
+    """Column selection should preserve timestamp column for point-in-time joins."""
+    from mlforge.retrieval import FeatureSpec
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        store = LocalStore(path=tmpdir)
+
+        # Given a feature with timestamp
+        feature_df = pl.DataFrame(
+            {
+                "user_id": ["user_1", "user_1"],
+                "amt_sum_7d": [100.0, 200.0],
+                "amt_sum_30d": [500.0, 600.0],
+                "feature_timestamp": [
+                    datetime(2024, 1, 1),
+                    datetime(2024, 1, 15),
+                ],
+            }
+        )
+        store.write(
+            "user_spend",
+            PolarsResult(feature_df),
+            feature_version="1.0.0",
+        )
+
+        # And entity data at specific time
+        entity_df = pl.DataFrame(
+            {
+                "user_id": ["user_1"],
+                "event_time": [datetime(2024, 1, 10)],
+            }
+        )
+
+        # When retrieving with column selection and timestamp
+        result = get_training_data(
+            features=[FeatureSpec(name="user_spend", columns=["amt_sum_7d"])],
+            entity_df=entity_df,
+            store=store,
+            timestamp="event_time",
+        )
+
+        # Then should get point-in-time correct value
+        assert result["amt_sum_7d"][0] == 100.0  # Jan 1 value, not Jan 15
