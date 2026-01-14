@@ -224,6 +224,20 @@ wheels = [
 ]
 
 [[package]]
+name = "boto3"
+version = "1.41.5"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "botocore" },
+    { name = "jmespath" },
+    { name = "s3transfer" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/5b/81/450cd4143864959264a3d80f9246175a20de8c1e50ec889c710eaa28cdd9/boto3-1.41.5.tar.gz", hash = "sha256:bc7806bee681dfdff2fe2b74967b107a56274f1e66ebe4d20dc8eee1ea408d17", size = 111594, upload-time = "2025-11-26T20:27:47.021Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/3c/56/f47a80254ed4991cce9a2f6d8ae8aafbc8df1c3270e966b2927289e5a12f/boto3-1.41.5-py3-none-any.whl", hash = "sha256:bb278111bfb4c33dca8342bda49c9db7685e43debbfa00cc2a5eb854dd54b745", size = 139344, upload-time = "2025-11-26T20:27:45.571Z" },
+]
+
+[[package]]
 name = "botocore"
 version = "1.41.5"
 source = { registry = "https://pypi.org/simple" }
@@ -1214,6 +1228,9 @@ all = [
 duckdb = [
     { name = "duckdb" },
 ]
+dynamodb = [
+    { name = "boto3" },
+]
 gcs = [
     { name = "gcsfs" },
 ]
@@ -1224,6 +1241,7 @@ redis = [
 [package.dev-dependencies]
 check = [
     { name = "bandit" },
+    { name = "boto3" },
     { name = "duckdb" },
     { name = "httpx" },
     { name = "pytest" },
@@ -1250,6 +1268,7 @@ docs = [
 
 [package.metadata]
 requires-dist = [
+    { name = "boto3", marker = "extra == 'dynamodb'", specifier = ">=1.28.0" },
     { name = "cyclopts", specifier = ">=4.2.1" },
     { name = "duckdb", marker = "extra == 'all'", specifier = ">=1.4.3" },
     { name = "duckdb", marker = "extra == 'duckdb'", specifier = ">=1.4.3" },
@@ -1269,11 +1288,12 @@ requires-dist = [
     { name = "setuptools", specifier = ">=80.9.0" },
     { name = "uvicorn", specifier = ">=0.34.0" },
 ]
-provides-extras = ["duckdb", "redis", "all", "gcs"]
+provides-extras = ["duckdb", "redis", "dynamodb", "all", "gcs"]
 
 [package.metadata.requires-dev]
 check = [
     { name = "bandit", specifier = ">=1.9.2" },
+    { name = "boto3", specifier = ">=1.28.0" },
     { name = "duckdb", specifier = ">=1.4.3" },
     { name = "httpx", specifier = ">=0.28.0" },
     { name = "pytest", specifier = ">=9.0.2" },
@@ -2091,6 +2111,18 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/cf/26/fff848df6a76d6fec20208e61548244639c46a741e296244c3404d6e7df0/s3fs-2025.12.0.tar.gz", hash = "sha256:8612885105ce14d609c5b807553f9f9956b45541576a17ff337d9435ed3eb01f", size = 81217, upload-time = "2025-12-03T15:34:04.754Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/44/8c/04797ebb53748b4d594d4c334b2d9a99f2d2e06e19ad505f1313ca5d56eb/s3fs-2025.12.0-py3-none-any.whl", hash = "sha256:89d51e0744256baad7ae5410304a368ca195affd93a07795bc8ba9c00c9effbb", size = 30726, upload-time = "2025-12-03T15:34:03.576Z" },
+]
+
+[[package]]
+name = "s3transfer"
+version = "0.15.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "botocore" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/ca/bb/940d6af975948c1cc18f44545ffb219d3c35d78ec972b42ae229e8e37e08/s3transfer-0.15.0.tar.gz", hash = "sha256:d36fac8d0e3603eff9b5bfa4282c7ce6feb0301a633566153cbd0b93d11d8379", size = 152185, upload-time = "2025-11-20T20:28:56.327Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/5f/e1/5ef25f52973aa12a19cf4e1375d00932d7fb354ffd310487ba7d44225c1a/s3transfer-0.15.0-py3-none-any.whl", hash = "sha256:6f8bf5caa31a0865c4081186689db1b2534cef721d104eb26101de4b9d6a5852", size = 85984, upload-time = "2025-11-20T20:28:55.046Z" },
 ]
 
 [[package]]

@@ -133,9 +133,32 @@ class RedisStoreConfig(BaseModel, frozen=True):
         )
 
 
+class DynamoDBStoreConfig(BaseModel, frozen=True):
+    """Configuration for DynamoDB online store."""
+
+    KIND: T.Literal["dynamodb"] = "dynamodb"
+    table_name: str
+    region: str | None = None
+    endpoint_url: str | None = None
+    ttl_seconds: int | None = None
+    auto_create: bool = True
+
+    def create(self) -> online_.DynamoDBStore:
+        """Create store instance from this config."""
+        import mlforge.online as online_
+
+        return online_.DynamoDBStore(
+            table_name=self.table_name,
+            region=self.region,
+            endpoint_url=self.endpoint_url,
+            ttl_seconds=self.ttl_seconds,
+            auto_create=self.auto_create,
+        )
+
+
 # Discriminated union for online stores
 OnlineStoreConfig = T.Annotated[
-    RedisStoreConfig,
+    RedisStoreConfig | DynamoDBStoreConfig,
     Field(discriminator="KIND"),
 ]
 

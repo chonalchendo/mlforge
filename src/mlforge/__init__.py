@@ -68,7 +68,7 @@ __version__ = _get_version("mlforge-sdk")
 from mlforge.core import Definitions, Feature, feature
 from mlforge.entities import Entity
 from mlforge.metrics import Rolling
-from mlforge.online import OnlineStore, RedisStore
+from mlforge.online import DynamoDBStore, OnlineStore, RedisStore
 from mlforge.sources import CSVFormat, DeltaFormat, ParquetFormat, Source
 from mlforge.store import GCSStore, LocalStore, S3Store
 from mlforge.timestamps import Timestamp
@@ -97,6 +97,7 @@ __all__ = [
     "GCSStore",
     "OnlineStore",
     "RedisStore",
+    "DynamoDBStore",
     "Timestamp",
     "surrogate_key",
     "Rolling",
