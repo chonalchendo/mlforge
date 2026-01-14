@@ -412,3 +412,40 @@ class SourceDataChangedError(Exception):
             "  - Use --force to rebuild anyway (will auto-version based on changes)\n"
             "  - Ensure you have the same source data as your teammate"
         )
+
+
+class MlflowError(Exception):
+    """
+    Raised when MLflow operations fail.
+
+    Common causes include no active MLflow run, MLflow not installed,
+    or issues with the tracking server.
+
+    Attributes:
+        message: Primary error message
+        hint: Suggestion for how to fix the error
+    """
+
+    def __init__(self, message: str, hint: str | None = None):
+        """
+        Initialize MLflow error.
+
+        Args:
+            message: Primary error message
+            hint: Resolution suggestion. Defaults to None.
+        """
+        self.message = message
+        self.hint = hint
+        super().__init__(message)
+
+    def __str__(self) -> str:
+        """
+        Format error message with hint.
+
+        Returns:
+            Formatted error message
+        """
+        parts = [f"MlflowError: {self.message}"]
+        if self.hint:
+            parts.append(f"\nHint: {self.hint}")
+        return "\n".join(parts)

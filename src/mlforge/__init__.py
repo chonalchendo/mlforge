@@ -59,6 +59,10 @@ Public API:
 
     Validators:
         not_null, unique, greater_than, less_than, in_range, is_in, matches_regex
+
+    Integrations:
+        mlflow: MLflow integration module (mlf.mlflow.autolog(), etc.)
+        log_features_to_mlflow: Log feature metadata to MLflow runs
 """
 
 from importlib.metadata import version as _get_version
@@ -85,6 +89,10 @@ from mlforge.validators import (
     not_null,
     unique,
 )
+
+# MLflow integration - exposed as mlf.mlflow module and direct function
+from mlforge.integrations import mlflow
+from mlforge.integrations.mlflow import log_features_to_mlflow
 
 __all__ = [
     "__version__",
@@ -116,4 +124,6 @@ __all__ = [
     "in_range",
     "matches_regex",
     "not_null",
+    "mlflow",
+    "log_features_to_mlflow",
 ]

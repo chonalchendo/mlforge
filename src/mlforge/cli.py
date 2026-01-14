@@ -1531,3 +1531,102 @@ def serve(
     except (errors.DefinitionsLoadError, errors.ProfileError) as e:
         log.print_error(str(e))
         raise SystemExit(1)
+
+
+# =============================================================================
+# log - Log feature metadata to external systems
+# =============================================================================
+
+log_app = cyclopts.App(
+    name="log", help="Log feature metadata to external systems"
+)
+app.command(log_app)
+
+
+@log_app.command
+def mlflow(
+    features: Annotated[
+        str,
+        cyclopts.Parameter(
+            name="--features",
+            help="Comma-separated list of feature names to log",
+        ),
+    ],
+    run_id: Annotated[
+        str,
+        cyclopts.Parameter(
+            name="--run-id",
+            help="MLflow run ID to log to",
+        ),
+    ],
+    target: Annotated[
+        str | None,
+        cyclopts.Parameter(
+            name="--definitions",
+            help="Path to definitions.py file",
+        ),
+    ] = None,
+    profile: Annotated[
+        str | None,
+        cyclopts.Parameter(
+            name="--profile",
+            help="Profile name from mlforge.yaml to use for stores",
+        ),
+    ] = None,
+    tracking_uri: Annotated[
+        str | None,
+        cyclopts.Parameter(
+            name="--tracking-uri",
+            help="MLflow tracking server URI",
+        ),
+    ] = None,
+):
+    """
+    Log feature metadata to an MLflow run.
+
+    Logs feature versions, schemas, and statistics as parameters, tags,
+    metrics, and artifacts to the specified MLflow run.
+
+    Examples:
+        mlforge log mlflow --features user_spend,merchant_spend --run-id abc123
+
+        mlforge log mlflow --features user_spend --run-id abc123 \\
+            --definitions src/my_project/definitions.py
+
+        mlforge log mlflow --features user_spend --run-id abc123 \\
+            --tracking-uri http://mlflow.example.com:5000
+    """
+    import mlforge.integrations.mlflow as mlflow_integration
+
+    try:
+        # Import mlflow and set tracking URI if provided
+        mlflow_module = mlflow_integration._require_mlflow()
+        if tracking_uri:
+            mlflow_module.set_tracking_uri(tracking_uri)
+
+        # Load definitions to get the store
+        defs = loader.load_definitions(target=target, profile=profile)
+
+        # Parse feature list
+        feature_list = [f.strip() for f in features.split(",")]
+
+        # Log features to MLflow
+        mlflow_integration.log_features_to_mlflow(
+            features=feature_list,
+            store=defs.offline_store,
+            run_id=run_id,
+        )
+
+        log.print_success(
+            f"Logged {len(feature_list)} feature(s) to MLflow run {run_id}"
+        )
+
+    except ImportError as e:
+        log.print_error(str(e))
+        raise SystemExit(1)
+    except errors.MlflowError as e:
+        log.print_error(str(e))
+        raise SystemExit(1)
+    except (errors.DefinitionsLoadError, errors.ProfileError) as e:
+        log.print_error(str(e))
+        raise SystemExit(1)
