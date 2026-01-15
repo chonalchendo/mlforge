@@ -27,6 +27,17 @@
   - Version pinning (`version="1.0.0"`) for reproducible training
   - Backward compatibility with string feature names
 
+- **CLI UX Enhancements**: Improved command-line experience with minimal output
+  - Default minimal output for cleaner build experience
+  - `--verbose` flag for detailed logging and debugging
+  - `--preview` flag to show data preview tables (off by default)
+  - **Breaking Change**: `--no-preview` renamed to `--preview` (preview off by default)
+
+### ♻️ Refactorings
+
+- Improve build command output with structured BuildResult dataclass
+- Enhanced build progress reporting and timing information
+
 ### 📝 Documentation
 
 - Add FeatureSpec documentation with usage examples
