@@ -1,3 +1,38 @@
+## v0.7.0 (2025-01-15)
+
+### ✨ Features
+
+- **REST API**: FastAPI-based server for real-time feature serving
+  - `mlforge serve` command with `--definitions` and `--profile` options
+  - Health check endpoint with online store status monitoring
+  - Single entity (`POST /features/online`) and batch (`POST /features/batch`) endpoints
+  - Optional Prometheus metrics endpoint (`GET /metrics`)
+  - Support for both Redis and DynamoDB backends
+
+- **DynamoDB Store**: AWS-managed online store for production deployments
+  - `DynamoDBStore` class with auto-table creation and TTL support
+  - Entity-aligned key format consistent with Redis
+  - Health check method for monitoring store availability
+  - Regional configuration and IAM-based access control
+
+- **MLflow Integration**: Feature metadata logging for ML experiment tracking
+  - `mlforge.mlflow.autolog()` for automatic feature logging
+  - `log_features_to_mlflow()` for manual logging with tags, params, metrics, and artifacts
+  - Feature version tracking and metadata export to MLflow runs
+  - Support for both active and completed MLflow runs
+
+- **FeatureSpec**: Column-level selection and version pinning for efficient retrieval
+  - `FeatureSpec` class for fine-grained feature specification
+  - Column selection (`columns=["amt_sum_7d", "amt_mean_7d"]`) to reduce data transfer
+  - Version pinning (`version="1.0.0"`) for reproducible training
+  - Backward compatibility with string feature names
+
+### 📝 Documentation
+
+- Add FeatureSpec documentation with usage examples
+- Add DynamoDB configuration examples
+- Update API documentation for all new features
+
 ## v0.6.0 (2025-01-11)
 
 ### ✨ Features
