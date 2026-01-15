@@ -37,6 +37,7 @@ Public API:
     Definitions: Central registry for features with get_training_data/get_online_features
     feature: Decorator for defining features
     Feature: Container class for feature definitions
+    FeatureSpec: Column selection and version pinning for feature retrieval
     Entity: Entity definition with optional surrogate key generation
     Rolling: Rolling window aggregation metric
 
@@ -59,6 +60,10 @@ Public API:
 
     Validators:
         not_null, unique, greater_than, less_than, in_range, is_in, matches_regex
+
+    Integrations:
+        mlflow: MLflow integration module (mlf.mlflow.autolog(), etc.)
+        log_features_to_mlflow: Log feature metadata to MLflow runs
 """
 
 from importlib.metadata import version as _get_version
@@ -68,7 +73,8 @@ __version__ = _get_version("mlforge-sdk")
 from mlforge.core import Definitions, Feature, feature
 from mlforge.entities import Entity
 from mlforge.metrics import Rolling
-from mlforge.online import OnlineStore, RedisStore
+from mlforge.retrieval import FeatureSpec
+from mlforge.online import DynamoDBStore, OnlineStore, RedisStore
 from mlforge.sources import CSVFormat, DeltaFormat, ParquetFormat, Source
 from mlforge.store import GCSStore, LocalStore, S3Store
 from mlforge.timestamps import Timestamp
@@ -86,10 +92,15 @@ from mlforge.validators import (
     unique,
 )
 
+# MLflow integration - exposed as mlf.mlflow module and direct function
+from mlforge.integrations import mlflow
+from mlforge.integrations.mlflow import log_features_to_mlflow
+
 __all__ = [
     "__version__",
     "feature",
     "Feature",
+    "FeatureSpec",
     "Definitions",
     "Entity",
     "LocalStore",
@@ -97,6 +108,7 @@ __all__ = [
     "GCSStore",
     "OnlineStore",
     "RedisStore",
+    "DynamoDBStore",
     "Timestamp",
     "surrogate_key",
     "Rolling",
@@ -115,4 +127,6 @@ __all__ = [
     "in_range",
     "matches_regex",
     "not_null",
+    "mlflow",
+    "log_features_to_mlflow",
 ]

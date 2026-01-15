@@ -184,3 +184,24 @@ Use conventional commits with emoji:
 3. General enough without over-engineering
 4. No shallow modules (interface as complex as implementation)
 5. No pass-through methods that just forward calls
+
+## CI/CD Integration
+
+- **Version bumping**: Handled by `.github/workflows/bump.yaml` on push to main
+- **Commitizen config**: `update_changelog_on_bump = false` (changelog is manual)
+- **Version detection**: Automatic from conventional commits (feat=MINOR, fix=PATCH)
+- **Tagging**: Automatic after version bump on main
+
+## Branch Strategy
+
+```
+main (protected)
+  └── release/X.Y.Z
+        ├── feature/name
+        ├── refactor/name
+        └── fix/name
+```
+
+- **PRs**: Only from `release/*` branches to `main`
+- **Features**: Merge to release branch, not directly to main
+- **Parallel dev**: Use git worktrees (`../mlforge-{feature}/`)

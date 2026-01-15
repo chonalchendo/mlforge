@@ -164,6 +164,74 @@ def print_info(message: str) -> None:
     console.print(f"[blue]i[/blue] {message}")
 
 
+# =============================================================================
+# Build Progress Functions
+# =============================================================================
+
+
+def print_building(feature_name: str) -> None:
+    """
+    Print a building status message.
+
+    Args:
+        feature_name: Name of the feature being built
+    """
+    console.print(f"[dim]Building[/dim] {feature_name}...")
+
+
+def print_built(feature_name: str, version: str, path: str) -> None:
+    """
+    Print a built success message.
+
+    Args:
+        feature_name: Name of the feature that was built
+        version: Version of the feature
+        path: Path where the feature was stored
+    """
+    console.print(
+        f"[green]Built[/green] {feature_name} [cyan]v{version}[/cyan] "
+        f"[dim]→[/dim] {path}"
+    )
+
+
+def print_skipped(feature_name: str, version: str) -> None:
+    """
+    Print a skipped message for existing features.
+
+    Args:
+        feature_name: Name of the feature that was skipped
+        version: Version that already exists
+    """
+    console.print(
+        f"[yellow]Skipped[/yellow] {feature_name} [cyan]v{version}[/cyan] "
+        f"[dim](exists)[/dim]"
+    )
+
+
+def print_build_summary(
+    built: int, skipped: int, failed: int, duration: float
+) -> None:
+    """
+    Print a summary of the build operation.
+
+    Args:
+        built: Number of features built
+        skipped: Number of features skipped
+        failed: Number of features that failed
+        duration: Time taken in seconds
+    """
+    parts = []
+    if built > 0:
+        parts.append(f"[green]{built} built[/green]")
+    if skipped > 0:
+        parts.append(f"[yellow]{skipped} skipped[/yellow]")
+    if failed > 0:
+        parts.append(f"[red]{failed} failed[/red]")
+
+    summary = ", ".join(parts) if parts else "nothing to do"
+    console.print(f"\n[bold]Finished[/bold] in {duration:.2f}s ({summary})")
+
+
 def print_feature_metadata(
     feature_name: str, metadata: "FeatureMetadata"
 ) -> None:

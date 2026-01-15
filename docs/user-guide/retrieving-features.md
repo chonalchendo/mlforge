@@ -50,7 +50,7 @@ training_data = defs.get_training_data(
 ```python
 def get_training_data(
     self,
-    features: list[str | tuple[str, str]],
+    features: list[str | tuple[str, str] | FeatureSpec],
     entity_df: pl.DataFrame,
     timestamp: str | None = None,
     store: Store | None = None,
@@ -61,7 +61,9 @@ def get_training_data(
 
 #### features (required)
 
-List of feature names to retrieve. Must match the names of built features.
+List of feature specifications. Supports three formats:
+
+**1. String (simple)** - All columns, latest version:
 
 ```python
 training_data = defs.get_training_data(
@@ -70,7 +72,7 @@ training_data = defs.get_training_data(
 )
 ```
 
-You can also specify a version:
+**2. Tuple (version pinning)** - All columns, specific version:
 
 ```python
 training_data = defs.get_training_data(
@@ -78,6 +80,31 @@ training_data = defs.get_training_data(
     entity_df=entities
 )
 ```
+
+**3. FeatureSpec (column selection)** - Specific columns and/or version:
+
+```python
+import mlforge as mlf
+
+training_data = defs.get_training_data(
+    features=[
+        # Select specific columns (memory efficient for wide features)
+        mlf.FeatureSpec(name="user_spend", columns=["amt_sum_7d", "amt_mean_7d"]),
+        # Pin version
+        mlf.FeatureSpec(name="merchant_risk", version="1.0.0"),
+        # Both column selection and version
+        mlf.FeatureSpec(name="user_activity", columns=["login_count"], version="2.0.0"),
+    ],
+    entity_df=entities
+)
+```
+
+!!! tip "When to use FeatureSpec"
+    Use `FeatureSpec` with column selection when:
+
+    - Your feature has many columns but you only need a few
+    - You want to reduce memory usage during training
+    - You want explicit control over which columns are loaded
 
 #### entity_df (required)
 
@@ -219,6 +246,31 @@ Build the feature first:
 ```bash
 mlforge build
 ```
+
+### Invalid Columns (FeatureSpec)
+
+If you request columns that don't exist in the feature:
+
+```python
+from mlforge.errors import FeatureSpecError
+
+try:
+    training_data = defs.get_training_data(
+        features=[
+            mlf.FeatureSpec(name="user_spend", columns=["nonexistent_column"])
+        ],
+        entity_df=entities
+    )
+except FeatureSpecError as e:
+    print(e)
+    # FeatureSpecError: Columns not found in feature 'user_spend': ['nonexistent_column']
+    # Available columns:
+    #   - user_id
+    #   - amt_sum_7d
+    #   - amt_mean_7d
+```
+
+Use `mlforge inspect feature <name>` to see available columns.
 
 ### No Store Configured
 

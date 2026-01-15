@@ -1,3 +1,4 @@
+import time
 from pathlib import Path
 from typing import Annotated
 
@@ -169,22 +170,27 @@ inspect_app = cyclopts.App(
 app.command(inspect_app)
 
 
-@app.meta.default
-def launcher(
-    *tokens: str,
-    verbose: Annotated[
-        bool, cyclopts.Parameter(name=["--verbose", "-v"], help="Debug logging")
-    ] = False,
-) -> None:
+def main() -> None:
     """
-    CLI entry point that configures logging and dispatches commands.
+    Entry point for the CLI.
 
-    Args:
-        *tokens: Command tokens to execute
-        verbose: Enable debug logging. Defaults to False.
+    Configures logging before dispatching commands. Use --verbose/-v
+    for debug logging.
     """
+    import sys
+
+    # Check for verbose flag before dispatching
+    verbose = "-v" in sys.argv or "--verbose" in sys.argv
+
+    # Remove verbose flags from argv so they don't confuse subcommands
+    sys.argv = [
+        arg
+        for arg in sys.argv
+        if arg not in ("-v", "--verbose", "--no-verbose")
+    ]
+
     log.setup_logging(verbose=verbose)
-    app(tokens)
+    app()
 
 
 @app.command
@@ -219,10 +225,10 @@ def build(
             name=["--force", "-f"], help="Overwrite existing features."
         ),
     ] = False,
-    no_preview: Annotated[
+    preview: Annotated[
         bool,
         cyclopts.Parameter(
-            name="--no-preview", help="Disable feature preview output"
+            name="--preview", help="Show feature data preview after building"
         ),
     ] = False,
     preview_rows: Annotated[
@@ -264,7 +270,7 @@ def build(
         tags: Comma-separated list of feature tags. Defaults to None.
         version: Explicit version override. If not specified, auto-detects.
         force: Overwrite existing features. Defaults to False.
-        no_preview: Disable feature preview output. Defaults to False.
+        preview: Show feature data preview after building. Defaults to False.
         preview_rows: Number of preview rows to display. Defaults to 5.
         online: Write to online store instead of offline. Defaults to False.
         profile: Profile name from mlforge.yaml. Defaults to None (uses env var or config default).
@@ -284,33 +290,35 @@ def build(
         )
         tag_names = [t.strip() for t in tags.split(",")] if tags else None
 
-        results = defs.build(
+        start_time = time.perf_counter()
+
+        result = defs.build(
             feature_names=feature_names,
             tag_names=tag_names,
             feature_version=version,
             force=force,
-            preview=not no_preview,
+            preview=preview,
             preview_rows=preview_rows,
             online=online,
         )
 
+        duration = time.perf_counter() - start_time
+
         if online:
-            # Online build returns int counts
-            total_records = sum(
-                int(v) if isinstance(v, int) else 0 for v in results.values()
-            )
+            # Online build - show record counts
+            total_records = sum(int(str(v)) for v in result.paths.values())
             log.print_success(
                 f"Wrote {total_records} records to online store "
-                f"({len(results)} features)"
+                f"({result.built} features)"
             )
         else:
-            # Offline build returns paths - convert to dict[str, Path | str]
-            offline_results: dict[str, Path | str] = {
-                k: v if isinstance(v, (Path, str)) else str(v)
-                for k, v in results.items()
-            }
-            log.print_build_results(offline_results)
-            log.print_success(f"Built {len(results)} features")
+            # Offline build - show summary
+            log.print_build_summary(
+                built=result.built,
+                skipped=result.skipped,
+                failed=result.failed,
+                duration=duration,
+            )
 
     except (
         errors.DefinitionsLoadError,
@@ -1417,3 +1425,216 @@ def rollback(
     except (errors.DefinitionsLoadError, errors.ProfileError) as e:
         log.print_error(str(e))
         raise SystemExit(4)
+
+
+# =============================================================================
+# serve - REST API server
+# =============================================================================
+
+
+@app.command
+def serve(
+    target: Annotated[
+        str | None,
+        cyclopts.Parameter(
+            name="--target",
+            help="Path to definitions.py file",
+        ),
+    ] = None,
+    profile: Annotated[
+        str | None,
+        cyclopts.Parameter(
+            name="--profile",
+            help="Profile name from mlforge.yaml to use for stores",
+        ),
+    ] = None,
+    host: Annotated[
+        str,
+        cyclopts.Parameter(
+            name="--host",
+            help="Host to bind the server to",
+        ),
+    ] = "127.0.0.1",
+    port: Annotated[
+        int,
+        cyclopts.Parameter(
+            name="--port",
+            help="Port to bind the server to",
+        ),
+    ] = 8000,
+    workers: Annotated[
+        int,
+        cyclopts.Parameter(
+            name="--workers",
+            help="Number of uvicorn workers",
+        ),
+    ] = 1,
+    no_metrics: Annotated[
+        bool,
+        cyclopts.Parameter(
+            name="--no-metrics",
+            help="Disable Prometheus metrics endpoint",
+        ),
+    ] = False,
+    no_docs: Annotated[
+        bool,
+        cyclopts.Parameter(
+            name="--no-docs",
+            help="Disable OpenAPI documentation at /docs",
+        ),
+    ] = False,
+    cors_origins: Annotated[
+        str | None,
+        cyclopts.Parameter(
+            name="--cors-origins",
+            help="Comma-separated list of allowed CORS origins",
+        ),
+    ] = None,
+):
+    """
+    Start the REST API server for feature serving.
+
+    Launches a FastAPI server that exposes feature retrieval endpoints.
+    Features are served from the configured online store.
+
+    Examples:
+        mlforge serve --target src/features/definitions.py
+
+        mlforge serve --profile production --port 8080
+
+        mlforge serve --target definitions.py --cors-origins "http://localhost:3000"
+    """
+    import uvicorn
+
+    from mlforge.serve import create_app
+
+    try:
+        defs = loader.load_definitions(target=target, profile=profile)
+
+        if defs.online_store is None:
+            log.print_warning(
+                "No online store configured. "
+                "Feature retrieval endpoints will return 503."
+            )
+
+        origins = cors_origins.split(",") if cors_origins else None
+
+        application = create_app(
+            definitions=defs,
+            enable_metrics=not no_metrics,
+            enable_docs=not no_docs,
+            cors_origins=origins,
+        )
+
+        log.print_info(f"Starting mlforge server on {host}:{port}")
+        log.print_info(
+            f"OpenAPI docs: {'enabled' if not no_docs else 'disabled'}"
+        )
+        log.print_info(
+            f"Metrics: {'enabled' if not no_metrics else 'disabled'}"
+        )
+
+        uvicorn.run(application, host=host, port=port, workers=workers)
+
+    except (errors.DefinitionsLoadError, errors.ProfileError) as e:
+        log.print_error(str(e))
+        raise SystemExit(1)
+
+
+# =============================================================================
+# log - Log feature metadata to external systems
+# =============================================================================
+
+log_app = cyclopts.App(
+    name="log", help="Log feature metadata to external systems"
+)
+app.command(log_app)
+
+
+@log_app.command
+def mlflow(
+    features: Annotated[
+        str,
+        cyclopts.Parameter(
+            name="--features",
+            help="Comma-separated list of feature names to log",
+        ),
+    ],
+    run_id: Annotated[
+        str,
+        cyclopts.Parameter(
+            name="--run-id",
+            help="MLflow run ID to log to",
+        ),
+    ],
+    target: Annotated[
+        str | None,
+        cyclopts.Parameter(
+            name="--definitions",
+            help="Path to definitions.py file",
+        ),
+    ] = None,
+    profile: Annotated[
+        str | None,
+        cyclopts.Parameter(
+            name="--profile",
+            help="Profile name from mlforge.yaml to use for stores",
+        ),
+    ] = None,
+    tracking_uri: Annotated[
+        str | None,
+        cyclopts.Parameter(
+            name="--tracking-uri",
+            help="MLflow tracking server URI",
+        ),
+    ] = None,
+):
+    """
+    Log feature metadata to an MLflow run.
+
+    Logs feature versions, schemas, and statistics as parameters, tags,
+    metrics, and artifacts to the specified MLflow run.
+
+    Examples:
+        mlforge log mlflow --features user_spend,merchant_spend --run-id abc123
+
+        mlforge log mlflow --features user_spend --run-id abc123 \\
+            --definitions src/my_project/definitions.py
+
+        mlforge log mlflow --features user_spend --run-id abc123 \\
+            --tracking-uri http://mlflow.example.com:5000
+    """
+    import mlforge.integrations.mlflow as mlflow_integration
+
+    try:
+        # Import mlflow and set tracking URI if provided
+        mlflow_module = mlflow_integration._require_mlflow()
+        if tracking_uri:
+            mlflow_module.set_tracking_uri(tracking_uri)
+
+        # Load definitions to get the store
+        defs = loader.load_definitions(target=target, profile=profile)
+
+        # Parse feature list
+        feature_list = [f.strip() for f in features.split(",")]
+
+        # Log features to MLflow
+        mlflow_integration.log_features_to_mlflow(
+            features=feature_list,
+            store=defs.offline_store,
+            run_id=run_id,
+        )
+
+        log.print_success(
+            f"Logged {len(feature_list)} feature(s) to MLflow run {run_id}"
+        )
+
+    except ImportError as e:
+        log.print_error(str(e))
+        raise SystemExit(1)
+    except errors.MlflowError as e:
+        log.print_error(str(e))
+        raise SystemExit(1)
+    except (errors.DefinitionsLoadError, errors.ProfileError) as e:
+        log.print_error(str(e))
+        raise SystemExit(1)

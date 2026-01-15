@@ -31,8 +31,8 @@ mlforge build [TARGET] [OPTIONS]
 - `--version VERSION`: Explicit version override (e.g., '2.0.0'). If not specified, auto-detects based on schema changes.
 - `--force`, `-f`: Overwrite existing features. Defaults to `False`.
 - `--online`: Build to online store (e.g., Redis) instead of offline store. Defaults to `False`.
-- `--no-preview`: Disable feature preview output. Defaults to `False` (preview enabled).
-- `--preview-rows N`: Number of preview rows to display. Defaults to `5`.
+- `--preview`: Show feature data preview after building. Defaults to `False`.
+- `--preview-rows N`: Number of preview rows to display (when using `--preview`). Defaults to `5`.
 - `--profile NAME`: Profile name from mlforge.yaml to use for stores.
 - `--verbose`, `-v`: Enable debug logging. Defaults to `False`.
 
@@ -74,13 +74,13 @@ Build with verbose logging:
 mlforge build definitions.py --verbose
 ```
 
-Build without preview:
+Build with data preview:
 
 ```bash
-mlforge build definitions.py --no-preview
+mlforge build definitions.py --preview
 ```
 
-Custom preview size:
+Custom preview size (requires --preview):
 
 ```bash
 mlforge build definitions.py --preview-rows 10
@@ -108,17 +108,26 @@ mlforge build --profile production
 
 #### Output
 
-The command displays:
+The command displays minimal, clean output:
 
-1. Progress messages for each feature
-2. Preview of materialized data (unless `--no-preview`)
-3. Summary of built features
-4. Storage paths for each feature
+1. Progress status for each feature (Building/Built/Skipped)
+2. Summary with counts and duration
 
-Example output:
+Example output (default):
 
 ```
-Materializing user_total_spend
+Building user_total_spend...
+Built user_total_spend v1.0.0 → feature_store/user_total_spend/1.0.0/data.parquet
+Skipped user_avg_spend v1.0.0 (exists)
+
+Finished in 2.34s (1 built, 1 skipped)
+```
+
+Example output with `--preview`:
+
+```
+Building user_total_spend...
+Built user_total_spend v1.0.0 → feature_store/user_total_spend/1.0.0/data.parquet
 ┌─────────┬─────────────┐
 │ user_id │ total_spend │
 ├─────────┼─────────────┤
@@ -126,21 +135,21 @@ Materializing user_total_spend
 │ u2      │ 250.0       │
 │ u3      │ 100.0       │
 └─────────┴─────────────┘
+5,000 rows total
 
-Materializing user_avg_spend
-┌─────────┬───────────┐
-│ user_id │ avg_spend │
-├─────────┼───────────┤
-│ u1      │ 50.0      │
-│ u2      │ 83.3      │
-│ u3      │ 100.0     │
-└─────────┴───────────┘
+Finished in 2.34s (1 built)
+```
 
-Built features:
-  user_total_spend -> feature_store/user_total_spend.parquet
-  user_avg_spend -> feature_store/user_avg_spend.parquet
+Example output with `--verbose` (debug logging):
 
-Built 2 features
+```
+2024-01-15 10:30:00.123 | DEBUG | mlforge.loader:load_definitions:57 - Auto-discovered definitions file...
+2024-01-15 10:30:00.124 | DEBUG | mlforge.core:_add_feature:1242 - Registered feature: user_total_spend
+Building user_total_spend...
+2024-01-15 10:30:01.456 | DEBUG | mlforge.compilers.duckdb:compile_rolling:123 - Generated SQL: WITH ...
+Built user_total_spend v1.0.0 → feature_store/user_total_spend/1.0.0/data.parquet
+
+Finished in 2.34s (1 built)
 ```
 
 #### Error Handling

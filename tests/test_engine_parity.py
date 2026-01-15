@@ -12,9 +12,8 @@ from pathlib import Path
 import polars as pl
 import pytest
 
-from mlforge import Definitions, LocalStore, Rolling, feature
 import mlforge.types as types_
-
+from mlforge import Definitions, LocalStore, Rolling, feature
 
 # =============================================================================
 # Fixtures
@@ -530,8 +529,8 @@ class TestUnifiedTypeSystemIntegration:
         self, sample_transactions_parquet: Path, tmp_path: Path
     ):
         """Both engines produce equivalent canonical schemas."""
-        import mlforge.engines.polars as polars_engine
         import mlforge.engines.duckdb as duckdb_engine
+        import mlforge.engines.polars as polars_engine
 
         @feature(
             keys=["user_id"],

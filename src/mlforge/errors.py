@@ -149,6 +149,52 @@ class FeatureValidationError(Exception):
         return "\n".join(parts)
 
 
+class FeatureSpecError(Exception):
+    """
+    Raised when feature specification is invalid.
+
+    Typically occurs when requested columns don't exist in the feature.
+
+    Attributes:
+        feature_name: Name of the feature
+        message: Error description
+        available_columns: List of valid column names (if known)
+    """
+
+    def __init__(
+        self,
+        feature_name: str,
+        message: str,
+        available_columns: list[str] | None = None,
+    ):
+        """
+        Initialize feature spec error.
+
+        Args:
+            feature_name: Name of the feature
+            message: Error description
+            available_columns: Valid columns for this feature. Defaults to None.
+        """
+        self.feature_name = feature_name
+        self.message = message
+        self.available_columns = available_columns
+        super().__init__(message)
+
+    def __str__(self) -> str:
+        """
+        Format error message with available columns.
+
+        Returns:
+            Formatted error message
+        """
+        parts = [f"FeatureSpecError: {self.message}"]
+        if self.available_columns:
+            parts.append("\nAvailable columns:")
+            for col in self.available_columns:
+                parts.append(f"  - {col}")
+        return "\n".join(parts)
+
+
 class VersionError(Exception):
     """Base class for version-related errors."""
 
@@ -412,3 +458,40 @@ class SourceDataChangedError(Exception):
             "  - Use --force to rebuild anyway (will auto-version based on changes)\n"
             "  - Ensure you have the same source data as your teammate"
         )
+
+
+class MlflowError(Exception):
+    """
+    Raised when MLflow operations fail.
+
+    Common causes include no active MLflow run, MLflow not installed,
+    or issues with the tracking server.
+
+    Attributes:
+        message: Primary error message
+        hint: Suggestion for how to fix the error
+    """
+
+    def __init__(self, message: str, hint: str | None = None):
+        """
+        Initialize MLflow error.
+
+        Args:
+            message: Primary error message
+            hint: Resolution suggestion. Defaults to None.
+        """
+        self.message = message
+        self.hint = hint
+        super().__init__(message)
+
+    def __str__(self) -> str:
+        """
+        Format error message with hint.
+
+        Returns:
+            Formatted error message
+        """
+        parts = [f"MlflowError: {self.message}"]
+        if self.hint:
+            parts.append(f"\nHint: {self.hint}")
+        return "\n".join(parts)

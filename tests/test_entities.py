@@ -9,7 +9,6 @@ from pydantic import ValidationError
 
 from mlforge import Definitions, Entity, Feature, LocalStore, feature
 
-
 # =============================================================================
 # Entity Class Validation Tests
 # =============================================================================

@@ -51,21 +51,18 @@ def test_build_command_with_default_target(
     (temp_dir / "definitions.py").write_text(definitions_file.read_text())
 
     # When running build command with no target specified
-    with (
-        patch("mlforge.logging.print_build_results"),
-        patch("mlforge.logging.print_success") as mock_success,
-    ):
+    with patch("mlforge.logging.print_build_summary") as mock_summary:
         build(
             target=None,
             features=None,
             tags=None,
             force=False,
-            no_preview=True,
+            preview=False,
             preview_rows=5,
         )
 
     # Then it should build successfully
-    mock_success.assert_called_once()
+    mock_summary.assert_called_once()
 
 
 def test_build_command_with_custom_target(definitions_file):
@@ -73,21 +70,18 @@ def test_build_command_with_custom_target(definitions_file):
     target = str(definitions_file)
 
     # When running build with custom target
-    with (
-        patch("mlforge.logging.print_build_results"),
-        patch("mlforge.logging.print_success") as mock_success,
-    ):
+    with patch("mlforge.logging.print_build_summary") as mock_summary:
         build(
             target=target,
             features=None,
             tags=None,
             force=False,
-            no_preview=True,
+            preview=False,
             preview_rows=5,
         )
 
     # Then it should build successfully
-    mock_success.assert_called_once()
+    mock_summary.assert_called_once()
 
 
 def test_build_command_with_specific_features(definitions_file):
@@ -95,21 +89,18 @@ def test_build_command_with_specific_features(definitions_file):
     target = str(definitions_file)
 
     # When building specific features by name
-    with (
-        patch("mlforge.logging.print_build_results"),
-        patch("mlforge.logging.print_success") as mock_success,
-    ):
+    with patch("mlforge.logging.print_build_summary") as mock_summary:
         build(
             target=target,
             features="test_feature",
             tags=None,
             force=False,
-            no_preview=True,
+            preview=False,
             preview_rows=5,
         )
 
     # Then it should build only those features
-    mock_success.assert_called_once()
+    mock_summary.assert_called_once()
 
 
 def test_build_command_with_force_flag(definitions_file):
@@ -117,21 +108,18 @@ def test_build_command_with_force_flag(definitions_file):
     target = str(definitions_file)
 
     # When building with force flag
-    with (
-        patch("mlforge.logging.print_build_results"),
-        patch("mlforge.logging.print_success") as mock_success,
-    ):
+    with patch("mlforge.logging.print_build_summary") as mock_summary:
         build(
             target=target,
             features=None,
             tags=None,
             force=True,
-            no_preview=True,
+            preview=False,
             preview_rows=5,
         )
 
     # Then it should overwrite existing features
-    mock_success.assert_called_once()
+    mock_summary.assert_called_once()
 
 
 def test_build_command_with_preview_enabled(definitions_file):
@@ -139,21 +127,18 @@ def test_build_command_with_preview_enabled(definitions_file):
     target = str(definitions_file)
 
     # When building with preview enabled
-    with (
-        patch("mlforge.logging.print_build_results") as mock_results,
-        patch("mlforge.logging.print_success"),
-    ):
+    with patch("mlforge.logging.print_build_summary") as mock_summary:
         build(
             target=target,
             features=None,
             tags=None,
             force=False,
-            no_preview=False,
+            preview=True,
             preview_rows=3,
         )
 
-    # Then it should show preview of results
-    mock_results.assert_called_once()
+    # Then it should complete and show summary
+    mock_summary.assert_called_once()
 
 
 def test_build_command_handles_load_error(temp_dir):
@@ -168,7 +153,7 @@ def test_build_command_handles_load_error(temp_dir):
             features=None,
             tags=None,
             force=False,
-            no_preview=True,
+            preview=False,
             preview_rows=5,
         )
 
@@ -195,7 +180,7 @@ def test_build_command_handles_materialization_error(definitions_file):
             features=None,
             tags=None,
             force=False,
-            no_preview=True,
+            preview=False,
             preview_rows=5,
         )
 
@@ -233,24 +218,21 @@ defs = Definitions(
     )
 
     # When building specific features with comma-separated names
-    with (
-        patch("mlforge.logging.print_build_results"),
-        patch("mlforge.logging.print_success") as mock_success,
-    ):
+    with patch("mlforge.logging.print_build_summary") as mock_summary:
         build(
             target=str(definitions_file),
             features="feature1,feature2",
             tags=None,
             force=False,
-            no_preview=True,
+            preview=False,
             preview_rows=5,
         )
 
     # Then it should build only the specified features
-    mock_success.assert_called_once()
-    # Verify success message indicates 2 features were built
-    call_args = mock_success.call_args[0][0]
-    assert "2" in call_args
+    mock_summary.assert_called_once()
+    # Verify summary indicates 2 features were built
+    call_kwargs = mock_summary.call_args[1]
+    assert call_kwargs["built"] == 2
 
 
 def test_list_features_command_with_default_target(
@@ -297,49 +279,50 @@ def test_list_features_command_displays_all_features(definitions_file):
 
 def test_launcher_sets_up_logging_with_verbose_flag():
     # Given verbose flag is enabled
-    # When launching with verbose
+    # When launching with verbose flag
     with (
         patch("mlforge.logging.setup_logging") as mock_setup,
         patch("mlforge.cli.app"),
+        patch("sys.argv", ["mlforge", "build", "-v"]),
     ):
-        from mlforge.cli import launcher
+        from mlforge.cli import main
 
-        launcher(verbose=True)
+        main()
 
     # Then it should enable debug logging
     mock_setup.assert_called_once_with(verbose=True)
 
 
-def test_launcher_sets_up_logging_without_verbose_flag():
-    # Given verbose flag is disabled
+def test_main_sets_up_logging_without_verbose_flag():
+    # Given verbose flag is not provided
     # When launching without verbose
     with (
         patch("mlforge.logging.setup_logging") as mock_setup,
         patch("mlforge.cli.app"),
+        patch("sys.argv", ["mlforge", "build"]),
     ):
-        from mlforge.cli import launcher
+        from mlforge.cli import main
 
-        launcher(verbose=False)
+        main()
 
     # Then it should use default logging level
     mock_setup.assert_called_once_with(verbose=False)
 
 
-def test_launcher_dispatches_tokens_to_app():
+def test_main_dispatches_to_app():
     # Given command tokens
-    tokens = ("build", "--target", "definitions.py")
-
     # When launching with tokens
     with (
         patch("mlforge.logging.setup_logging"),
         patch("mlforge.cli.app") as mock_app,
+        patch("sys.argv", ["mlforge", "build", "--target", "definitions.py"]),
     ):
-        from mlforge.cli import launcher
+        from mlforge.cli import main
 
-        launcher(*tokens, verbose=False)
+        main()
 
-    # Then it should dispatch tokens to app
-    mock_app.assert_called_once_with(tokens)
+    # Then it should dispatch to app
+    mock_app.assert_called_once()
 
 
 def test_build_command_with_tags(temp_dir, sample_parquet_file):
@@ -368,21 +351,18 @@ defs = Definitions(
     )
 
     # When building with specific tags
-    with (
-        patch("mlforge.logging.print_build_results"),
-        patch("mlforge.logging.print_success") as mock_success,
-    ):
+    with patch("mlforge.logging.print_build_summary") as mock_summary:
         build(
             target=str(definitions_file),
             features=None,
             tags="user",
             force=False,
-            no_preview=True,
+            preview=False,
             preview_rows=5,
         )
 
     # Then it should build only tagged features
-    mock_success.assert_called_once()
+    mock_summary.assert_called_once()
 
 
 def test_build_command_raises_on_tags_and_features_both_specified():
@@ -396,7 +376,7 @@ def test_build_command_raises_on_tags_and_features_both_specified():
             features="feature1",
             tags="tag1",
             force=False,
-            no_preview=True,
+            preview=False,
             preview_rows=5,
         )
 
@@ -472,16 +452,13 @@ def test_inspect_feature_command_displays_metadata(definitions_file):
     target = str(definitions_file)
 
     # First build the feature to generate metadata
-    with (
-        patch("mlforge.logging.print_build_results"),
-        patch("mlforge.logging.print_success"),
-    ):
+    with patch("mlforge.logging.print_build_summary"):
         build(
             target=target,
             features=None,
             tags=None,
             force=False,
-            no_preview=True,
+            preview=False,
             preview_rows=5,
         )
 
@@ -512,16 +489,13 @@ def test_manifest_command_displays_summary(definitions_file):
     target = str(definitions_file)
 
     # First build the feature
-    with (
-        patch("mlforge.logging.print_build_results"),
-        patch("mlforge.logging.print_success"),
-    ):
+    with patch("mlforge.logging.print_build_summary"):
         build(
             target=target,
             features=None,
             tags=None,
             force=False,
-            no_preview=True,
+            preview=False,
             preview_rows=5,
         )
 
@@ -538,16 +512,13 @@ def test_manifest_command_regenerates_file(definitions_file, temp_dir):
     target = str(definitions_file)
 
     # First build the feature
-    with (
-        patch("mlforge.logging.print_build_results"),
-        patch("mlforge.logging.print_success"),
-    ):
+    with patch("mlforge.logging.print_build_summary"):
         build(
             target=target,
             features=None,
             tags=None,
             force=False,
-            no_preview=True,
+            preview=False,
             preview_rows=5,
         )
 
@@ -583,16 +554,13 @@ def test_sync_command_dry_run_shows_needs_sync(definitions_file):
     target = str(definitions_file)
 
     # First build the feature
-    with (
-        patch("mlforge.logging.print_build_results"),
-        patch("mlforge.logging.print_success"),
-    ):
+    with patch("mlforge.logging.print_build_summary"):
         build(
             target=target,
             features=None,
             tags=None,
             force=False,
-            no_preview=True,
+            preview=False,
             preview_rows=5,
         )
 
@@ -863,16 +831,13 @@ def test_list_versions_command(definitions_file):
     target = str(definitions_file)
 
     # First build the feature
-    with (
-        patch("mlforge.logging.print_build_results"),
-        patch("mlforge.logging.print_success"),
-    ):
+    with patch("mlforge.logging.print_build_summary"):
         build(
             target=target,
             features=None,
             tags=None,
             force=False,
-            no_preview=True,
+            preview=False,
             preview_rows=5,
         )
 

@@ -14,15 +14,10 @@ The online store pattern is used when you need low-latency feature retrieval for
 This example uses profile-based configuration via `mlforge.yaml`:
 
 ```yaml
-default_profile: offline
+default_profile: dev
 
 profiles:
-  offline:
-    offline_store:
-      KIND: local
-      path: ./feature_store
-
-  online:
+  dev:
     offline_store:
       KIND: local
       path: ./feature_store
@@ -33,12 +28,7 @@ profiles:
       prefix: mlforge
 ```
 
-### Profiles
-
-| Profile | Offline Store | Online Store | Use Case |
-|---------|--------------|--------------|----------|
-| `offline` | LocalStore | None | Development, training |
-| `online` | LocalStore | RedisStore | Real-time serving |
+The `dev` profile includes both offline (LocalStore) and online (RedisStore) stores for local development.
 
 ## Prerequisites
 
@@ -75,15 +65,15 @@ cd examples/transactions-online
 mlforge build
 ```
 
-This uses the default `offline` profile and builds features to `./feature_store/` as Parquet files.
+This builds features to `./feature_store/` as Parquet files.
 
 ### 4. Build Features to Online Store
 
 ```bash
-mlforge build --profile online --online
+mlforge build --online
 ```
 
-This uses the `online` profile (which includes RedisStore) and pushes latest values to Redis.
+This pushes the latest feature values to Redis.
 
 Expected output:
 ```
@@ -94,12 +84,6 @@ Wrote X records to online store (1 features)
 
 ```bash
 mlforge profile
-```
-
-Or check a specific profile:
-
-```bash
-mlforge profile --profile online
 ```
 
 ### 6. Verify Features in Redis
@@ -126,6 +110,67 @@ This script demonstrates:
 - Connecting to Redis
 - Reading features using `get_online_features()`
 - Entity key generation via the `user` Entity
+
+### 8. Serve Features via REST API
+
+Start the REST API server:
+
+```bash
+mlforge serve --port 8000
+```
+
+The server exposes these endpoints:
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/health` | GET | Health check with Redis connectivity |
+| `/features` | GET | List available features |
+| `/features/{name}` | GET | Get feature metadata |
+| `/features/online` | POST | Get features for single entity |
+| `/features/batch` | POST | Get features for multiple entities |
+| `/metrics` | GET | Prometheus metrics |
+| `/docs` | GET | OpenAPI documentation |
+
+**Example: Get features for an entity**
+
+```bash
+curl -X POST http://localhost:8000/features/online \
+  -H "Content-Type: application/json" \
+  -d '{
+    "features": ["user_spend"],
+    "entity_keys": {"user_id": "a1b2c3d4e5f6g7h8"}
+  }'
+```
+
+**Example: Batch request**
+
+```bash
+curl -X POST http://localhost:8000/features/batch \
+  -H "Content-Type: application/json" \
+  -d '{
+    "features": ["user_spend"],
+    "entity_keys": [
+      {"user_id": "a1b2c3d4e5f6g7h8"},
+      {"user_id": "b2c3d4e5f6g7h8i9"}
+    ]
+  }'
+```
+
+**Server options:**
+
+```bash
+mlforge serve --help
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--profile` | None | Profile from mlforge.yaml |
+| `--host` | 127.0.0.1 | Bind address |
+| `--port` | 8000 | Port number |
+| `--workers` | 1 | Number of uvicorn workers |
+| `--no-metrics` | False | Disable Prometheus metrics |
+| `--no-docs` | False | Disable OpenAPI docs |
+| `--cors-origins` | None | Comma-separated CORS origins |
 
 ## Features Demonstrated
 

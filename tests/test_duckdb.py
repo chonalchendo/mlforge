@@ -10,13 +10,11 @@ from pathlib import Path
 import polars as pl
 import pytest
 
+import mlforge.errors as errors
 from mlforge import Definitions, LocalStore, Rolling, Source, feature
 from mlforge.compilers import DuckDBCompiler, DuckDBComputeContext
 from mlforge.engines import DuckDBEngine
 from mlforge.results import DuckDBResult
-
-import mlforge.errors as errors
-
 
 # =============================================================================
 # Fixtures
@@ -452,7 +450,7 @@ class TestDuckDBEngine:
         # Build the feature
         results = defs.build(feature_names=["simple_feature"], preview=False)
 
-        assert "simple_feature" in results
+        assert "simple_feature" in results.paths
         # Verify the data was written
         df = store.read("simple_feature")
         assert df.height == 6
@@ -489,7 +487,7 @@ class TestDuckDBEngine:
         # Build the feature
         results = defs.build(feature_names=["user_spend"], preview=False)
 
-        assert "user_spend" in results
+        assert "user_spend" in results.paths
         # Verify the data was written with metrics columns
         df = store.read("user_spend")
         assert "user_id" in df.columns
@@ -537,8 +535,8 @@ class TestDuckDBIntegration:
         # Build both features
         results = defs.build(preview=False)
 
-        assert "duckdb_feature" in results
-        assert "polars_feature" in results
+        assert "duckdb_feature" in results.paths
+        assert "polars_feature" in results.paths
 
         # Both should produce valid data
         df1 = store.read("duckdb_feature")
@@ -568,7 +566,7 @@ class TestDuckDBIntegration:
         # Build the feature - should use DuckDB
         results = defs.build(preview=False)
 
-        assert "default_engine_feature" in results
+        assert "default_engine_feature" in results.paths
         df = store.read("default_engine_feature")
         assert df.height == 6
 
@@ -599,7 +597,7 @@ class TestDuckDBIntegration:
 
         # Build should succeed (data passes validation)
         results = defs.build(preview=False)
-        assert "validated_feature" in results
+        assert "validated_feature" in results.paths
 
     def test_duckdb_with_failing_validators(
         self, sample_transactions_parquet: Path, tmp_path: Path
@@ -629,8 +627,8 @@ class TestDuckDBIntegration:
         # Build should complete but not write the failing feature
         results = defs.build(preview=False)
 
-        # The failing feature should not be in results
-        assert "failing_validated_feature" not in results
+        # The failing feature should not be in results.paths
+        assert "failing_validated_feature" not in results.paths
 
     def test_duckdb_missing_entity_keys(
         self, sample_transactions_parquet: Path, tmp_path: Path
@@ -732,7 +730,7 @@ class TestDuckDBIntegration:
 
         # Build should succeed - engine should collect the LazyFrame
         results = defs.build(preview=False)
-        assert "lazy_feature" in results
+        assert "lazy_feature" in results.paths
         df = store.read("lazy_feature")
         assert df.height == 6
 
@@ -763,7 +761,7 @@ class TestDuckDBIntegration:
         )
 
         results = defs.build(preview=False)
-        assert "multi_metric_feature" in results
+        assert "multi_metric_feature" in results.paths
 
         df = store.read("multi_metric_feature")
         assert "multi_metric_feature__amount__sum__1d__7d" in df.columns

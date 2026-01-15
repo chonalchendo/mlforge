@@ -11,3 +11,16 @@ profiles:
       host: localhost
       port: 6379
       prefix: mlforge
+
+  # DynamoDB profile for AWS-native deployments
+  # Requires: pip install mlforge[dynamodb]
+  # For local testing: docker run -p 8000:8000 amazon/dynamodb-local
+  dynamodb:
+    offline_store:
+      KIND: local
+      path: ./feature_store
+    online_store:
+      KIND: dynamodb
+      table_name: mlforge-features
+      # endpoint_url: http://localhost:8000  # Uncomment for DynamoDB Local
+      ttl_seconds: 604800 # 7 days
