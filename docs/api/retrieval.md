@@ -2,6 +2,12 @@
 
 The retrieval module provides functions for retrieving features for both training (offline) and inference (online) use cases.
 
+## FeatureSpec
+
+Use `FeatureSpec` to select specific columns from a feature or pin to a specific version:
+
+::: mlforge.retrieval.FeatureSpec
+
 ## Recommended: Definitions Methods
 
 For most use cases, use the methods on `Definitions` which automatically handle entity key coordination:
