@@ -1,3 +1,4 @@
+import time
 from pathlib import Path
 from typing import Annotated
 
@@ -169,22 +170,27 @@ inspect_app = cyclopts.App(
 app.command(inspect_app)
 
 
-@app.meta.default
-def launcher(
-    *tokens: str,
-    verbose: Annotated[
-        bool, cyclopts.Parameter(name=["--verbose", "-v"], help="Debug logging")
-    ] = False,
-) -> None:
+def main() -> None:
     """
-    CLI entry point that configures logging and dispatches commands.
+    Entry point for the CLI.
 
-    Args:
-        *tokens: Command tokens to execute
-        verbose: Enable debug logging. Defaults to False.
+    Configures logging before dispatching commands. Use --verbose/-v
+    for debug logging.
     """
+    import sys
+
+    # Check for verbose flag before dispatching
+    verbose = "-v" in sys.argv or "--verbose" in sys.argv
+
+    # Remove verbose flags from argv so they don't confuse subcommands
+    sys.argv = [
+        arg
+        for arg in sys.argv
+        if arg not in ("-v", "--verbose", "--no-verbose")
+    ]
+
     log.setup_logging(verbose=verbose)
-    app(tokens)
+    app()
 
 
 @app.command
@@ -219,10 +225,10 @@ def build(
             name=["--force", "-f"], help="Overwrite existing features."
         ),
     ] = False,
-    no_preview: Annotated[
+    preview: Annotated[
         bool,
         cyclopts.Parameter(
-            name="--no-preview", help="Disable feature preview output"
+            name="--preview", help="Show feature data preview after building"
         ),
     ] = False,
     preview_rows: Annotated[
@@ -264,7 +270,7 @@ def build(
         tags: Comma-separated list of feature tags. Defaults to None.
         version: Explicit version override. If not specified, auto-detects.
         force: Overwrite existing features. Defaults to False.
-        no_preview: Disable feature preview output. Defaults to False.
+        preview: Show feature data preview after building. Defaults to False.
         preview_rows: Number of preview rows to display. Defaults to 5.
         online: Write to online store instead of offline. Defaults to False.
         profile: Profile name from mlforge.yaml. Defaults to None (uses env var or config default).
@@ -284,33 +290,35 @@ def build(
         )
         tag_names = [t.strip() for t in tags.split(",")] if tags else None
 
-        results = defs.build(
+        start_time = time.perf_counter()
+
+        result = defs.build(
             feature_names=feature_names,
             tag_names=tag_names,
             feature_version=version,
             force=force,
-            preview=not no_preview,
+            preview=preview,
             preview_rows=preview_rows,
             online=online,
         )
 
+        duration = time.perf_counter() - start_time
+
         if online:
-            # Online build returns int counts
-            total_records = sum(
-                int(v) if isinstance(v, int) else 0 for v in results.values()
-            )
+            # Online build - show record counts
+            total_records = sum(int(str(v)) for v in result.paths.values())
             log.print_success(
                 f"Wrote {total_records} records to online store "
-                f"({len(results)} features)"
+                f"({result.built} features)"
             )
         else:
-            # Offline build returns paths - convert to dict[str, Path | str]
-            offline_results: dict[str, Path | str] = {
-                k: v if isinstance(v, (Path, str)) else str(v)
-                for k, v in results.items()
-            }
-            log.print_build_results(offline_results)
-            log.print_success(f"Built {len(results)} features")
+            # Offline build - show summary
+            log.print_build_summary(
+                built=result.built,
+                skipped=result.skipped,
+                failed=result.failed,
+                duration=duration,
+            )
 
     except (
         errors.DefinitionsLoadError,

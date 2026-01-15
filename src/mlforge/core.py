@@ -39,6 +39,24 @@ class FeatureFunction(Protocol):
 
 
 @dataclass
+class BuildResult:
+    """
+    Result of a build operation containing paths and statistics.
+
+    Attributes:
+        paths: Dictionary mapping feature names to storage paths
+        built: Number of features that were built
+        skipped: Number of features skipped (already exist)
+        failed: Number of features that failed validation
+    """
+
+    paths: dict[str, Path | str]
+    built: int
+    skipped: int
+    failed: int
+
+
+@dataclass
 class Feature:
     """
     Container for a feature definition and its transformation function.
@@ -411,7 +429,7 @@ class Definitions:
         preview: bool = True,
         preview_rows: int = 5,
         online: bool = False,
-    ) -> dict[str, Path | str | int]:
+    ) -> BuildResult:
         """
         Compute and persist features to offline storage with versioning.
 
@@ -431,8 +449,7 @@ class Definitions:
                 per entity and writes to the online store.
 
         Returns:
-            Dictionary mapping feature names to their storage file paths (offline)
-            or record counts (online)
+            BuildResult containing paths and build statistics (built, skipped, failed counts)
 
         Raises:
             ValueError: If specified feature name is not registered, or if
@@ -453,14 +470,19 @@ class Definitions:
             online_results = self._build_online(
                 feature_names, tag_names, preview, preview_rows
             )
-            # Cast int to Path | str | int union for consistent return type
-            return {k: v for k, v in online_results.items()}
+            return BuildResult(
+                paths={k: str(v) for k, v in online_results.items()},
+                built=len(online_results),
+                skipped=0,
+                failed=0,
+            )
 
         selected_features = self._resolve_features_to_build(
             feature_names, tag_names
         )
-        results: dict[str, Path | str | int] = {}
+        results: dict[str, Path | str] = {}
         failed_features: list[str] = []
+        skipped_count = 0
 
         for feature in selected_features:
             # Get previous metadata for change detection
@@ -485,10 +507,11 @@ class Definitions:
             if not force and self.offline_store.exists(
                 feature.name, target_version
             ):
-                logger.debug(
-                    f"Skipping {feature.name} v{target_version} (already exists)"
-                )
+                log.print_skipped(feature.name, target_version)
+                skipped_count += 1
                 continue
+
+            log.print_building(feature.name)
 
             try:
                 engine = self._get_engine_for_feature(feature)
@@ -551,6 +574,8 @@ class Definitions:
                 feature.name, target_version
             )
 
+            log.print_built(feature.name, target_version, str(result_path))
+
             if preview:
                 log.print_feature_preview(
                     f"{feature.name} v{target_version}",
@@ -565,7 +590,12 @@ class Definitions:
                 f"Build completed with validation failures: {failed_features}"
             )
 
-        return results
+        return BuildResult(
+            paths=results,
+            built=len(results),
+            skipped=skipped_count,
+            failed=len(failed_features),
+        )
 
     def _build_online(
         self,

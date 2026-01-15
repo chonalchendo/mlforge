@@ -318,7 +318,7 @@ def test_materialize_writes_to_store():
 
         # Then the feature should exist in the store
         assert store.exists("simple_feature")
-        assert "simple_feature" in results
+        assert "simple_feature" in results.paths
 
 
 def test_materialize_skips_existing_without_force():
@@ -440,8 +440,8 @@ def test_materialize_filters_by_tag_names():
         results = defs.build(tag_names=["user"], preview=False)
 
         # Then only features with that tag should be materialized
-        assert "user_feature" in results
-        assert "transaction_feature" not in results
+        assert "user_feature" in results.paths
+        assert "transaction_feature" not in results.paths
         assert store.exists("user_feature")
         assert not store.exists("transaction_feature")
 

@@ -46,7 +46,7 @@ Repository = "https://github.com/chonalchendo/mlforge"
 
 
 [project.scripts]
-mlforge = "mlforge.cli:app"
+mlforge = "mlforge.cli:main"
 
 # BUILD SYSTEM
 

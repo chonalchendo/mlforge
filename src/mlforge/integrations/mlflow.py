@@ -55,7 +55,7 @@ def _require_mlflow() -> Any:
         ImportError: If mlflow is not installed
     """
     try:
-        import mlflow  # type: ignore[import-not-found]
+        import mlflow
 
         return mlflow
     except ImportError as e:
