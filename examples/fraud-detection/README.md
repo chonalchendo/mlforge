@@ -268,4 +268,8 @@ docker-compose down
 
 # Remove feature store
 rm -rf feature_store/
+
+# Remove Docker volumes and images (optional - frees disk space)
+docker-compose down -v --rmi local
+docker system prune -f
 ```

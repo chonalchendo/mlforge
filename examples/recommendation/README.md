@@ -269,4 +269,8 @@ rm -rf feature_store/
 
 # Remove generated data
 rm -rf data/*.parquet
+
+# Remove Docker volumes and images (optional - frees disk space)
+docker-compose down -v --rmi local
+docker system prune -f
 ```

@@ -286,6 +286,13 @@ Remove feature store:
 rm -rf feature_store/
 ```
 
+Remove Docker volumes and images (optional - frees disk space):
+
+```bash
+docker-compose down -v --rmi local
+docker system prune -f
+```
+
 ## Using in Production
 
 For production deployments:
