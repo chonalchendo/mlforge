@@ -85,8 +85,9 @@ class EngineResult(ABC):
         Get the base schema with canonical types.
 
         The base schema is always captured from a Polars DataFrame (after the
-        user's feature function runs), so we always use "polars" as the source
-        for type normalization, regardless of which engine executed the feature.
+        user's feature function runs), so we use "polars" as the source for
+        type normalization. PySpark overrides this since it captures base
+        schema from Spark DataFrames.
 
         Returns:
             Canonical schema of base DataFrame or None if not available
@@ -94,7 +95,6 @@ class EngineResult(ABC):
         base = self.base_schema()
         if base is None:
             return None
-        # Base schema is always from Polars (user feature functions return Polars DataFrames)
         return types_.normalize_schema(base, "polars")
 
     @abstractmethod
@@ -290,4 +290,112 @@ class DuckDBResult(EngineResult):
         return "duckdb"
 
 
-ResultKind = PolarsResult | DuckDBResult
+class PySparkResult(EngineResult):
+    """
+    PySpark-based result wrapper.
+
+    Wraps a Spark DataFrame and provides methods for writing to parquet
+    and converting to Polars.
+
+    Attributes:
+        _spark_df: Spark DataFrame containing the computation result
+        _polars_df: Materialized Polars DataFrame (cached after first conversion)
+        _base_schema: Schema of base DataFrame before metrics (optional)
+    """
+
+    def __init__(
+        self,
+        spark_df,  # pyspark.sql.DataFrame - not typed to avoid import
+        base_schema: dict[str, str] | None = None,
+    ):
+        """
+        Initialize PySpark result wrapper.
+
+        Args:
+            spark_df: PySpark DataFrame object
+            base_schema: Schema of base DataFrame before metrics were applied
+        """
+        self._spark_df = spark_df
+        self._polars_df: pl.DataFrame | None = None
+        self._base_schema = base_schema
+
+    def _to_polars_cached(self) -> pl.DataFrame:
+        """
+        Convert to Polars DataFrame with caching.
+
+        Caches result to avoid recomputation on subsequent calls.
+
+        Returns:
+            Materialized Polars DataFrame
+        """
+        if self._polars_df is None:
+            # Convert via Pandas for compatibility
+            self._polars_df = pl.from_pandas(self._spark_df.toPandas())
+        return self._polars_df
+
+    @override
+    def write_parquet(self, path: Path | str) -> None:
+        """Write result to parquet file using Spark's native writer."""
+        # Spark writes to directory, coalesce to single file
+        self._spark_df.coalesce(1).write.mode("overwrite").parquet(str(path))
+
+    @override
+    def to_polars(self) -> pl.DataFrame:
+        """Convert to Polars DataFrame for inspection."""
+        return self._to_polars_cached()
+
+    @override
+    def row_count(self) -> int:
+        """Get number of rows in result."""
+        # Use cached DataFrame if available, otherwise query Spark
+        if self._polars_df is not None:
+            return self._polars_df.height
+        return self._spark_df.count()
+
+    @override
+    def schema(self) -> dict[str, str]:
+        """Get result schema from Spark DataFrame."""
+        return {
+            field.name: str(field.dataType) for field in self._spark_df.schema
+        }
+
+    @override
+    def schema_canonical(self) -> dict[str, types_.DataType]:
+        """Get result schema with canonical types."""
+        return {
+            field.name: types_.from_pyspark(field.dataType)
+            for field in self._spark_df.schema
+        }
+
+    @override
+    def base_schema(self) -> dict[str, str] | None:
+        """
+        Get the base schema before metrics were applied.
+
+        Returns:
+            Schema of base DataFrame or None if not available
+        """
+        return self._base_schema
+
+    @override
+    def base_schema_canonical(self) -> dict[str, types_.DataType] | None:
+        """
+        Get the base schema with canonical types.
+
+        For PySpark, base schema is captured from Spark DataFrame,
+        so we use "pyspark" as the source for type normalization.
+
+        Returns:
+            Canonical schema of base DataFrame or None if not available
+        """
+        base = self.base_schema()
+        if base is None:
+            return None
+        return types_.normalize_schema(base, "pyspark")
+
+    @override
+    def _schema_source(self) -> str:
+        return "pyspark"
+
+
+ResultKind = PolarsResult | DuckDBResult | PySparkResult

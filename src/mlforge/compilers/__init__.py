@@ -17,15 +17,25 @@ Usage:
     compiler = DuckDBCompiler()
     ctx = DuckDBComputeContext(keys=["user_id"], interval="1d", ...)
     result = compiler.compile(metric, ctx)
+
+    # For PySpark
+    from mlforge.compilers import PySparkCompiler, PySparkComputeContext
+
+    compiler = PySparkCompiler()
+    ctx = PySparkComputeContext(keys=["user_id"], interval="1d", ...)
+    result = compiler.compile(metric, ctx)
 """
 
 from mlforge.compilers.base import ComputeContext
 from mlforge.compilers.duckdb import DuckDBCompiler, DuckDBComputeContext
 from mlforge.compilers.polars import PolarsCompiler
+from mlforge.compilers.pyspark import PySparkCompiler, PySparkComputeContext
 
 __all__ = [
     "ComputeContext",
     "DuckDBCompiler",
     "DuckDBComputeContext",
     "PolarsCompiler",
+    "PySparkCompiler",
+    "PySparkComputeContext",
 ]

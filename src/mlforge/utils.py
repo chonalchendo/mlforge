@@ -1,5 +1,10 @@
 # mlforge/utils.py
+from typing import TYPE_CHECKING
+
 import polars as pl
+
+if TYPE_CHECKING:
+    import mlforge.entities as entities_
 
 
 def surrogate_key(*columns: str) -> pl.Expr:
@@ -32,3 +37,28 @@ def surrogate_key(*columns: str) -> pl.Expr:
     )
 
     return concat_expr.hash().cast(pl.Utf8)
+
+
+def apply_entity_keys(
+    df: pl.DataFrame,
+    entities: list["entities_.Entity"],
+) -> pl.DataFrame:
+    """
+    Generate surrogate keys for entities that require it.
+
+    For each entity with from_columns specified, generates a surrogate
+    key column using the surrogate_key() function.
+
+    Args:
+        df: Source Polars DataFrame
+        entities: List of Entity objects
+
+    Returns:
+        DataFrame with generated key columns added
+    """
+    for entity in entities:
+        if entity.requires_generation:
+            df = df.with_columns(
+                surrogate_key(*entity.from_columns).alias(entity.join_key)
+            )
+    return df

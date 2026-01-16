@@ -34,7 +34,13 @@ duckdb = ["duckdb>=1.4.3"]
 redis = ["redis>=7.1.0"]
 dynamodb = ["boto3>=1.28.0"]
 mlflow = ["mlflow>=2.0.0"]
-all = ["duckdb>=1.4.3", "redis>=7.1.0", "gcsfs>=2025.12.0", "mlflow>=2.0.0"]
+pyspark = ["pyspark>=3.5.0"]
+databricks = [
+    "pyspark>=3.5.0",
+    "databricks-sdk>=0.20.0",
+    "delta-spark>=3.0.0",
+]
+all = ["duckdb>=1.4.3", "redis>=7.1.0", "gcsfs>=2025.12.0", "mlflow>=2.0.0", "pyspark>=3.5.0"]
 gcs = [
     "gcsfs>=2025.12.0",
 ]
@@ -97,6 +103,7 @@ default-groups = ["check", "commit", "dev"]
 members = [
     "examples/transactions",
     "examples/transactions-online",
+    "examples/transactions-pyspark",
     "examples/fraud-detection",
     "examples/recommendation",
 ]
@@ -110,6 +117,17 @@ update_changelog_on_bump = false
 major_version_zero = true
 bump_map = { "feat" = "MINOR", "fix" = "PATCH", "refactor" = "PATCH", "perf" = "PATCH" }
 bump_pattern = "^(feat|fix|refactor|perf)(\\(.+\\))?(!)?:"
+
+# Ignore unresolved-import for files using PySpark (optional dependency)
+[[tool.ty.overrides]]
+include = [
+    "**/pyspark.py",
+    "**/test_pyspark.py",
+    "**/types.py",
+]
+
+[tool.ty.overrides.rules]
+unresolved-import = "ignore"
 
 [tool.ruff]
 fix = true

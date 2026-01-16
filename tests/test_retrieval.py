@@ -833,8 +833,9 @@ def test_feature_spec_with_columns_and_version():
 
 def test_feature_spec_empty_columns_raises_error():
     """Empty columns list should raise error."""
-    from mlforge.retrieval import FeatureSpec
     from pydantic import ValidationError
+
+    from mlforge.retrieval import FeatureSpec
 
     # When creating with empty columns list
     # Then ValidationError should be raised
@@ -844,8 +845,9 @@ def test_feature_spec_empty_columns_raises_error():
 
 def test_feature_spec_invalid_version_format_raises_error():
     """Invalid version format should raise error."""
-    from mlforge.retrieval import FeatureSpec
     from pydantic import ValidationError
+
+    from mlforge.retrieval import FeatureSpec
 
     # When creating with invalid version
     # Then ValidationError should be raised

@@ -1,0 +1,52 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv
+venv/
+ENV/
+.eggs/
+*.egg-info/
+*.egg
+
+# Build artifacts
+dist/
+build/
+*.whl
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Test artifacts
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Feature store output (will be mounted as volume)
+feature_store/
+
+# Docs
+docs/_build/
+site/
+
+# Other examples (not needed for this container)
+examples/transactions/feature_store/
+examples/transactions-online/feature_store/
+examples/fraud-detection/feature_store/
+examples/recommendation/feature_store/
+
+# Lock files from other examples
+examples/*/uv.lock
+
+# MLflow artifacts
+mlruns/

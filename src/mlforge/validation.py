@@ -151,3 +151,42 @@ def validate_feature(
         feature_name=feature_name,
         column_results=column_results,
     )
+
+
+def run_validators_or_raise(
+    feature_name: str,
+    df: pl.DataFrame,
+    validators: dict[str, list[validators_.Validator]],
+) -> None:
+    """
+    Run validators and raise FeatureValidationError if any fail.
+
+    This is the common validation pattern used by all engines. It validates
+    the DataFrame and raises an error with details if validation fails.
+
+    Args:
+        feature_name: Name of the feature being validated
+        df: Polars DataFrame to validate
+        validators: Mapping of column names to validator lists
+
+    Raises:
+        FeatureValidationError: If any validation fails
+    """
+    import mlforge.errors as errors
+
+    results = validate_dataframe(df, validators)
+    failures = [
+        (
+            r.column,
+            r.validator_name,
+            r.result.message or "Validation failed",
+        )
+        for r in results
+        if not r.result.passed
+    ]
+
+    if failures:
+        raise errors.FeatureValidationError(
+            feature_name=feature_name,
+            failures=failures,
+        )

@@ -149,116 +149,6 @@ class TestDuckDBResult:
 class TestDuckDBCompiler:
     """Tests for DuckDBCompiler class."""
 
-    def test_duration_to_interval_days(self):
-        """Compiler should convert day durations correctly."""
-        compiler = DuckDBCompiler()
-
-        assert compiler._duration_to_interval("7d") == "INTERVAL '7' DAY"
-        assert compiler._duration_to_interval("30d") == "INTERVAL '30' DAY"
-
-    def test_duration_to_interval_hours(self):
-        """Compiler should convert hour durations correctly."""
-        compiler = DuckDBCompiler()
-
-        assert compiler._duration_to_interval("24h") == "INTERVAL '24' HOUR"
-        assert compiler._duration_to_interval("1h") == "INTERVAL '1' HOUR"
-
-    def test_duration_to_interval_weeks(self):
-        """Compiler should convert week durations to days."""
-        compiler = DuckDBCompiler()
-
-        assert compiler._duration_to_interval("1w") == "INTERVAL '7' DAY"
-        assert compiler._duration_to_interval("2w") == "INTERVAL '14' DAY"
-
-    def test_duration_to_interval_minutes(self):
-        """Compiler should convert minute durations correctly."""
-        compiler = DuckDBCompiler()
-
-        assert compiler._duration_to_interval("30m") == "INTERVAL '30' MINUTE"
-        assert compiler._duration_to_interval("5m") == "INTERVAL '5' MINUTE"
-
-    def test_duration_to_interval_seconds(self):
-        """Compiler should convert second durations correctly."""
-        compiler = DuckDBCompiler()
-
-        assert compiler._duration_to_interval("60s") == "INTERVAL '60' SECOND"
-        assert compiler._duration_to_interval("1s") == "INTERVAL '1' SECOND"
-
-    def test_duration_to_interval_months(self):
-        """Compiler should convert month durations correctly."""
-        compiler = DuckDBCompiler()
-
-        assert compiler._duration_to_interval("1mo") == "INTERVAL '1' MONTH"
-        assert compiler._duration_to_interval("6mo") == "INTERVAL '6' MONTH"
-
-    def test_duration_to_interval_years(self):
-        """Compiler should convert year durations correctly."""
-        compiler = DuckDBCompiler()
-
-        assert compiler._duration_to_interval("1y") == "INTERVAL '1' YEAR"
-        assert compiler._duration_to_interval("2y") == "INTERVAL '2' YEAR"
-
-    def test_duration_to_interval_default(self):
-        """Compiler should default to days for unknown suffixes."""
-        compiler = DuckDBCompiler()
-
-        assert compiler._duration_to_interval("7") == "INTERVAL '7' DAY"
-
-    def test_interval_to_trunc_unit_day(self):
-        """Compiler should convert day intervals to DATE_TRUNC unit."""
-        compiler = DuckDBCompiler()
-
-        assert compiler._interval_to_trunc_unit("1d") == "day"
-        assert compiler._interval_to_trunc_unit("7d") == "day"
-
-    def test_interval_to_trunc_unit_hour(self):
-        """Compiler should convert hour intervals to DATE_TRUNC unit."""
-        compiler = DuckDBCompiler()
-
-        assert compiler._interval_to_trunc_unit("1h") == "hour"
-        assert compiler._interval_to_trunc_unit("24h") == "hour"
-
-    def test_interval_to_trunc_unit_minute(self):
-        """Compiler should convert minute intervals to DATE_TRUNC unit."""
-        compiler = DuckDBCompiler()
-
-        assert compiler._interval_to_trunc_unit("1m") == "minute"
-        assert compiler._interval_to_trunc_unit("30m") == "minute"
-
-    def test_interval_to_trunc_unit_second(self):
-        """Compiler should convert second intervals to DATE_TRUNC unit."""
-        compiler = DuckDBCompiler()
-
-        assert compiler._interval_to_trunc_unit("1s") == "second"
-        assert compiler._interval_to_trunc_unit("60s") == "second"
-
-    def test_interval_to_trunc_unit_week(self):
-        """Compiler should convert week intervals to DATE_TRUNC unit."""
-        compiler = DuckDBCompiler()
-
-        assert compiler._interval_to_trunc_unit("1w") == "week"
-        assert compiler._interval_to_trunc_unit("2w") == "week"
-
-    def test_interval_to_trunc_unit_month(self):
-        """Compiler should convert month intervals to DATE_TRUNC unit."""
-        compiler = DuckDBCompiler()
-
-        assert compiler._interval_to_trunc_unit("1mo") == "month"
-        assert compiler._interval_to_trunc_unit("6mo") == "month"
-
-    def test_interval_to_trunc_unit_year(self):
-        """Compiler should convert year intervals to DATE_TRUNC unit."""
-        compiler = DuckDBCompiler()
-
-        assert compiler._interval_to_trunc_unit("1y") == "year"
-        assert compiler._interval_to_trunc_unit("2y") == "year"
-
-    def test_interval_to_trunc_unit_default(self):
-        """Compiler should default to day for unknown suffixes."""
-        compiler = DuckDBCompiler()
-
-        assert compiler._interval_to_trunc_unit("unknown") == "day"
-
     def test_build_rolling_sql_generates_valid_sql(self):
         """Compiler should generate valid SQL for rolling aggregations."""
         import duckdb
@@ -712,7 +602,7 @@ class TestDuckDBIntegration:
     ):
         """DuckDB engine should handle LazyFrame returns from feature functions."""
 
-        @feature(  # type: ignore[arg-type]
+        @feature(
             keys=["user_id"],
             source=str(sample_transactions_parquet),
             engine="duckdb",

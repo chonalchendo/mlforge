@@ -12,7 +12,6 @@ import polars as pl
 
 import mlforge.compilers as compilers
 import mlforge.engines.base as base
-import mlforge.errors as errors
 import mlforge.results as results_
 import mlforge.sources as sources
 import mlforge.timestamps as timestamps
@@ -65,7 +64,7 @@ class PolarsEngine(base.Engine):
 
         # Generate surrogate keys for entities that require it
         if feature.entities:
-            source_df = self._apply_entity_keys(source_df, feature.entities)
+            source_df = utils.apply_entity_keys(source_df, feature.entities)
 
         # process dataframe with function code
         processed_df = feature(source_df)
@@ -85,7 +84,15 @@ class PolarsEngine(base.Engine):
 
         # run validators on processed dataframe (before metrics)
         if feature.validators:
-            self._run_validators(feature.name, processed_df, feature.validators)
+            # Collect LazyFrame if needed for validation
+            validate_df = (
+                processed_df.collect()
+                if isinstance(processed_df, pl.LazyFrame)
+                else processed_df
+            )
+            validation.run_validators_or_raise(
+                feature.name, validate_df, feature.validators
+            )
 
         if not feature.metrics:
             return results_.PolarsResult(processed_df, base_schema=base_schema)
@@ -193,34 +200,6 @@ class PolarsEngine(base.Engine):
                     f"Unsupported source format: {type(fmt).__name__}"
                 )
 
-    def _apply_entity_keys(
-        self,
-        df: pl.DataFrame,
-        entities: list,
-    ) -> pl.DataFrame:
-        """
-        Generate surrogate keys for entities that require it.
-
-        For each entity with from_columns specified, generates a surrogate
-        key column using the surrogate_key() function.
-
-        Args:
-            df: Source DataFrame
-            entities: List of Entity objects
-
-        Returns:
-            DataFrame with generated key columns added
-        """
-        for entity in entities:
-            if entity.requires_generation:
-                # Entity has from_columns - generate surrogate key
-                df = df.with_columns(
-                    utils.surrogate_key(*entity.from_columns).alias(
-                        entity.join_key
-                    )
-                )
-        return df
-
     def _warn_if_large_dataset(
         self,
         feature_name: str,
@@ -263,42 +242,4 @@ class PolarsEngine(base.Engine):
                 f"Set default_engine='duckdb' in Definitions or engine='duckdb' in @feature.",
                 UserWarning,
                 stacklevel=4,
-            )
-
-    def _run_validators(
-        self,
-        feature_name: str,
-        df: pl.DataFrame | pl.LazyFrame,
-        validators: dict,
-    ) -> None:
-        """
-        Run validators on the processed DataFrame.
-
-        Args:
-            feature_name: Name of the feature being validated
-            df: DataFrame to validate
-            validators: Mapping of column names to validator lists
-
-        Raises:
-            FeatureValidationError: If any validation fails
-        """
-        # Collect LazyFrame if needed for validation
-        if isinstance(df, pl.LazyFrame):
-            df = df.collect()
-
-        results = validation.validate_dataframe(df, validators)
-        failures = [
-            (
-                r.column,
-                r.validator_name,
-                r.result.message or "Validation failed",
-            )
-            for r in results
-            if not r.result.passed
-        ]
-
-        if failures:
-            raise errors.FeatureValidationError(
-                feature_name=feature_name,
-                failures=failures,
             )

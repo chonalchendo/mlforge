@@ -11,7 +11,6 @@ import polars as pl
 
 import mlforge.compilers as compilers
 import mlforge.engines as engines
-import mlforge.errors as errors
 import mlforge.results as results_
 import mlforge.sources as sources
 import mlforge.timestamps as timestamps
@@ -79,7 +78,7 @@ class DuckDBEngine(Engine):
 
         # Generate surrogate keys for entities that require it
         if feature.entities:
-            source_df = self._apply_entity_keys(source_df, feature.entities)
+            source_df = utils.apply_entity_keys(source_df, feature.entities)
 
         # Process dataframe with user's function code
         processed_df = feature(source_df)
@@ -103,9 +102,10 @@ class DuckDBEngine(Engine):
             )
 
         # Run validators on processed dataframe (before metrics)
-        # Validators expect Polars DataFrames
         if feature.validators:
-            self._run_validators(feature.name, processed_df, feature.validators)
+            validation.run_validators_or_raise(
+                feature.name, processed_df, feature.validators
+            )
 
         # If no metrics, return the processed DataFrame as DuckDB relation
         if not feature.metrics:
@@ -225,68 +225,6 @@ class DuckDBEngine(Engine):
                 raise ValueError(
                     f"Unsupported source format: {type(fmt).__name__}"
                 )
-
-    def _apply_entity_keys(
-        self,
-        df: pl.DataFrame,
-        entities: list,
-    ) -> pl.DataFrame:
-        """
-        Generate surrogate keys for entities that require it.
-
-        For each entity with from_columns specified, generates a surrogate
-        key column using the surrogate_key() function.
-
-        Args:
-            df: Source DataFrame (Polars)
-            entities: List of Entity objects
-
-        Returns:
-            DataFrame with generated key columns added
-        """
-        for entity in entities:
-            if entity.requires_generation:
-                # Entity has from_columns - generate surrogate key
-                df = df.with_columns(
-                    utils.surrogate_key(*entity.from_columns).alias(
-                        entity.join_key
-                    )
-                )
-        return df
-
-    def _run_validators(
-        self,
-        feature_name: str,
-        df: pl.DataFrame,
-        validators: dict,
-    ) -> None:
-        """
-        Run validators on the processed DataFrame.
-
-        Args:
-            feature_name: Name of the feature being validated
-            df: Polars DataFrame to validate
-            validators: Mapping of column names to validator lists
-
-        Raises:
-            FeatureValidationError: If any validation fails
-        """
-        results = validation.validate_dataframe(df, validators)
-        failures = [
-            (
-                r.column,
-                r.validator_name,
-                r.result.message or "Validation failed",
-            )
-            for r in results
-            if not r.result.passed
-        ]
-
-        if failures:
-            raise errors.FeatureValidationError(
-                feature_name=feature_name,
-                failures=failures,
-            )
 
     def _join_relations(
         self,

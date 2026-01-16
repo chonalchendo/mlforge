@@ -628,6 +628,171 @@ def to_duckdb(dtype: DataType) -> str:
 
 
 # =============================================================================
+# PySpark type conversion
+# =============================================================================
+
+# Mapping from PySpark type class names to TypeKind
+_PYSPARK_TO_KIND: dict[str, TypeKind] = {
+    # Integer types
+    "ByteType": TypeKind.INT8,
+    "ShortType": TypeKind.INT16,
+    "IntegerType": TypeKind.INT32,
+    "LongType": TypeKind.INT64,
+    # Float types
+    "FloatType": TypeKind.FLOAT32,
+    "DoubleType": TypeKind.FLOAT64,
+    # String types
+    "StringType": TypeKind.STRING,
+    # Boolean
+    "BooleanType": TypeKind.BOOLEAN,
+    # Temporal types
+    "DateType": TypeKind.DATE,
+    "TimestampType": TypeKind.DATETIME,
+    "TimestampNTZType": TypeKind.DATETIME,
+    # Complex types
+    "DecimalType": TypeKind.DECIMAL,
+    "ArrayType": TypeKind.LIST,
+    "StructType": TypeKind.STRUCT,
+    # Duration (Spark calls it DayTimeIntervalType)
+    "DayTimeIntervalType": TypeKind.DURATION,
+}
+
+
+def from_pyspark(dtype: Any) -> DataType:
+    """
+    Convert PySpark DataType to canonical DataType.
+
+    Args:
+        dtype: PySpark DataType object (e.g., StringType(), LongType())
+
+    Returns:
+        Canonical DataType representation
+
+    Example:
+        from pyspark.sql.types import LongType, StringType
+        from_pyspark(LongType())  # DataType(TypeKind.INT64)
+        from_pyspark(StringType())  # DataType(TypeKind.STRING)
+    """
+    # Get the dtype class name
+    dtype_class_name = type(dtype).__name__
+
+    # Handle TimestampType (may have timezone info in Spark 3.4+)
+    if dtype_class_name == "TimestampType":
+        return DataType(TypeKind.DATETIME)
+
+    # Handle DecimalType with precision/scale
+    if dtype_class_name == "DecimalType":
+        precision = getattr(dtype, "precision", None)
+        scale = getattr(dtype, "scale", None)
+        return DataType(TypeKind.DECIMAL, precision=precision, scale=scale)
+
+    kind = _PYSPARK_TO_KIND.get(dtype_class_name, TypeKind.UNKNOWN)
+    return DataType(kind)
+
+
+def from_pyspark_string(dtype_str: str) -> DataType:
+    """
+    Convert PySpark type string representation to canonical DataType.
+
+    This handles the string output from str(pyspark_dtype).
+
+    Args:
+        dtype_str: String representation of PySpark dtype
+
+    Returns:
+        Canonical DataType representation
+
+    Example:
+        from_pyspark_string("LongType()")  # DataType(TypeKind.INT64)
+        from_pyspark_string("StringType()")  # DataType(TypeKind.STRING)
+        from_pyspark_string("DecimalType(10,2)")  # DataType(TypeKind.DECIMAL, precision=10, scale=2)
+    """
+    # Remove parentheses and parameters for lookup
+    base_name = dtype_str.split("(")[0].strip()
+
+    # Handle DecimalType with parameters
+    if base_name == "DecimalType" and "(" in dtype_str:
+        try:
+            params = dtype_str.split("(")[1].rstrip(")")
+            parts = params.split(",")
+            precision = int(parts[0].strip()) if parts[0].strip() else None
+            scale = (
+                int(parts[1].strip())
+                if len(parts) > 1 and parts[1].strip()
+                else None
+            )
+            return DataType(TypeKind.DECIMAL, precision=precision, scale=scale)
+        except (ValueError, IndexError):
+            return DataType(TypeKind.DECIMAL)
+
+    # Handle TimestampType
+    if base_name == "TimestampType":
+        return DataType(TypeKind.DATETIME)
+
+    # Add "Type" suffix if missing for lookup
+    if not base_name.endswith("Type"):
+        base_name = base_name + "Type"
+
+    kind = _PYSPARK_TO_KIND.get(base_name, TypeKind.UNKNOWN)
+    return DataType(kind)
+
+
+def to_pyspark(dtype: DataType) -> Any:
+    """
+    Convert canonical DataType to PySpark DataType.
+
+    Args:
+        dtype: Canonical DataType
+
+    Returns:
+        PySpark DataType object
+
+    Example:
+        to_pyspark(DataType(TypeKind.INT64))  # LongType()
+        to_pyspark(DataType(TypeKind.STRING))  # StringType()
+    """
+    from pyspark.sql.types import (
+        BooleanType,
+        ByteType,
+        DateType,
+        DecimalType,
+        DoubleType,
+        FloatType,
+        IntegerType,
+        LongType,
+        ShortType,
+        StringType,
+        TimestampType,
+    )
+
+    kind_to_pyspark: dict[TypeKind, Any] = {
+        TypeKind.INT8: ByteType(),
+        TypeKind.INT16: ShortType(),
+        TypeKind.INT32: IntegerType(),
+        TypeKind.INT64: LongType(),
+        TypeKind.UINT8: ShortType(),  # No unsigned in Spark, use next larger
+        TypeKind.UINT16: IntegerType(),
+        TypeKind.UINT32: LongType(),
+        TypeKind.UINT64: LongType(),  # May overflow for large values
+        TypeKind.FLOAT32: FloatType(),
+        TypeKind.FLOAT64: DoubleType(),
+        TypeKind.STRING: StringType(),
+        TypeKind.BOOLEAN: BooleanType(),
+        TypeKind.DATE: DateType(),
+        TypeKind.DATETIME: TimestampType(),
+        TypeKind.TIME: StringType(),  # Spark has no native Time type
+        TypeKind.DURATION: StringType(),  # Use string for duration
+    }
+
+    if dtype.kind == TypeKind.DECIMAL:
+        precision = dtype.precision or 38
+        scale = dtype.scale or 10
+        return DecimalType(precision, scale)
+
+    return kind_to_pyspark.get(dtype.kind, StringType())
+
+
+# =============================================================================
 # Aggregation output types
 # =============================================================================
 
@@ -711,7 +876,7 @@ def normalize_schema(
 
     Args:
         schema: Dictionary mapping column names to type strings
-        source: Source engine ("polars" or "duckdb")
+        source: Source engine ("polars", "duckdb", or "pyspark")
 
     Returns:
         Dictionary mapping column names to DataType objects
@@ -724,8 +889,19 @@ def normalize_schema(
         # From DuckDB
         normalize_schema({"user_id": "BIGINT", "name": "VARCHAR"}, "duckdb")
         # Returns: {"user_id": DataType(INT64), "name": DataType(STRING)}
+
+        # From PySpark
+        normalize_schema({"user_id": "LongType()", "name": "StringType()"}, "pyspark")
+        # Returns: {"user_id": DataType(INT64), "name": DataType(STRING)}
     """
-    converter = from_polars_string if source == "polars" else from_duckdb
+    if source == "polars":
+        converter = from_polars_string
+    elif source == "duckdb":
+        converter = from_duckdb
+    elif source == "pyspark":
+        converter = from_pyspark_string
+    else:
+        converter = from_polars_string
 
     return {name: converter(dtype_str) for name, dtype_str in schema.items()}
 
