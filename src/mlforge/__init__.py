@@ -72,9 +72,13 @@ __version__ = _get_version("mlforge-sdk")
 
 from mlforge.core import Definitions, Feature, feature
 from mlforge.entities import Entity
+
+# MLflow integration - exposed as mlf.mlflow module and direct function
+from mlforge.integrations import mlflow
+from mlforge.integrations.mlflow import log_features_to_mlflow
 from mlforge.metrics import Rolling
-from mlforge.retrieval import FeatureSpec
 from mlforge.online import DynamoDBStore, OnlineStore, RedisStore
+from mlforge.retrieval import FeatureSpec
 from mlforge.sources import CSVFormat, DeltaFormat, ParquetFormat, Source
 from mlforge.store import GCSStore, LocalStore, S3Store
 from mlforge.timestamps import Timestamp
@@ -91,10 +95,6 @@ from mlforge.validators import (
     not_null,
     unique,
 )
-
-# MLflow integration - exposed as mlf.mlflow module and direct function
-from mlforge.integrations import mlflow
-from mlforge.integrations.mlflow import log_features_to_mlflow
 
 __all__ = [
     "__version__",

@@ -1,0 +1,15 @@
+[project]
+name = "transactions-pyspark"
+version = "0.1.0"
+description = "PySpark example for mlforge feature store"
+requires-python = ">=3.13"
+dependencies = [
+    "mlforge-sdk[duckdb,pyspark]",
+]
+
+[tool.uv.sources]
+mlforge-sdk = { workspace = true }
+
+[build-system]
+requires = ["uv_build>=0.9.16,<0.10.0"]
+build-backend = "uv_build"

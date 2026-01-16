@@ -712,7 +712,7 @@ class TestDuckDBIntegration:
     ):
         """DuckDB engine should handle LazyFrame returns from feature functions."""
 
-        @feature(  # type: ignore[arg-type]
+        @feature(
             keys=["user_id"],
             source=str(sample_transactions_parquet),
             engine="duckdb",

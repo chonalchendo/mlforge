@@ -2,10 +2,11 @@
 Computation engines for feature materialization.
 
 This package provides different execution backends for computing features.
-Supports Polars (default) and DuckDB (for large datasets).
+Supports Polars (default), DuckDB (for large datasets), and PySpark (for
+distributed computing).
 
 Usage:
-    from mlforge.engines import PolarsEngine, DuckDBEngine, Engine
+    from mlforge.engines import PolarsEngine, DuckDBEngine, PySparkEngine, Engine
 
     # Polars engine (default)
     engine = PolarsEngine()
@@ -14,6 +15,10 @@ Usage:
     # DuckDB engine (for large datasets)
     engine = DuckDBEngine()
     result = engine.execute(feature)
+
+    # PySpark engine (for distributed computing)
+    engine = PySparkEngine()
+    result = engine.execute(feature)
 """
 
 import duckdb as duckdb_
@@ -21,9 +26,10 @@ import duckdb as duckdb_
 from mlforge.engines.base import Engine
 from mlforge.engines.duckdb import DuckDBEngine
 from mlforge.engines.polars import PolarsEngine
+from mlforge.engines.pyspark import PySparkEngine
 
 # Type alias for all supported engines
-EngineKind = PolarsEngine | DuckDBEngine
+EngineKind = PolarsEngine | DuckDBEngine | PySparkEngine
 
 
 def get_duckdb_connection() -> duckdb_.DuckDBPyConnection:
@@ -44,5 +50,6 @@ __all__ = [
     "Engine",
     "EngineKind",
     "PolarsEngine",
+    "PySparkEngine",
     "get_duckdb_connection",
 ]

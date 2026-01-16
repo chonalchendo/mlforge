@@ -1,0 +1,21 @@
+# Docker Compose for running the PySpark example
+#
+# Usage:
+#   docker compose run --rm mlforge-pyspark mlforge list features
+#   docker compose run --rm mlforge-pyspark mlforge build
+#   docker compose run --rm mlforge-pyspark bash  # interactive shell
+
+services:
+  mlforge-pyspark:
+    build:
+      context: ../..
+      dockerfile: examples/transactions-pyspark/Dockerfile
+    volumes:
+      # Mount feature_store for persistence between runs
+      - ./feature_store:/app/examples/transactions-pyspark/feature_store
+    working_dir: /app/examples/transactions-pyspark
+    environment:
+      # Reduce Spark verbosity
+      - SPARK_LOG_LEVEL=WARN
+      # Use local mode with 2 cores
+      - SPARK_MASTER=local[2]

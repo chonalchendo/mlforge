@@ -6,7 +6,6 @@ from pathlib import Path
 from types import ModuleType
 from typing import Any, Callable, Literal, Protocol
 
-import duckdb
 import polars as pl
 from loguru import logger
 
@@ -31,11 +30,16 @@ WindowFunc = Literal["1h", "1d", "7d", "30d"]
 
 
 class FeatureFunction(Protocol):
-    """Protocol defining the signature for feature transformation functions."""
+    """
+    Protocol defining the signature for feature transformation functions.
+
+    Engine-agnostic: accepts Polars DataFrame, DuckDB Relation, or PySpark DataFrame.
+    The actual type depends on which engine executes the feature.
+    """
 
     __name__: str
 
-    def __call__(self, df: pl.DataFrame) -> pl.DataFrame: ...
+    def __call__(self, df: Any) -> Any: ...
 
 
 @dataclass
@@ -140,7 +144,7 @@ def feature(
     interval: str | timedelta | None = None,
     metrics: list[metrics_.MetricKind] | None = None,
     validators: dict[str, list[validators_.Validator]] | None = None,
-    engine: Literal["polars", "duckdb"] | None = None,
+    engine: Literal["polars", "duckdb", "pyspark"] | None = None,
 ) -> Callable[[FeatureFunction], Feature]:
     """
     Decorator that marks a function as a feature definition.
@@ -287,7 +291,7 @@ class Definitions:
         offline_store: store.OfflineStoreKind | None = None,
         online_store: online.OnlineStoreKind | None = None,
         profile: str | None = None,
-        default_engine: Literal["polars", "duckdb"] = "duckdb",
+        default_engine: Literal["polars", "duckdb", "pyspark"] = "duckdb",
     ) -> None:
         """
         Initialize a feature store registry.
@@ -399,6 +403,10 @@ class Definitions:
                 from mlforge.engines import DuckDBEngine
 
                 self._engines[engine] = DuckDBEngine()
+            case "pyspark":
+                from mlforge.engines import PySparkEngine
+
+                self._engines[engine] = PySparkEngine()
             case _:
                 raise ValueError(f"Unknown engine: {engine}")
 
@@ -722,20 +730,21 @@ class Definitions:
             )
 
         # Load and process to get current schema (before metrics)
-        engine = self._get_engine_for_feature(feature)
-        source_df = engine._load_source(feature.source_obj)
+        # Always use Polars for schema analysis (version detection is engine-agnostic)
+        from mlforge.engines import PolarsEngine
 
-        if isinstance(source_df, duckdb.DuckDBPyRelation):
-            source_df_ = source_df.to_arrow_table()
-            source_df = pl.from_arrow(source_df_)
+        polars_engine = PolarsEngine()
+        source_df = polars_engine._load_source(feature.source_obj)
 
-        # Ensure we have a DataFrame (from_arrow can return DataFrame | Series)
+        # Ensure we have a Polars DataFrame
         if not isinstance(source_df, pl.DataFrame):
-            raise TypeError("Expected DataFrame from source")
+            raise TypeError("Expected Polars DataFrame from source")
 
-        # Apply entity key generation if needed (same as engine.execute)
+        # Apply entity key generation if needed (using Polars for consistency)
         if feature.entities:
-            source_df = engine._apply_entity_keys(source_df, feature.entities)
+            source_df = polars_engine._apply_entity_keys(
+                source_df, feature.entities
+            )
 
         preview_df = feature(source_df)
 
