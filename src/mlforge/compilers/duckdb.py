@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Callable
 
 from loguru import logger
 
+import mlforge.durations as durations
 import mlforge.engines as engines
 import mlforge.metrics as metrics
 
@@ -176,9 +177,11 @@ class DuckDBCompiler:
         bucket_cols = ", ".join(f'"{k}"' for k in ctx.keys)
 
         # Time intervals
-        trunc_unit = self._interval_to_trunc_unit(ctx.interval)
-        interval_sql = self._duration_to_interval(ctx.interval)
-        window_interval = self._duration_to_interval(window)
+        interval_parsed = durations.parse_duration(ctx.interval)
+        window_parsed = durations.parse_duration(window)
+        trunc_unit = interval_parsed.to_trunc_unit()
+        interval_sql = interval_parsed.to_duckdb_interval()
+        window_interval = window_parsed.to_duckdb_interval()
 
         # Build aggregation expressions
         agg_parts = []
@@ -245,8 +248,9 @@ ORDER BY {partition_cols_b}, b.time_bucket
         bucket_cols = ", ".join(f'"{k}"' for k in ctx.keys)
 
         # Time intervals
-        trunc_unit = self._interval_to_trunc_unit(ctx.interval)
-        interval_sql = self._duration_to_interval(ctx.interval)
+        interval_parsed = durations.parse_duration(ctx.interval)
+        trunc_unit = interval_parsed.to_trunc_unit()
+        interval_sql = interval_parsed.to_duckdb_interval()
 
         # Build join conditions for multiple entity keys
         join_conditions = " AND ".join(f'd."{k}" = b."{k}"' for k in ctx.keys)
@@ -275,7 +279,9 @@ ORDER BY {partition_cols_b}, b.time_bucket
         # Add a CTE for each window
         window_cte_names = []
         for i, window in enumerate(windows):
-            window_interval = self._duration_to_interval(window)
+            window_interval = durations.parse_duration(
+                window
+            ).to_duckdb_interval()
             cte_name = f"w{i}"
             window_cte_names.append(cte_name)
 
@@ -341,67 +347,3 @@ FROM w0
 ORDER BY {order_cols}, w0.time_bucket
 """  # nosec B608
         return sql.strip()
-
-    def _interval_to_trunc_unit(self, interval: str) -> str:
-        """
-        Convert interval string to DATE_TRUNC unit.
-
-        Args:
-            interval: Interval string (e.g., "1d", "1h")
-
-        Returns:
-            DATE_TRUNC unit string (e.g., "day", "hour")
-        """
-        if interval.endswith("d"):
-            return "day"
-        elif interval.endswith("h"):
-            return "hour"
-        elif interval.endswith("m"):
-            return "minute"
-        elif interval.endswith("s"):
-            return "second"
-        elif interval.endswith("w"):
-            return "week"
-        elif interval.endswith("mo"):
-            return "month"
-        elif interval.endswith("y"):
-            return "year"
-        else:
-            return "day"
-
-    def _duration_to_interval(self, duration: str) -> str:
-        """
-        Convert Polars duration string to DuckDB INTERVAL syntax.
-
-        Args:
-            duration: Polars duration string (e.g., "7d", "24h", "30m")
-
-        Returns:
-            DuckDB INTERVAL string (e.g., "INTERVAL '7' DAY")
-        """
-        # Parse the duration string
-        if duration.endswith("d"):
-            value = duration[:-1]
-            return f"INTERVAL '{value}' DAY"
-        elif duration.endswith("h"):
-            value = duration[:-1]
-            return f"INTERVAL '{value}' HOUR"
-        elif duration.endswith("m"):
-            value = duration[:-1]
-            return f"INTERVAL '{value}' MINUTE"
-        elif duration.endswith("s"):
-            value = duration[:-1]
-            return f"INTERVAL '{value}' SECOND"
-        elif duration.endswith("w"):
-            # Convert weeks to days
-            value = int(duration[:-1]) * 7
-            return f"INTERVAL '{value}' DAY"
-        elif duration.endswith("mo"):
-            value = duration[:-2]
-            return f"INTERVAL '{value}' MONTH"
-        elif duration.endswith("y"):
-            value = duration[:-1]
-            return f"INTERVAL '{value}' YEAR"
-        else:
-            # Assume days if no suffix
-            return f"INTERVAL '{duration}' DAY"

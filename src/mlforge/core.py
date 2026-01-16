@@ -22,6 +22,7 @@ import mlforge.sources as sources
 import mlforge.store as store
 import mlforge.timestamps as timestamps_
 import mlforge.types as types_
+import mlforge.utils as utils
 import mlforge.validation as validation_
 import mlforge.validators as validators_
 import mlforge.version as version
@@ -742,9 +743,7 @@ class Definitions:
 
         # Apply entity key generation if needed (using Polars for consistency)
         if feature.entities:
-            source_df = polars_engine._apply_entity_keys(
-                source_df, feature.entities
-            )
+            source_df = utils.apply_entity_keys(source_df, feature.entities)
 
         preview_df = feature(source_df)
 

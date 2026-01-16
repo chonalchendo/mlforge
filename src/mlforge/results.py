@@ -85,8 +85,9 @@ class EngineResult(ABC):
         Get the base schema with canonical types.
 
         The base schema is always captured from a Polars DataFrame (after the
-        user's feature function runs), so we always use "polars" as the source
-        for type normalization, regardless of which engine executed the feature.
+        user's feature function runs), so we use "polars" as the source for
+        type normalization. PySpark overrides this since it captures base
+        schema from Spark DataFrames.
 
         Returns:
             Canonical schema of base DataFrame or None if not available
@@ -94,7 +95,6 @@ class EngineResult(ABC):
         base = self.base_schema()
         if base is None:
             return None
-        # Base schema is always from Polars (user feature functions return Polars DataFrames)
         return types_.normalize_schema(base, "polars")
 
     @abstractmethod
@@ -377,6 +377,7 @@ class PySparkResult(EngineResult):
         """
         return self._base_schema
 
+    @override
     def base_schema_canonical(self) -> dict[str, types_.DataType] | None:
         """
         Get the base schema with canonical types.

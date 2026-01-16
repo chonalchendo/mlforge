@@ -11,7 +11,6 @@ import polars as pl
 
 import mlforge.compilers as compilers
 import mlforge.engines.base as base
-import mlforge.errors as errors
 import mlforge.results as results_
 import mlforge.sources as sources
 import mlforge.timestamps as timestamps
@@ -129,7 +128,11 @@ class PySparkEngine(base.Engine):
 
         # Run validators on processed dataframe (before metrics)
         if feature.validators:
-            self._run_validators(feature.name, processed_df, feature.validators)
+            # Convert to Polars for validation (validators expect Polars DataFrames)
+            polars_df = pl.from_pandas(processed_df.toPandas())
+            validation.run_validators_or_raise(
+                feature.name, polars_df, feature.validators
+            )
 
         if not feature.metrics:
             return results_.PySparkResult(processed_df, base_schema=base_schema)
@@ -329,42 +332,3 @@ class PySparkEngine(base.Engine):
             df = df.withColumn(ts_column, F.to_timestamp(F.col(ts_column)))
 
         return df, ts_column
-
-    def _run_validators(
-        self,
-        feature_name: str,
-        df: "SparkDataFrame",
-        validators: dict,
-    ) -> None:
-        """
-        Run validators on the processed Spark DataFrame.
-
-        Converts to Polars for validation (validators expect Polars DataFrames).
-
-        Args:
-            feature_name: Name of the feature being validated
-            df: Spark DataFrame to validate
-            validators: Mapping of column names to validator lists
-
-        Raises:
-            FeatureValidationError: If any validation fails
-        """
-        # Convert to Polars for validation
-        polars_df = pl.from_pandas(df.toPandas())
-
-        results = validation.validate_dataframe(polars_df, validators)
-        failures = [
-            (
-                r.column,
-                r.validator_name,
-                r.result.message or "Validation failed",
-            )
-            for r in results
-            if not r.result.passed
-        ]
-
-        if failures:
-            raise errors.FeatureValidationError(
-                feature_name=feature_name,
-                failures=failures,
-            )

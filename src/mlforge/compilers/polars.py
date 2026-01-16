@@ -15,6 +15,7 @@ import polars as pl
 from loguru import logger
 
 import mlforge.compilers.base as base
+import mlforge.durations as durations
 import mlforge.metrics as metrics
 
 
@@ -156,8 +157,12 @@ class PolarsCompiler:
         # Step 4: Filter to window boundaries
         # Window: (bucket - window, bucket + interval]
         # This matches DuckDB's: event_time > bucket - window AND event_time <= bucket + interval
-        window_duration = pl.duration(**self._parse_duration(window))  # type: ignore[arg-type]
-        interval_duration = pl.duration(**self._parse_duration(ctx.interval))  # type: ignore[arg-type]
+        window_kwargs = durations.parse_duration(window).to_polars_kwargs()
+        interval_kwargs = durations.parse_duration(
+            ctx.interval
+        ).to_polars_kwargs()
+        window_duration = pl.duration(**window_kwargs)  # type: ignore[arg-type]
+        interval_duration = pl.duration(**interval_kwargs)  # type: ignore[arg-type]
 
         filtered = joined.filter(
             (pl.col(ctx.timestamp) > (pl.col("__bucket__") - window_duration))
@@ -185,36 +190,6 @@ class PolarsCompiler:
         )
 
         return result
-
-    def _parse_duration(self, duration: str) -> dict[str, int]:
-        """
-        Parse a duration string into kwargs for pl.duration().
-
-        Args:
-            duration: Duration string (e.g., "7d", "24h", "30m")
-
-        Returns:
-            Dict with duration kwargs (e.g., {"days": 7})
-        """
-        if duration.endswith("d"):
-            return {"days": int(duration[:-1])}
-        elif duration.endswith("h"):
-            return {"hours": int(duration[:-1])}
-        elif duration.endswith("m"):
-            return {"minutes": int(duration[:-1])}
-        elif duration.endswith("s"):
-            return {"seconds": int(duration[:-1])}
-        elif duration.endswith("w"):
-            return {"weeks": int(duration[:-1])}
-        elif duration.endswith("mo"):
-            # Polars duration doesn't support months directly, approximate with 30 days
-            return {"days": int(duration[:-2]) * 30}
-        elif duration.endswith("y"):
-            # Polars duration doesn't support years directly, approximate with 365 days
-            return {"days": int(duration[:-1]) * 365}
-        else:
-            # Assume days if no suffix
-            return {"days": int(duration)}
 
     def _join_on_keys(
         self,

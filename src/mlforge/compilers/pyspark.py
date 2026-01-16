@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Callable
 
 from loguru import logger
 
+import mlforge.durations as durations
 import mlforge.metrics as metrics
 
 if TYPE_CHECKING:
@@ -148,11 +149,13 @@ class PySparkCompiler:
         from pyspark.sql import functions as F
 
         ts_col = ctx.timestamp
-        interval_expr = self._duration_to_interval_expr(ctx.interval)
-        window_expr = self._duration_to_interval_expr(window)
+        interval_parsed = durations.parse_duration(ctx.interval)
+        window_parsed = durations.parse_duration(window)
+        interval_expr = F.expr(interval_parsed.to_spark_interval())
+        window_expr = F.expr(window_parsed.to_spark_interval())
 
         # Step 1: Compute per-entity date bounds (truncated to interval)
-        trunc_unit = self._interval_to_trunc_unit(ctx.interval)
+        trunc_unit = interval_parsed.to_trunc_unit()
 
         entity_bounds = source_df.groupBy(*ctx.keys).agg(
             F.date_trunc(trunc_unit, F.min(ts_col)).alias("__min_date__"),
@@ -232,70 +235,6 @@ class PySparkCompiler:
                 return F.percentile_approx(col, 0.5)
             case _:
                 raise ValueError(f"Unsupported aggregation: {agg}")
-
-    def _duration_to_interval_expr(self, duration: str):
-        """
-        Convert duration string to Spark interval expression.
-
-        Args:
-            duration: Duration string (e.g., "7d", "24h", "30m")
-
-        Returns:
-            Spark interval expression
-        """
-        from pyspark.sql import functions as F
-
-        if duration.endswith("d"):
-            days = int(duration[:-1])
-            return F.expr(f"INTERVAL {days} DAYS")
-        elif duration.endswith("h"):
-            hours = int(duration[:-1])
-            return F.expr(f"INTERVAL {hours} HOURS")
-        elif duration.endswith("m"):
-            minutes = int(duration[:-1])
-            return F.expr(f"INTERVAL {minutes} MINUTES")
-        elif duration.endswith("s"):
-            seconds = int(duration[:-1])
-            return F.expr(f"INTERVAL {seconds} SECONDS")
-        elif duration.endswith("w"):
-            weeks = int(duration[:-1])
-            return F.expr(f"INTERVAL {weeks * 7} DAYS")
-        elif duration.endswith("mo"):
-            months = int(duration[:-2])
-            return F.expr(f"INTERVAL {months} MONTHS")
-        elif duration.endswith("y"):
-            years = int(duration[:-1])
-            return F.expr(f"INTERVAL {years} YEARS")
-        else:
-            # Assume days if no suffix
-            return F.expr(f"INTERVAL {duration} DAYS")
-
-    def _interval_to_trunc_unit(self, interval: str) -> str:
-        """
-        Convert interval string to date_trunc unit.
-
-        Args:
-            interval: Interval string (e.g., "1d", "1h")
-
-        Returns:
-            date_trunc unit string (e.g., "day", "hour")
-        """
-        if interval.endswith("d"):
-            return "day"
-        elif interval.endswith("h"):
-            return "hour"
-        elif interval.endswith("m"):
-            return "minute"
-        elif interval.endswith("s"):
-            return "second"
-        elif interval.endswith("w"):
-            return "week"
-        elif interval.endswith("mo"):
-            return "month"
-        elif interval.endswith("y"):
-            return "year"
-        else:
-            return "day"
 
     def _join_on_keys(
         self,
