@@ -252,6 +252,34 @@ def build(
             help="Profile name from mlforge.yaml to use for stores.",
         ),
     ] = None,
+    start: Annotated[
+        str | None,
+        cyclopts.Parameter(
+            name="--start",
+            help="Start of date range for incremental build (e.g., '2026-01-01').",
+        ),
+    ] = None,
+    end: Annotated[
+        str | None,
+        cyclopts.Parameter(
+            name="--end",
+            help="End of date range for incremental build (e.g., '2026-01-15').",
+        ),
+    ] = None,
+    last: Annotated[
+        str | None,
+        cyclopts.Parameter(
+            name="--last",
+            help="Process data from last N period (e.g., '7d', '24h').",
+        ),
+    ] = None,
+    full_refresh: Annotated[
+        bool,
+        cyclopts.Parameter(
+            name="--full-refresh",
+            help="Force full rebuild, ignoring incremental state.",
+        ),
+    ] = False,
 ):
     """
     Materialize features to offline storage with versioning.
@@ -259,6 +287,9 @@ def build(
     Loads feature definitions, computes features from source data,
     and persists results to the configured storage backend. Automatically
     determines version based on schema and configuration changes.
+
+    Supports incremental builds that only process new data since the last
+    build, significantly improving build times for large datasets.
 
     With --online flag, writes to the online store (e.g., Redis) instead
     of the offline store. Extracts the latest value per entity for
@@ -274,6 +305,10 @@ def build(
         preview_rows: Number of preview rows to display. Defaults to 5.
         online: Write to online store instead of offline. Defaults to False.
         profile: Profile name from mlforge.yaml. Defaults to None (uses env var or config default).
+        start: Start of date range for incremental build.
+        end: End of date range for incremental build.
+        last: Process data from last N period (e.g., '7d', '24h').
+        full_refresh: Force full rebuild, ignoring incremental state.
 
     Raises:
         SystemExit: If loading definitions or materialization fails
@@ -300,6 +335,10 @@ def build(
             preview=preview,
             preview_rows=preview_rows,
             online=online,
+            start=start,
+            end=end,
+            last=last,
+            full_refresh=full_refresh,
         )
 
         duration = time.perf_counter() - start_time

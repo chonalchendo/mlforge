@@ -12,11 +12,13 @@ from loguru import logger
 import mlforge.engines as engines
 import mlforge.entities as entities_
 import mlforge.errors as errors
+import mlforge.incremental as incremental
 import mlforge.logging as log
 import mlforge.manifest as manifest
 import mlforge.metrics as metrics_
 import mlforge.online as online
 import mlforge.profiles as profiles_
+import mlforge.results as results_
 import mlforge.retrieval as retrieval_
 import mlforge.sources as sources
 import mlforge.store as store
@@ -438,6 +440,10 @@ class Definitions:
         preview: bool = True,
         preview_rows: int = 5,
         online: bool = False,
+        start: str | datetime | None = None,
+        end: str | datetime | None = None,
+        last: str | None = None,
+        full_refresh: bool = False,
     ) -> BuildResult:
         """
         Compute and persist features to offline storage with versioning.
@@ -445,6 +451,9 @@ class Definitions:
         Loads source data, applies feature transformations, validates results,
         and writes to the configured storage backend. Automatically determines
         the appropriate version based on schema and configuration changes.
+
+        Supports incremental builds that only process new data since the last
+        build, significantly improving build times for large datasets.
 
         Args:
             feature_names: Specific features to materialize. Defaults to None (all).
@@ -456,6 +465,14 @@ class Definitions:
             online: Write to online store instead of offline. Defaults to False.
                 Requires online_store to be configured. Extracts latest values
                 per entity and writes to the online store.
+            start: Start of date range for incremental build (e.g., "2026-01-01").
+                Only processes data from this timestamp onwards.
+            end: End of date range for incremental build (e.g., "2026-01-15").
+                Only processes data up to (but not including) this timestamp.
+            last: Process data from the last N period (e.g., "7d", "24h").
+                Cannot be used with start/end.
+            full_refresh: Force full rebuild, ignoring incremental state.
+                Defaults to False.
 
         Returns:
             BuildResult containing paths and build statistics (built, skipped, failed counts)
@@ -474,6 +491,15 @@ class Definitions:
 
             # Build to online store
             counts = defs.build(feature_names=["user_spend"], online=True)
+
+            # Incremental build - process last 7 days
+            paths = defs.build(feature_names=["user_spend"], last="7d")
+
+            # Incremental build - specific date range
+            paths = defs.build(feature_names=["user_spend"], start="2026-01-01", end="2026-01-15")
+
+            # Force full refresh
+            paths = defs.build(feature_names=["user_spend"], full_refresh=True)
         """
         if online:
             online_results = self._build_online(
@@ -497,6 +523,36 @@ class Definitions:
             # Get previous metadata for change detection
             previous_meta = self.offline_store.read_metadata(feature.name)
 
+            # Determine if this is an incremental build
+            is_incremental = self._should_build_incrementally(
+                feature=feature,
+                previous_meta=previous_meta,
+                start=start,
+                end=end,
+                last=last,
+                full_refresh=full_refresh,
+            )
+
+            # Resolve date range for incremental builds
+            incremental_meta: manifest.IncrementalMetadata | None = None
+            start_dt: datetime | None = None
+            end_dt: datetime | None = None
+
+            if is_incremental:
+                prev_incremental = (
+                    previous_meta.incremental if previous_meta else None
+                )
+                start_dt, end_dt = incremental.resolve_date_range(
+                    start=start,
+                    end=end,
+                    last=last,
+                    previous_meta=prev_incremental,
+                )
+                logger.debug(
+                    f"Incremental build for {feature.name}: "
+                    f"{start_dt} -> {end_dt}"
+                )
+
             # Determine target version
             if feature_version is not None:
                 # Explicit version override
@@ -512,15 +568,29 @@ class Definitions:
                     feature, previous_meta
                 )
 
-            # Check if this version already exists (unless force)
-            if not force and self.offline_store.exists(
-                feature.name, target_version
+            # For incremental builds, stay on same version (PATCH)
+            if is_incremental and previous_meta:
+                target_version = previous_meta.version
+                change_summary = version.ChangeSummary(
+                    change_type=version.ChangeType.PATCH,
+                    reason="incremental_build",
+                    details=[],
+                )
+
+            # Check if this version already exists (unless force or incremental)
+            if (
+                not force
+                and not is_incremental
+                and self.offline_store.exists(feature.name, target_version)
             ):
                 log.print_skipped(feature.name, target_version)
                 skipped_count += 1
                 continue
 
-            log.print_building(feature.name)
+            if is_incremental:
+                log.print_building(f"{feature.name} (incremental)")
+            else:
+                log.print_building(feature.name)
 
             try:
                 engine = self._get_engine_for_feature(feature)
@@ -531,11 +601,75 @@ class Definitions:
                 continue
 
             result_df = result.to_polars()
+
+            # Apply incremental filtering if applicable
+            if (
+                is_incremental
+                and feature.timestamp_column
+                and (start_dt or end_dt)
+            ):
+                lookback = incremental.calculate_lookback_days(feature.interval)
+                original_count = len(result_df)
+                result_df = incremental.filter_by_timestamp(
+                    df=result_df,
+                    timestamp_col=feature.timestamp_column,
+                    start=start_dt,
+                    end=end_dt,
+                    lookback_days=lookback,
+                )
+                logger.debug(
+                    f"Filtered {feature.name}: {original_count} -> {len(result_df)} rows"
+                )
+
+                # Merge with existing data if available
+                if previous_meta and self.offline_store.exists(
+                    feature.name, previous_meta.version
+                ):
+                    existing_df = self.offline_store.read(
+                        feature.name, previous_meta.version
+                    )
+                    result_df = incremental.merge_incremental(
+                        existing=existing_df,
+                        new_data=result_df,
+                        keys=feature.keys,
+                        timestamp_col=feature.timestamp_column,
+                    )
+                    logger.debug(
+                        f"Merged {feature.name}: {len(existing_df)} existing + "
+                        f"new -> {len(result_df)} total rows"
+                    )
+
+                # Build incremental metadata
+                now_ts = (
+                    datetime.now(timezone.utc)
+                    .isoformat()
+                    .replace("+00:00", "Z")
+                )
+                processed_until = (
+                    end_dt.isoformat().replace("+00:00", "Z")
+                    if end_dt
+                    else now_ts
+                )
+                incremental_meta = manifest.IncrementalMetadata(
+                    last_build_at=now_ts,
+                    processed_until=processed_until,
+                    timestamp_column=feature.timestamp_column,
+                    lookback_days=lookback,
+                )
+
             self._validate_result(feature.name, result_df)
 
-            # Write with version
+            # For incremental builds, wrap the merged DataFrame in a result
+            # to maintain consistent interface with store.write()
+            if is_incremental:
+                result = results_.PolarsResult(
+                    result_df, base_schema=result.base_schema()
+                )
+
             write_metadata = self.offline_store.write(
-                feature.name, result, feature_version=target_version
+                feature.name,
+                result,
+                feature_version=target_version,
             )
 
             # Compute hashes for metadata
@@ -576,6 +710,7 @@ class Definitions:
                 config_hash=config_hash,
                 source_hash=source_hash,
                 change_summary=change_summary,
+                incremental_meta=incremental_meta,
             )
             self.offline_store.write_metadata(feature.name, feature_metadata)
 
@@ -820,6 +955,58 @@ class Definitions:
                 # Fallback: use repr
                 configs.append({"repr": repr(metric)})
         return configs
+
+    def _should_build_incrementally(
+        self,
+        feature: Feature,
+        previous_meta: manifest.FeatureMetadata | None,
+        start: str | datetime | None,
+        end: str | datetime | None,
+        last: str | None,
+        full_refresh: bool,
+    ) -> bool:
+        """
+        Determine if a feature should be built incrementally.
+
+        Incremental builds are used when:
+        1. full_refresh is False
+        2. Incremental parameters are provided (start/end/last)
+        3. Feature has a timestamp column
+        4. No breaking schema changes
+
+        Args:
+            feature: Feature being built
+            previous_meta: Metadata from previous build
+            start: Start date parameter
+            end: End date parameter
+            last: Last duration parameter
+            full_refresh: Whether full refresh was explicitly requested
+
+        Returns:
+            True if incremental build should be used
+        """
+        # Explicit full refresh requested
+        if full_refresh:
+            return False
+
+        # No incremental parameters provided
+        if start is None and end is None and last is None:
+            return False
+
+        # Feature has no timestamp column - can't filter incrementally
+        if not feature.timestamp_column:
+            logger.warning(
+                f"Feature {feature.name} has no timestamp column, "
+                "using full refresh"
+            )
+            return False
+
+        # First build - no previous data to merge with
+        if previous_meta is None:
+            logger.debug(f"First build for {feature.name}, using full refresh")
+            return False
+
+        return True
 
     def validate(
         self,
@@ -1337,6 +1524,7 @@ class Definitions:
         config_hash: str = "",
         source_hash: str = "",
         change_summary: version.ChangeSummary | None = None,
+        incremental_meta: manifest.IncrementalMetadata | None = None,
     ) -> manifest.FeatureMetadata:
         """
         Build FeatureMetadata from feature definition and write results.
@@ -1355,6 +1543,7 @@ class Definitions:
             config_hash: Hash of feature configuration
             source_hash: Hash of source data file for reproducibility
             change_summary: Summary of changes from previous version
+            incremental_meta: Incremental build state tracking (v0.8.0)
 
         Returns:
             FeatureMetadata object ready for persistence
@@ -1386,6 +1575,7 @@ class Definitions:
             tags=feature.tags or [],
             description=feature.description,
             change_summary=change_summary.to_dict() if change_summary else None,
+            incremental=incremental_meta,
         )
 
     # =========================================================================
