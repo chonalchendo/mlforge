@@ -24,6 +24,46 @@ if TYPE_CHECKING:
 
 
 @dataclass
+class IncrementalMetadata:
+    """
+    Metadata for incremental build state tracking.
+
+    Tracks when data was last processed to enable incremental builds
+    that only process new data since the last build.
+
+    Attributes:
+        last_build_at: ISO 8601 timestamp when the incremental build ran
+        processed_until: ISO 8601 timestamp of the latest data processed
+        timestamp_column: Name of the timestamp column used for filtering
+        lookback_days: Number of days to look back for rolling window features
+    """
+
+    last_build_at: str
+    processed_until: str
+    timestamp_column: str
+    lookback_days: int = 0
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for JSON serialization."""
+        return {
+            "last_build_at": self.last_build_at,
+            "processed_until": self.processed_until,
+            "timestamp_column": self.timestamp_column,
+            "lookback_days": self.lookback_days,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> IncrementalMetadata:
+        """Create from dictionary."""
+        return cls(
+            last_build_at=data["last_build_at"],
+            processed_until=data["processed_until"],
+            timestamp_column=data["timestamp_column"],
+            lookback_days=data.get("lookback_days", 0),
+        )
+
+
+@dataclass
 class ColumnMetadata:
     """
     Metadata for a single column in a feature.
@@ -123,6 +163,9 @@ class FeatureMetadata:
     # v0.5.0: New optional field
     change_summary: dict[str, Any] | None = None
 
+    # v0.8.0: Incremental build tracking
+    incremental: IncrementalMetadata | None = None
+
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
         result: dict[str, Any] = {
@@ -154,6 +197,8 @@ class FeatureMetadata:
             result["description"] = self.description
         if self.change_summary:
             result["change_summary"] = self.change_summary
+        if self.incremental:
+            result["incremental"] = self.incremental.to_dict()
         return result
 
     @classmethod
@@ -166,6 +211,14 @@ class FeatureMetadata:
 
         # Handle backward compatibility: last_updated → updated_at
         updated_at = data.get("updated_at") or data.get("last_updated", "")
+
+        # Parse incremental metadata if present
+        incremental_data = data.get("incremental")
+        incremental = (
+            IncrementalMetadata.from_dict(incremental_data)
+            if incremental_data
+            else None
+        )
 
         return cls(
             name=data["name"],
@@ -188,6 +241,7 @@ class FeatureMetadata:
             tags=data.get("tags", []),
             description=data.get("description"),
             change_summary=data.get("change_summary"),
+            incremental=incremental,
         )
 
 

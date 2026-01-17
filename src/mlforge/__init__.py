@@ -45,6 +45,7 @@ Public API:
         LocalStore: Local filesystem storage
         S3Store: Amazon S3 storage
         GCSStore: Google Cloud Storage
+        UnityCatalogStore: Databricks Unity Catalog storage
 
     Online Stores:
         RedisStore: Redis for real-time serving
@@ -80,7 +81,7 @@ from mlforge.metrics import Rolling
 from mlforge.online import DynamoDBStore, OnlineStore, RedisStore
 from mlforge.retrieval import FeatureSpec
 from mlforge.sources import CSVFormat, DeltaFormat, ParquetFormat, Source
-from mlforge.store import GCSStore, LocalStore, S3Store
+from mlforge.store import GCSStore, LocalStore, S3Store, UnityCatalogStore
 from mlforge.timestamps import Timestamp
 from mlforge.types import DataType, TypeKind
 from mlforge.utils import surrogate_key
@@ -106,6 +107,7 @@ __all__ = [
     "LocalStore",
     "S3Store",
     "GCSStore",
+    "UnityCatalogStore",
     "OnlineStore",
     "RedisStore",
     "DynamoDBStore",

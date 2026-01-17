@@ -124,6 +124,8 @@ include = [
     "**/pyspark.py",
     "**/test_pyspark.py",
     "**/types.py",
+    "**/unity_catalog.py",
+    "**/test_unity_catalog*.py",
 ]
 
 [tool.ty.overrides.rules]
