@@ -13,7 +13,7 @@ import polars as pl
 import pytest
 
 import mlforge.types as types_
-from mlforge import Definitions, LocalStore, Rolling, feature
+from mlforge import Aggregate, Definitions, LocalStore, feature
 
 # =============================================================================
 # Fixtures
@@ -97,11 +97,11 @@ class TestEngineParity:
         assert polars_df["user_id"].to_list() == duckdb_df["user_id"].to_list()
         assert polars_df["amount"].to_list() == duckdb_df["amount"].to_list()
 
-    def test_rolling_sum_semantics(
+    def test_aggregate_sum_semantics(
         self, sample_transactions_parquet: Path, tmp_path: Path
     ):
         """
-        Test rolling aggregation semantics between engines.
+        Test aggregate semantics between engines.
 
         Both engines should produce identical results with the same:
         - Row count (per-entity date ranges)
@@ -115,13 +115,15 @@ class TestEngineParity:
             interval="1d",
             engine="polars",
             metrics=[
-                Rolling(
+                Aggregate(
+                    field="amount",
+                    function="sum",
                     windows=["7d"],
-                    aggregations={"amount": ["sum"]},
-                )
+                    name="total_spend",
+                ),
             ],
         )
-        def polars_rolling(df: pl.DataFrame) -> pl.DataFrame:
+        def polars_agg(df: pl.DataFrame) -> pl.DataFrame:
             return df.select("user_id", "event_time", "amount")
 
         @feature(
@@ -131,26 +133,28 @@ class TestEngineParity:
             interval="1d",
             engine="duckdb",
             metrics=[
-                Rolling(
+                Aggregate(
+                    field="amount",
+                    function="sum",
                     windows=["7d"],
-                    aggregations={"amount": ["sum"]},
-                )
+                    name="total_spend",
+                ),
             ],
         )
-        def duckdb_rolling(df: pl.DataFrame) -> pl.DataFrame:
+        def duckdb_agg(df: pl.DataFrame) -> pl.DataFrame:
             return df.select("user_id", "event_time", "amount")
 
         store = LocalStore(str(tmp_path / "store"))
         defs = Definitions(
             name="test",
-            features=[polars_rolling, duckdb_rolling],
+            features=[polars_agg, duckdb_agg],
             offline_store=store,
         )
 
         defs.build(preview=False)
 
-        polars_df = store.read("polars_rolling")
-        duckdb_df = store.read("duckdb_rolling")
+        polars_df = store.read("polars_agg")
+        duckdb_df = store.read("duckdb_agg")
 
         # Both should have the same base columns
         assert "user_id" in polars_df.columns
@@ -165,16 +169,14 @@ class TestEngineParity:
             f"Row count mismatch: Polars={polars_df.height}, DuckDB={duckdb_df.height}"
         )
 
-        # Each feature has its own tag in column names
-        sum_col_polars = "polars_rolling__amount__sum__1d__7d"
-        assert sum_col_polars in polars_df.columns
-
-        sum_col_duckdb = "duckdb_rolling__amount__sum__1d__7d"
-        assert sum_col_duckdb in duckdb_df.columns
+        # Both features should have the same named column
+        sum_col = "total_spend_1d_7d"
+        assert sum_col in polars_df.columns
+        assert sum_col in duckdb_df.columns
 
         # Verify both produce numeric results
-        assert polars_df[sum_col_polars].dtype.is_numeric()
-        assert duckdb_df[sum_col_duckdb].dtype.is_numeric()
+        assert polars_df[sum_col].dtype.is_numeric()
+        assert duckdb_df[sum_col].dtype.is_numeric()
 
         # Sort both for comparison and verify values match
         polars_sorted = polars_df.sort("user_id", "event_time")
@@ -186,8 +188,8 @@ class TestEngineParity:
         assert polars_dates == duckdb_dates, "Timestamps should match"
 
         # Verify aggregation values match
-        polars_sums = polars_sorted[sum_col_polars].to_list()
-        duckdb_sums = duckdb_sorted[sum_col_duckdb].to_list()
+        polars_sums = polars_sorted[sum_col].to_list()
+        duckdb_sums = duckdb_sorted[sum_col].to_list()
         assert polars_sums == duckdb_sums, (
             f"Sum values should match: Polars={polars_sums}, DuckDB={duckdb_sums}"
         )
@@ -204,10 +206,24 @@ class TestEngineParity:
             interval="1d",
             engine="polars",
             metrics=[
-                Rolling(
+                Aggregate(
+                    field="amount",
+                    function="sum",
                     windows=["7d"],
-                    aggregations={"amount": ["sum", "mean", "count"]},
-                )
+                    name="total_spend",
+                ),
+                Aggregate(
+                    field="amount",
+                    function="mean",
+                    windows=["7d"],
+                    name="avg_spend",
+                ),
+                Aggregate(
+                    field="amount",
+                    function="count",
+                    windows=["7d"],
+                    name="txn_count",
+                ),
             ],
         )
         def polars_multi_agg(df: pl.DataFrame) -> pl.DataFrame:
@@ -220,10 +236,24 @@ class TestEngineParity:
             interval="1d",
             engine="duckdb",
             metrics=[
-                Rolling(
+                Aggregate(
+                    field="amount",
+                    function="sum",
                     windows=["7d"],
-                    aggregations={"amount": ["sum", "mean", "count"]},
-                )
+                    name="total_spend",
+                ),
+                Aggregate(
+                    field="amount",
+                    function="mean",
+                    windows=["7d"],
+                    name="avg_spend",
+                ),
+                Aggregate(
+                    field="amount",
+                    function="count",
+                    windows=["7d"],
+                    name="txn_count",
+                ),
             ],
         )
         def duckdb_multi_agg(df: pl.DataFrame) -> pl.DataFrame:
@@ -242,26 +272,20 @@ class TestEngineParity:
         duckdb_df = store.read("duckdb_multi_agg")
 
         # Verify all expected columns exist
-        expected_aggs = ["sum", "mean", "count"]
-        for agg in expected_aggs:
-            polars_col = f"polars_multi_agg__amount__{agg}__1d__7d"
-            duckdb_col = f"duckdb_multi_agg__amount__{agg}__1d__7d"
-            assert polars_col in polars_df.columns, f"Missing {polars_col}"
-            assert duckdb_col in duckdb_df.columns, f"Missing {duckdb_col}"
+        expected_cols = [
+            "total_spend_1d_7d",
+            "avg_spend_1d_7d",
+            "txn_count_1d_7d",
+        ]
+        for col in expected_cols:
+            assert col in polars_df.columns, f"Missing {col} in Polars"
+            assert col in duckdb_df.columns, f"Missing {col} in DuckDB"
 
         # Verify aggregation values are reasonable
-        polars_sum_min = polars_df[
-            "polars_multi_agg__amount__sum__1d__7d"
-        ].min()
-        duckdb_sum_min = duckdb_df[
-            "duckdb_multi_agg__amount__sum__1d__7d"
-        ].min()
-        polars_count_min = polars_df[
-            "polars_multi_agg__amount__count__1d__7d"
-        ].min()
-        duckdb_count_min = duckdb_df[
-            "duckdb_multi_agg__amount__count__1d__7d"
-        ].min()
+        polars_sum_min = polars_df["total_spend_1d_7d"].min()
+        duckdb_sum_min = duckdb_df["total_spend_1d_7d"].min()
+        polars_count_min = polars_df["txn_count_1d_7d"].min()
+        duckdb_count_min = duckdb_df["txn_count_1d_7d"].min()
         assert isinstance(polars_sum_min, (int, float)) and polars_sum_min >= 0
         assert isinstance(duckdb_sum_min, (int, float)) and duckdb_sum_min >= 0
         assert (
@@ -283,10 +307,12 @@ class TestEngineParity:
             interval="1d",
             engine="polars",
             metrics=[
-                Rolling(
+                Aggregate(
+                    field="amount",
+                    function="sum",
                     windows=["3d", "7d"],
-                    aggregations={"amount": ["sum"]},
-                )
+                    name="total_spend",
+                ),
             ],
         )
         def polars_multi_window(df: pl.DataFrame) -> pl.DataFrame:
@@ -299,10 +325,12 @@ class TestEngineParity:
             interval="1d",
             engine="duckdb",
             metrics=[
-                Rolling(
+                Aggregate(
+                    field="amount",
+                    function="sum",
                     windows=["3d", "7d"],
-                    aggregations={"amount": ["sum"]},
-                )
+                    name="total_spend",
+                ),
             ],
         )
         def duckdb_multi_window(df: pl.DataFrame) -> pl.DataFrame:
@@ -322,19 +350,15 @@ class TestEngineParity:
 
         # Verify all expected columns exist
         for window in ["3d", "7d"]:
-            polars_col = f"polars_multi_window__amount__sum__1d__{window}"
-            duckdb_col = f"duckdb_multi_window__amount__sum__1d__{window}"
-            assert polars_col in polars_df.columns, f"Missing {polars_col}"
-            assert duckdb_col in duckdb_df.columns, f"Missing {duckdb_col}"
+            col = f"total_spend_1d_{window}"
+            assert col in polars_df.columns, f"Missing {col} in Polars"
+            assert col in duckdb_df.columns, f"Missing {col} in DuckDB"
 
         # Verify 7d window sums are >= 3d window sums (more data in larger window)
         # This is a logical consistency check
-        for df, prefix in [
-            (polars_df, "polars_multi_window"),
-            (duckdb_df, "duckdb_multi_window"),
-        ]:
-            sum_3d = df[f"{prefix}__amount__sum__1d__3d"]
-            sum_7d = df[f"{prefix}__amount__sum__1d__7d"]
+        for df in [polars_df, duckdb_df]:
+            sum_3d = df["total_spend_1d_3d"]
+            sum_7d = df["total_spend_1d_7d"]
             # 7d should be >= 3d for each row (larger window includes more data)
             assert (sum_7d >= sum_3d).all()
 
@@ -350,10 +374,18 @@ class TestEngineParity:
             interval="1d",
             engine="polars",
             metrics=[
-                Rolling(
+                Aggregate(
+                    field="amount",
+                    function="sum",
                     windows=["7d"],
-                    aggregations={"amount": ["sum", "mean"]},
-                )
+                    name="total_spend",
+                ),
+                Aggregate(
+                    field="amount",
+                    function="mean",
+                    windows=["7d"],
+                    name="avg_spend",
+                ),
             ],
         )
         def polars_schema(df: pl.DataFrame) -> pl.DataFrame:
@@ -366,10 +398,18 @@ class TestEngineParity:
             interval="1d",
             engine="duckdb",
             metrics=[
-                Rolling(
+                Aggregate(
+                    field="amount",
+                    function="sum",
                     windows=["7d"],
-                    aggregations={"amount": ["sum", "mean"]},
-                )
+                    name="total_spend",
+                ),
+                Aggregate(
+                    field="amount",
+                    function="mean",
+                    windows=["7d"],
+                    name="avg_spend",
+                ),
             ],
         )
         def duckdb_schema(df: pl.DataFrame) -> pl.DataFrame:
@@ -397,11 +437,10 @@ class TestEngineParity:
         assert duckdb_df["event_time"].dtype.is_temporal()
 
         # Aggregation columns should be numeric
-        polars_sum_col = "polars_schema__amount__sum__1d__7d"
-        duckdb_sum_col = "duckdb_schema__amount__sum__1d__7d"
+        sum_col = "total_spend_1d_7d"
 
-        assert polars_df[polars_sum_col].dtype.is_numeric()
-        assert duckdb_df[duckdb_sum_col].dtype.is_numeric()
+        assert polars_df[sum_col].dtype.is_numeric()
+        assert duckdb_df[sum_col].dtype.is_numeric()
 
     def test_canonical_type_consistency(
         self, sample_transactions_parquet: Path, tmp_path: Path

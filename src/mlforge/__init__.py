@@ -28,7 +28,10 @@ Feature Definition:
         keys=["user_id"],
         source="data/transactions.parquet",
         timestamp="event_time",
-        metrics=[mlf.Rolling(windows=["7d", "30d"], aggregations={"amount": ["sum"]})],
+        metrics=[
+            mlf.Aggregate(field="amount", function="sum", windows=["7d", "30d"],
+                          name="total_spend", unit="USD"),
+        ],
     )
     def user_spend(df: pl.DataFrame) -> pl.DataFrame:
         return df.select(["user_id", "event_time", "amount"])
@@ -39,7 +42,7 @@ Public API:
     Feature: Container class for feature definitions
     FeatureSpec: Column selection and version pinning for feature retrieval
     Entity: Entity definition with optional surrogate key generation
-    Rolling: Rolling window aggregation metric
+    Aggregate: Rolling window aggregation metric with metadata
 
     Offline Stores:
         LocalStore: Local filesystem storage
@@ -73,13 +76,13 @@ from importlib.metadata import version as _get_version
 
 __version__ = _get_version("mlforge-sdk")
 
+from mlforge.aggregates import Aggregate
 from mlforge.core import Definitions, Feature, feature
 from mlforge.entities import Entity
 
 # MLflow integration - exposed as mlf.mlflow module and direct function
 from mlforge.integrations import mlflow
 from mlforge.integrations.mlflow import log_features_to_mlflow
-from mlforge.metrics import Rolling
 from mlforge.retrieval import FeatureSpec
 from mlforge.sources import CSVFormat, DeltaFormat, ParquetFormat, Source
 from mlforge.stores import (
@@ -124,7 +127,7 @@ __all__ = [
     "DatabricksOnlineStore",
     "Timestamp",
     "surrogate_key",
-    "Rolling",
+    "Aggregate",
     "Source",
     "ParquetFormat",
     "CSVFormat",

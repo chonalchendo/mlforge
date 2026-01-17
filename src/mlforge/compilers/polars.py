@@ -14,6 +14,7 @@ from typing import Callable
 import polars as pl
 from loguru import logger
 
+import mlforge.aggregates as aggregates
 import mlforge.compilers.base as base
 import mlforge.durations as durations
 import mlforge.metrics as metrics
@@ -56,28 +57,30 @@ class PolarsCompiler:
         )
         return method(metric, ctx)
 
-    def compile_rolling(
-        self, metric: metrics.Rolling, ctx: base.ComputeContext
+    def compile_aggregate(
+        self, metric: aggregates.Aggregate, ctx: base.ComputeContext
     ) -> pl.DataFrame | pl.LazyFrame:
         """
-        Compile backward-looking rolling window aggregations.
+        Compile backward-looking rolling window aggregations for an Aggregate.
 
-        Uses Polars' native group_by_dynamic with negative offset for
+        Uses Polars' native operations with negative offset for
         point-in-time correct backward-looking windows:
         - Window: (bucket - window, bucket]
         - This ensures features at time T only include data up to time T
 
         Args:
-            metric: Rolling window specification
+            metric: Aggregate specification
             ctx: Execution context
 
         Returns:
             DataFrame with all window aggregations joined on entity keys and timestamp
         """
-        cols = list(metric.aggregations.keys())
-        windows = metric.converted_windows
+        # Set interval on the metric for column naming
+        metric._interval = ctx.interval
+
+        windows = metric.windows
         logger.debug(
-            f"Rolling aggregations (backward-looking): {cols} over {windows} "
+            f"Aggregate {metric.function}({metric.field}) over {windows} "
             f"(interval={ctx.interval})"
         )
 
@@ -87,7 +90,7 @@ class PolarsCompiler:
         # Compute aggregations for each window
         window_results: list[pl.DataFrame | pl.LazyFrame] = []
         for window in windows:
-            result = self._compute_window_aggregations_dynamic(
+            result = self._compute_window_aggregation(
                 source_df=df,
                 metric=metric,
                 window=window,
@@ -97,15 +100,15 @@ class PolarsCompiler:
 
         return self._join_on_keys(window_results, ctx.keys, ctx.timestamp)
 
-    def _compute_window_aggregations_dynamic(
+    def _compute_window_aggregation(
         self,
         source_df: pl.DataFrame | pl.LazyFrame,
-        metric: metrics.Rolling,
+        metric: aggregates.Aggregate,
         window: str,
         ctx: base.ComputeContext,
     ) -> pl.DataFrame | pl.LazyFrame:
         """
-        Compute backward-looking aggregations using date spine approach.
+        Compute backward-looking aggregation using date spine approach.
 
         Uses a date spine approach for point-in-time correctness:
         1. Generate all time buckets in the data range per entity
@@ -117,7 +120,7 @@ class PolarsCompiler:
 
         Args:
             source_df: Source data with events
-            metric: Rolling metric specification
+            metric: Aggregate specification
             window: Window size (e.g., "7d")
             ctx: Execution context
 
@@ -172,19 +175,21 @@ class PolarsCompiler:
             )
         )
 
-        # Step 5: Build aggregation expressions and aggregate
-        agg_exprs = []
-        for col, agg_types in metric.aggregations.items():
-            for agg_type in agg_types:
-                output_name = (
-                    f"{ctx.tag}__{col}__{agg_type}__{ctx.interval}__{window}"
-                )
-                expr = self.AGG_MAP[agg_type](col).alias(output_name)
-                agg_exprs.append(expr)
+        # Step 5: Build aggregation expression
+        col = metric.field
+        agg_type = metric.function
+
+        # Get output column name using the metric's naming logic
+        output_columns = metric.output_columns(ctx.interval)
+        # Find the output name for this specific window
+        window_index = metric.windows.index(window)
+        output_name = output_columns[window_index]
+
+        expr = self.AGG_MAP[agg_type](col).alias(output_name)
 
         result = (
             filtered.group_by([*ctx.keys, "__bucket__"])
-            .agg(agg_exprs)
+            .agg([expr])
             .rename({"__bucket__": ctx.timestamp})
             .sort([*ctx.keys, ctx.timestamp])
         )

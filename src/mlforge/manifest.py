@@ -68,8 +68,9 @@ class ColumnMetadata:
     """
     Metadata for a single column in a feature.
 
-    For columns derived from Rolling metrics, captures the source column,
-    aggregation type, and window size. For other columns, captures dtype.
+    For columns derived from Aggregate metrics, captures the source column,
+    aggregation type, window size, and optional description/unit.
+    For other columns, captures dtype.
     For base columns, captures validator information.
 
     Attributes:
@@ -78,6 +79,8 @@ class ColumnMetadata:
         input: Source column name for aggregations
         agg: Aggregation type (count, mean, sum, etc.)
         window: Time window for rolling aggregations (e.g., "7d")
+        description: Human-readable description of what this metric represents
+        unit: Unit of measurement (e.g., "USD", "count", "transactions")
         validators: List of validator specifications applied to this column
     """
 
@@ -86,6 +89,8 @@ class ColumnMetadata:
     input: str | None = None
     agg: str | None = None
     window: str | None = None
+    description: str | None = None
+    unit: str | None = None
     validators: list[dict[str, Any]] | None = None
 
     def to_dict(self) -> dict[str, Any]:
@@ -101,6 +106,8 @@ class ColumnMetadata:
             input=data.get("input"),
             agg=data.get("agg"),
             window=data.get("window"),
+            description=data.get("description"),
+            unit=data.get("unit"),
             validators=data.get("validators"),
         )
 
@@ -303,10 +310,16 @@ class Manifest:
         return self.features.get(name)
 
 
-# Regex pattern to parse Rolling column names: {tag}__{column}__{agg}__{interval}__{window}
+# Regex pattern to parse legacy Rolling column names: {tag}__{column}__{agg}__{interval}__{window}
 _ROLLING_COLUMN_PATTERN = re.compile(
     r"^(.+)__(\w+)__(\d+[dhmsw])__(\d+[dhmsw])$"
 )
+
+# Regex patterns for new Aggregate column naming:
+# Pattern 1: {name}_{interval}_{window} (when name provided)
+# Pattern 2: {column}_{function}_{interval}_{window} (when no name)
+# We detect aggregates by the presence of interval_window suffix pattern
+_AGGREGATE_COLUMN_PATTERN = re.compile(r"^(.+)_(\d+[dhmsw])_(\d+[dhmsw])$")
 
 # Regex pattern to parse validator names with parameters
 _VALIDATOR_PATTERN = re.compile(r"^(\w+)(?:\((.*)\))?$")
@@ -385,6 +398,42 @@ def _parse_validator_name(validator_name: str) -> dict[str, Any]:
     return result
 
 
+def _build_aggregate_metadata_map(
+    feature: Feature,
+) -> dict[str, tuple[str, str, str | None, str | None]]:
+    """
+    Build a mapping from output column names to aggregate metadata.
+
+    Args:
+        feature: The Feature definition with metrics
+
+    Returns:
+        Dict mapping column name to (input_col, agg_type, description, unit)
+    """
+    from mlforge.aggregates import Aggregate
+
+    result: dict[str, tuple[str, str, str | None, str | None]] = {}
+
+    if not feature.metrics or not feature.interval:
+        return result
+
+    for metric in feature.metrics:
+        if isinstance(metric, Aggregate):
+            # Set interval for column name generation
+            metric._interval = feature.interval
+            output_cols = metric.output_columns(feature.interval)
+
+            for col_name in output_cols:
+                result[col_name] = (
+                    metric.field,
+                    metric.function,
+                    metric.description,
+                    metric.unit,
+                )
+
+    return result
+
+
 def _derive_with_base_schema(
     feature: Feature,
     schema: dict[str, str],
@@ -419,6 +468,9 @@ def _derive_with_base_schema(
         else types_.from_duckdb
     )
 
+    # Build mapping from column name to aggregate metadata
+    aggregate_metadata = _build_aggregate_metadata_map(feature)
+
     # Add all base columns from base_schema (always Polars types)
     for col_name, dtype in base_schema.items():
         # Check if this column has validators and parse them
@@ -449,9 +501,28 @@ def _derive_with_base_schema(
         # Convert to canonical type string (use engine-specific converter)
         canonical_dtype = final_schema_converter(dtype).to_canonical_string()
 
-        # Try to parse as Rolling column: {tag}__{column}__{agg}__{interval}__{window}
-        match = _ROLLING_COLUMN_PATTERN.match(col_name)
-        if match:
+        # Check if we have aggregate metadata for this column (preferred)
+        if col_name in aggregate_metadata:
+            input_col, agg_type, description, unit = aggregate_metadata[
+                col_name
+            ]
+            # Extract window from column name pattern
+            match = _AGGREGATE_COLUMN_PATTERN.match(col_name)
+            window = match.group(3) if match else None
+
+            feature_columns.append(
+                ColumnMetadata(
+                    name=col_name,
+                    dtype=canonical_dtype,
+                    input=input_col,
+                    agg=agg_type,
+                    window=window,
+                    description=description,
+                    unit=unit,
+                )
+            )
+        # Fall back to legacy Rolling pattern: {tag}__{column}__{agg}__{interval}__{window}
+        elif match := _ROLLING_COLUMN_PATTERN.match(col_name):
             # Extract tag__column and get just the column name (last part)
             tag_and_column = match.group(1)
             input_col = tag_and_column.split("__")[-1]
@@ -463,6 +534,17 @@ def _derive_with_base_schema(
                     input=input_col,
                     agg=match.group(2),
                     window=match.group(4),
+                )
+            )
+        # Try new Aggregate pattern: {name}_{interval}_{window} or {col}_{agg}_{interval}_{window}
+        elif match := _AGGREGATE_COLUMN_PATTERN.match(col_name):
+            # Can't determine input/agg from pattern alone without aggregate metadata
+            # Just store what we can parse
+            feature_columns.append(
+                ColumnMetadata(
+                    name=col_name,
+                    dtype=canonical_dtype,
+                    window=match.group(3),
                 )
             )
 
@@ -498,6 +580,9 @@ def _derive_legacy(
         else types_.from_duckdb
     )
 
+    # Build mapping from column name to aggregate metadata
+    aggregate_metadata = _build_aggregate_metadata_map(feature)
+
     # Process all columns from schema and categorize them
     for col_name, dtype in schema.items():
         # Check if this column has validators and parse them
@@ -511,9 +596,29 @@ def _derive_legacy(
         # Convert to canonical type string
         canonical_dtype = converter(dtype).to_canonical_string()
 
-        # Try to parse as Rolling column: {tag}__{column}__{agg}__{interval}__{window}
-        match = _ROLLING_COLUMN_PATTERN.match(col_name)
-        if match:
+        # Check if we have aggregate metadata for this column (preferred)
+        if col_name in aggregate_metadata:
+            input_col, agg_type, description, unit = aggregate_metadata[
+                col_name
+            ]
+            # Extract window from column name pattern
+            match = _AGGREGATE_COLUMN_PATTERN.match(col_name)
+            window = match.group(3) if match else None
+
+            feature_columns.append(
+                ColumnMetadata(
+                    name=col_name,
+                    dtype=canonical_dtype,
+                    input=input_col,
+                    agg=agg_type,
+                    window=window,
+                    description=description,
+                    unit=unit,
+                    validators=validator_specs,
+                )
+            )
+        # Try to parse as legacy Rolling column: {tag}__{column}__{agg}__{interval}__{window}
+        elif match := _ROLLING_COLUMN_PATTERN.match(col_name):
             # Extract tag__column and get just the column name (last part)
             tag_and_column = match.group(1)
             input_col = tag_and_column.split("__")[-1]
@@ -528,8 +633,19 @@ def _derive_legacy(
                     validators=validator_specs,
                 )
             )
+        # Try new Aggregate pattern: {name}_{interval}_{window}
+        elif match := _AGGREGATE_COLUMN_PATTERN.match(col_name):
+            # Can't determine input/agg from pattern alone without aggregate metadata
+            feature_columns.append(
+                ColumnMetadata(
+                    name=col_name,
+                    dtype=canonical_dtype,
+                    window=match.group(3),
+                    validators=validator_specs,
+                )
+            )
         else:
-            # Not a rolling column, so it's a base column
+            # Not a metric column, so it's a base column
             base_columns.append(
                 ColumnMetadata(
                     name=col_name,

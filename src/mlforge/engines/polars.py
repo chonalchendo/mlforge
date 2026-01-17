@@ -139,7 +139,7 @@ class PolarsEngine(base.Engine):
         # compute metrics and join results
         results: list[pl.DataFrame | pl.LazyFrame] = []
         for metric in feature.metrics:
-            metric.validate(columns)
+            metric.validate_column(columns)
             result = self._compiler.compile(metric, ctx)
             results.append(result)
 
@@ -151,7 +151,9 @@ class PolarsEngine(base.Engine):
         # join results
         result: pl.DataFrame | pl.LazyFrame = results.pop(0)
         for df in results:
-            result = result.join(df, on=[*ctx.keys, ctx.timestamp], how="outer")
+            result = result.join(
+                df, on=[*ctx.keys, ctx.timestamp], how="full", coalesce=True
+            )
 
         return results_.PolarsResult(result, base_schema=base_schema)
 
