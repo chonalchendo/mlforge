@@ -67,7 +67,7 @@ Real-time inference with Redis:
 
 ```python
 from mlforge import get_online_features
-from mlforge.online import RedisStore
+from mlforge.stores import RedisStore
 
 store = RedisStore(host="localhost")
 

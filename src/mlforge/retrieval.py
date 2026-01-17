@@ -65,8 +65,7 @@ from pydantic import BaseModel, field_validator
 import mlforge.entities as entities_
 import mlforge.errors as errors
 import mlforge.integrations.mlflow as mlflow_integration
-import mlforge.online as online_
-import mlforge.store as store_
+import mlforge.stores as stores
 import mlforge.types as types_
 import mlforge.utils as utils
 
@@ -167,7 +166,7 @@ def _normalize_feature_input(feature_input: FeatureInput) -> FeatureSpec:
 def get_training_data(
     features: list[FeatureInput],
     entity_df: pl.DataFrame,
-    store: str | Path | store_.Store = "./feature_store",
+    store: str | Path | stores.Store = "./feature_store",
     entities: list[entities_.Entity] | None = None,
     timestamp: str | None = None,
 ) -> pl.DataFrame:
@@ -225,7 +224,7 @@ def get_training_data(
         )
     """
     if isinstance(store, (str, Path)):
-        store = store_.LocalStore(path=store)
+        store = stores.LocalStore(path=store)
 
     result = _apply_entities(entity_df, entities)
 
@@ -294,7 +293,7 @@ def get_training_data(
 
 
 def _get_columns_to_load(
-    store: store_.Store,
+    store: stores.Store,
     spec: FeatureSpec,
     entity_columns: list[str],
     timestamp: str | None,
@@ -480,7 +479,7 @@ def _asof_join(
 def get_online_features(
     features: list[str],
     entity_df: pl.DataFrame,
-    store: online_.OnlineStore,
+    store: stores.OnlineStore,
     entities: list[entities_.Entity] | None = None,
 ) -> pl.DataFrame:
     """
@@ -604,7 +603,7 @@ def _apply_entities(
 def _join_online_feature(
     result: pl.DataFrame,
     feature_name: str,
-    store: online_.OnlineStore,
+    store: stores.OnlineStore,
     entities: list[entities_.Entity] | None,
 ) -> pl.DataFrame:
     """
@@ -640,7 +639,7 @@ def _join_online_feature(
 def join_online_feature_by_keys(
     result: pl.DataFrame,
     feature_name: str,
-    store: online_.OnlineStore,
+    store: stores.OnlineStore,
     entity_key_columns: list[str],
 ) -> pl.DataFrame:
     """

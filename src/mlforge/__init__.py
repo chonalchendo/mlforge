@@ -80,15 +80,18 @@ from mlforge.entities import Entity
 from mlforge.integrations import mlflow
 from mlforge.integrations.mlflow import log_features_to_mlflow
 from mlforge.metrics import Rolling
-from mlforge.online import (
-    DatabricksOnlineStore,
-    DynamoDBStore,
-    OnlineStore,
-    RedisStore,
-)
 from mlforge.retrieval import FeatureSpec
 from mlforge.sources import CSVFormat, DeltaFormat, ParquetFormat, Source
-from mlforge.store import GCSStore, LocalStore, S3Store, UnityCatalogStore
+from mlforge.stores import (
+    DatabricksOnlineStore,
+    DynamoDBStore,
+    GCSStore,
+    LocalStore,
+    OnlineStore,
+    RedisStore,
+    S3Store,
+    UnityCatalogStore,
+)
 from mlforge.timestamps import Timestamp
 from mlforge.types import DataType, TypeKind
 from mlforge.utils import surrogate_key

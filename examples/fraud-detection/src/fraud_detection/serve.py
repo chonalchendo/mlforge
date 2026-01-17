@@ -9,7 +9,7 @@ Usage:
 
 import polars as pl
 
-from mlforge.online import RedisStore
+from mlforge.stores import RedisStore
 from fraud_detection.definitions import defs
 
 

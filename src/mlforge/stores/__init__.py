@@ -34,7 +34,7 @@ from mlforge.stores.s3 import S3Store
 
 # Type aliases for store implementations
 type OfflineStoreKind = LocalStore | S3Store | GCSStore | UnityCatalogStore
-type OnlineStoreKind = OnlineStore
+type OnlineStoreKind = DatabricksOnlineStore | DynamoDBStore | RedisStore
 
 __all__ = [
     # Base classes

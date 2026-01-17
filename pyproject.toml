@@ -106,6 +106,7 @@ members = [
     "examples/transactions-pyspark",
     "examples/fraud-detection",
     "examples/recommendation",
+    "examples/databricks",
 ]
 
 [tool.commitizen]

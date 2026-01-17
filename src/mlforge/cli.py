@@ -8,7 +8,7 @@ import mlforge.errors as errors
 import mlforge.loader as loader
 import mlforge.logging as log
 import mlforge.profiles as profiles_
-import mlforge.store as store_
+import mlforge.stores as stores
 
 app = cyclopts.App(name="mlforge", help="A simple feature store SDK")
 
@@ -916,7 +916,7 @@ def sync(
         defs = loader.load_definitions(target, profile=profile)
 
         # Verify store is LocalStore
-        if not isinstance(defs.offline_store, store_.LocalStore):
+        if not isinstance(defs.offline_store, stores.LocalStore):
             log.print_error(
                 "mlforge sync only works with LocalStore. "
                 "For cloud storage (S3, etc.), data is already shared."
@@ -1247,7 +1247,7 @@ def diff(
         defs = loader.load_definitions(target, profile=profile)
 
         # Get store root path - must be LocalStore
-        if not isinstance(defs.offline_store, store_.LocalStore):
+        if not isinstance(defs.offline_store, stores.LocalStore):
             log.print_error("diff command requires LocalStore")
             raise SystemExit(4)
 
@@ -1402,7 +1402,7 @@ def rollback(
         defs = loader.load_definitions(target, profile=profile)
 
         # Get store root path - must be LocalStore
-        if not isinstance(defs.offline_store, store_.LocalStore):
+        if not isinstance(defs.offline_store, stores.LocalStore):
             log.print_error("rollback command requires LocalStore")
             raise SystemExit(4)
 

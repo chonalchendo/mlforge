@@ -6,7 +6,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from mlforge.online import DynamoDBStore
+from mlforge.stores import DynamoDBStore
 
 # =============================================================================
 # DynamoDBStore Initialization Tests

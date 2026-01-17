@@ -578,7 +578,7 @@ def test_sync_command_dry_run_shows_needs_sync(definitions_file):
             "synced": [],
         }
         # Make isinstance check pass for LocalStore
-        from mlforge.store import LocalStore
+        from mlforge.stores import LocalStore
 
         mock_defs.offline_store = Mock(spec=LocalStore)
         mock_load.return_value = mock_defs
@@ -598,7 +598,7 @@ def test_sync_command_syncs_missing_features(definitions_file):
         patch("mlforge.logging.print_success") as mock_success,
     ):
         mock_defs = Mock()
-        from mlforge.store import LocalStore
+        from mlforge.stores import LocalStore
 
         mock_defs.offline_store = Mock(spec=LocalStore)
         mock_defs.sync.return_value = {
@@ -624,7 +624,7 @@ def test_sync_command_with_all_up_to_date(definitions_file):
         patch("mlforge.logging.print_success") as mock_success,
     ):
         mock_defs = Mock()
-        from mlforge.store import LocalStore
+        from mlforge.stores import LocalStore
 
         mock_defs.offline_store = Mock(spec=LocalStore)
         mock_defs.sync.return_value = {
@@ -669,7 +669,7 @@ def test_sync_command_handles_source_changed_error(definitions_file):
         pytest.raises(SystemExit) as exc_info,
     ):
         mock_defs = Mock()
-        from mlforge.store import LocalStore
+        from mlforge.stores import LocalStore
 
         mock_defs.offline_store = Mock(spec=LocalStore)
         mock_defs.sync.side_effect = SourceDataChangedError(
@@ -694,7 +694,7 @@ def test_sync_command_with_specific_features(definitions_file):
         patch("mlforge.logging.print_success"),
     ):
         mock_defs = Mock()
-        from mlforge.store import LocalStore
+        from mlforge.stores import LocalStore
 
         mock_defs.offline_store = Mock(spec=LocalStore)
         mock_defs.sync.return_value = {
@@ -724,7 +724,7 @@ def test_sync_command_dry_run_shows_source_changed(definitions_file):
         patch("mlforge.logging.print_warning") as mock_warning,
     ):
         mock_defs = Mock()
-        from mlforge.store import LocalStore
+        from mlforge.stores import LocalStore
 
         mock_defs.offline_store = Mock(spec=LocalStore)
         mock_defs.sync.return_value = {

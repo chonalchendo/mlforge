@@ -29,11 +29,11 @@ class TestLocalStoreConfig:
 
     def test_create_returns_local_store(self, tmp_path):
         """create() should return LocalStore instance."""
-        import mlforge.store as store_
+        import mlforge.stores as stores
 
         config = profiles.LocalStoreConfig(path=str(tmp_path / "store"))
         store = config.create()
-        assert isinstance(store, store_.LocalStore)
+        assert isinstance(store, stores.LocalStore)
         assert store.path == tmp_path / "store"
 
 
@@ -75,7 +75,7 @@ class TestGCSStoreConfig:
 
     def test_create_returns_gcs_store(self, mocker):
         """create() should return GCSStore instance."""
-        import mlforge.store as store_
+        import mlforge.stores as stores
 
         # Mock GCSFileSystem to avoid real GCS calls
         mock_gcs = mocker.MagicMock()
@@ -91,7 +91,7 @@ class TestGCSStoreConfig:
 
         config = profiles.GCSStoreConfig(bucket="my-bucket", prefix="features")
         store = config.create()
-        assert isinstance(store, store_.GCSStore)
+        assert isinstance(store, stores.GCSStore)
         assert store.bucket == "my-bucket"
         assert store.prefix == "features"
 
@@ -645,7 +645,7 @@ profiles:
     def test_explicit_store_overrides_profile(self, tmp_path, monkeypatch):
         """Explicit offline_store should override profile."""
         import mlforge.core as core
-        import mlforge.store as store
+        import mlforge.stores as stores
 
         monkeypatch.delenv("MLFORGE_PROFILE", raising=False)
         monkeypatch.chdir(tmp_path)
@@ -659,7 +659,7 @@ profiles:
       KIND: local
       path: ./profile_store
 """)
-        explicit_store = store.LocalStore(tmp_path / "explicit_store")
+        explicit_store = stores.LocalStore(tmp_path / "explicit_store")
 
         @core.feature(source="data.parquet", keys=["id"])
         def test_feature(df):

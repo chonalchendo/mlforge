@@ -63,7 +63,7 @@ Configure Redis in your definitions file:
 
 ```python
 import mlforge as mlf
-from mlforge.online import RedisStore
+from mlforge.stores import RedisStore
 
 defs = mlf.Definitions(
     name="my-project",
@@ -108,7 +108,7 @@ mlforge:user_spend:a1b2c3d4e5f6g7h8
 #### Low-level API
 
 ```python
-from mlforge.online import RedisStore
+from mlforge.stores import RedisStore
 
 store = RedisStore(host="localhost")
 
@@ -134,7 +134,7 @@ values = store.read_batch(
 
 ```python
 import mlforge as mlf
-from mlforge.online import RedisStore
+from mlforge.stores import RedisStore
 import polars as pl
 
 store = RedisStore(host="localhost")

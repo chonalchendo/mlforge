@@ -38,8 +38,7 @@ import mlforge.errors as errors
 import mlforge.logging as log
 
 if T.TYPE_CHECKING:
-    import mlforge.online as online_
-    import mlforge.store as store_
+    import mlforge.stores as stores
 
 
 # =============================================================================
@@ -53,11 +52,11 @@ class LocalStoreConfig(BaseModel, frozen=True):
     KIND: T.Literal["local"] = "local"
     path: str = "./feature_store"
 
-    def create(self) -> store_.LocalStore:
+    def create(self) -> stores.LocalStore:
         """Create store instance from this config."""
-        import mlforge.store as store_
+        import mlforge.stores as stores
 
-        return store_.LocalStore(path=self.path)
+        return stores.LocalStore(path=self.path)
 
 
 class S3StoreConfig(BaseModel, frozen=True):
@@ -68,11 +67,11 @@ class S3StoreConfig(BaseModel, frozen=True):
     prefix: str = ""
     region: str | None = None
 
-    def create(self) -> store_.S3Store:
+    def create(self) -> stores.S3Store:
         """Create store instance from this config."""
-        import mlforge.store as store_
+        import mlforge.stores as stores
 
-        return store_.S3Store(
+        return stores.S3Store(
             bucket=self.bucket,
             prefix=self.prefix,
             region=self.region,
@@ -86,11 +85,11 @@ class GCSStoreConfig(BaseModel, frozen=True):
     bucket: str
     prefix: str = ""
 
-    def create(self) -> store_.GCSStore:
+    def create(self) -> stores.GCSStore:
         """Create store instance from this config."""
-        import mlforge.store as store_
+        import mlforge.stores as stores
 
-        return store_.GCSStore(
+        return stores.GCSStore(
             bucket=self.bucket,
             prefix=self.prefix,
         )
@@ -106,11 +105,11 @@ class UnityCatalogStoreConfig(BaseModel, frozen=True):
 
     model_config = {"populate_by_name": True}
 
-    def create(self) -> store_.UnityCatalogStore:
+    def create(self) -> stores.UnityCatalogStore:
         """Create store instance from this config."""
-        import mlforge.store as store_
+        import mlforge.stores as stores
 
-        return store_.UnityCatalogStore(
+        return stores.UnityCatalogStore(
             catalog=self.catalog,
             schema=self.schema_,
             volume=self.volume,
@@ -140,11 +139,11 @@ class RedisStoreConfig(BaseModel, frozen=True):
     ttl: int | None = None
     prefix: str = "mlforge"
 
-    def create(self) -> online_.RedisStore:
+    def create(self) -> stores.RedisStore:
         """Create store instance from this config."""
-        import mlforge.online as online_
+        import mlforge.stores as stores
 
-        return online_.RedisStore(
+        return stores.RedisStore(
             host=self.host,
             port=self.port,
             db=self.db,
@@ -164,11 +163,11 @@ class DynamoDBStoreConfig(BaseModel, frozen=True):
     ttl_seconds: int | None = None
     auto_create: bool = True
 
-    def create(self) -> online_.DynamoDBStore:
+    def create(self) -> stores.DynamoDBStore:
         """Create store instance from this config."""
-        import mlforge.online as online_
+        import mlforge.stores as stores
 
-        return online_.DynamoDBStore(
+        return stores.DynamoDBStore(
             table_name=self.table_name,
             region=self.region,
             endpoint_url=self.endpoint_url,
@@ -189,11 +188,11 @@ class DatabricksOnlineStoreConfig(BaseModel, frozen=True):
 
     model_config = {"populate_by_name": True}
 
-    def create(self) -> online_.DatabricksOnlineStore:
+    def create(self) -> stores.DatabricksOnlineStore:
         """Create store instance from this config."""
-        import mlforge.online as online_
+        import mlforge.stores as stores
 
-        return online_.DatabricksOnlineStore(
+        return stores.DatabricksOnlineStore(
             catalog=self.catalog,
             schema=self.schema_,
             sync_mode=self.sync_mode,

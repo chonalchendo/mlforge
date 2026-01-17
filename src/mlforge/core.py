@@ -16,12 +16,11 @@ import mlforge.incremental as incremental
 import mlforge.logging as log
 import mlforge.manifest as manifest
 import mlforge.metrics as metrics_
-import mlforge.online as online
 import mlforge.profiles as profiles_
 import mlforge.results as results_
 import mlforge.retrieval as retrieval_
 import mlforge.sources as sources
-import mlforge.store as store
+import mlforge.stores as stores
 import mlforge.timestamps as timestamps_
 import mlforge.types as types_
 import mlforge.utils as utils
@@ -263,7 +262,7 @@ class Definitions:
 
     Example:
         from mlforge import Definitions, LocalStore
-        from mlforge.online import RedisStore
+        from mlforge.stores import RedisStore
         import my_features
 
         defs = Definitions(
@@ -291,8 +290,8 @@ class Definitions:
         self,
         name: str,
         features: list[Feature | ModuleType],
-        offline_store: store.OfflineStoreKind | None = None,
-        online_store: online.OnlineStoreKind | None = None,
+        offline_store: stores.OfflineStoreKind | None = None,
+        online_store: stores.OnlineStore | stores.OnlineStoreKind | None = None,
         profile: str | None = None,
         default_engine: Literal["polars", "duckdb", "pyspark"] = "duckdb",
     ) -> None:
@@ -359,8 +358,8 @@ class Definitions:
         self._source_to_features: dict[str, list[str]] = {}
 
         # Resolve stores from profile if not explicitly provided
-        resolved_offline: store.Store
-        resolved_online: online.OnlineStore | None = online_store
+        resolved_offline: stores.Store
+        resolved_online: stores.OnlineStore | None = online_store
 
         if offline_store is not None:
             # Explicit stores win - use as provided
@@ -1586,7 +1585,7 @@ class Definitions:
         self,
         features: list[str],
         entity_df: pl.DataFrame,
-        store: online.OnlineStore | None = None,
+        store: stores.OnlineStore | None = None,
     ) -> pl.DataFrame:
         """
         Retrieve features from online store for inference.
@@ -1667,7 +1666,7 @@ class Definitions:
         self,
         result: pl.DataFrame,
         feature_name: str,
-        online_store: online.OnlineStore,
+        online_store: stores.OnlineStore,
         entity_key_columns: list[str],
     ) -> pl.DataFrame:
         """
@@ -1693,7 +1692,7 @@ class Definitions:
         features: list[retrieval_.FeatureInput],
         entity_df: pl.DataFrame,
         timestamp: str | None = None,
-        store: store.Store | None = None,
+        store: stores.Store | None = None,
     ) -> pl.DataFrame:
         """
         Retrieve features from offline store for training.

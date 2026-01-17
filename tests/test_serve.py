@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 
 import mlforge
 from mlforge.core import Definitions, Feature
-from mlforge.online import OnlineStore
+from mlforge.stores import OnlineStore
 from mlforge.serve import create_app
 
 

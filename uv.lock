@@ -7,6 +7,7 @@ resolution-markers = [
 
 [manifest]
 members = [
+    "databricks-features",
     "fraud-detection",
     "mlforge-sdk",
     "recommendation",
@@ -639,6 +640,29 @@ sdist = { url = "https://files.pythonhosted.org/packages/b8/80/5402e92d019860c88
 wheels = [
     { url = "https://files.pythonhosted.org/packages/60/47/3d7d559850a8146bb08adb01486156339d49271aff38e11729707ab996ee/cz_conventional_gitmoji-0.7.0-py3-none-any.whl", hash = "sha256:278b817d306efa5b446db8d078288c42534cfff56662a344da0053c24b50701b", size = 15157 },
 ]
+
+[[package]]
+name = "databricks-features"
+version = "0.1.0"
+source = { editable = "examples/databricks" }
+dependencies = [
+    { name = "mlforge-sdk", extra = ["databricks"] },
+    { name = "scikit-learn" },
+]
+
+[package.dev-dependencies]
+check = [
+    { name = "ruff" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "mlforge-sdk", extras = ["databricks"], editable = "." },
+    { name = "scikit-learn", specifier = ">=1.6.0" },
+]
+
+[package.metadata.requires-dev]
+check = [{ name = "ruff", specifier = ">=0.14.4" }]
 
 [[package]]
 name = "databricks-sdk"

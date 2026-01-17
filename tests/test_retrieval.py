@@ -10,7 +10,7 @@ from mlforge import (
     LocalStore,
     surrogate_key,
 )
-from mlforge.online import OnlineStore
+from mlforge.stores import OnlineStore
 from mlforge.results import PolarsResult
 from mlforge.retrieval import get_online_features, get_training_data
 

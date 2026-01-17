@@ -16,7 +16,7 @@ Usage:
 import polars as pl
 
 from mlforge import get_online_features
-from mlforge.online import RedisStore
+from mlforge.stores import RedisStore
 from transactions_online.features import user
 
 
@@ -110,7 +110,7 @@ def main() -> None:
     print("\nFor real-time inference, use get_online_features():")
     print("""
     from mlforge import get_online_features
-    from mlforge.online import RedisStore
+    from mlforge.stores import RedisStore
     from transactions_online.features import user
 
     store = RedisStore(host="localhost")

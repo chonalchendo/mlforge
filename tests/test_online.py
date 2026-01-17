@@ -5,7 +5,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from mlforge.online import OnlineStore, RedisStore, _compute_entity_hash
+from mlforge.stores import OnlineStore, RedisStore
+from mlforge.stores.redis import _compute_entity_hash
 
 # =============================================================================
 # Entity Hash Tests

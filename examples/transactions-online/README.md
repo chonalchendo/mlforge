@@ -236,7 +236,7 @@ transactions-online/
 ## RedisStore Options
 
 ```python
-from mlforge.online import RedisStore
+from mlforge.stores import RedisStore
 
 online_store = RedisStore(
     host="localhost",      # Redis host

@@ -1,0 +1,44 @@
+# mlforge configuration for Databricks integration example
+#
+# Profiles:
+#   dev        - Local development with LocalStore (default)
+#   databricks - Unity Catalog offline + Databricks Online Tables
+#
+# Usage:
+#   mlforge build                        # Uses dev profile
+#   mlforge build --profile databricks   # Uses Databricks stores
+#
+# Environment variables for Databricks:
+#   DATABRICKS_HOST  - Databricks workspace URL
+#   DATABRICKS_TOKEN - Personal access token or OAuth token
+
+default_profile: dev
+
+profiles:
+  dev:
+    offline_store:
+      KIND: local
+      path: ./feature_store
+
+  databricks:
+    offline_store:
+      KIND: databricks-unity-catalog
+      catalog: main
+      schema: ml_features
+    online_store:
+      KIND: databricks-online-tables
+      catalog: main
+      schema: ml_features_online
+      sync_mode: triggered
+
+  # Continuous sync for near real-time feature updates
+  databricks_realtime:
+    offline_store:
+      KIND: databricks-unity-catalog
+      catalog: main
+      schema: ml_features
+    online_store:
+      KIND: databricks-online-tables
+      catalog: main
+      schema: ml_features_online
+      sync_mode: continuous

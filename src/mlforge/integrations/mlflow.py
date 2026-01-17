@@ -38,7 +38,7 @@ import mlforge
 import mlforge.errors as errors
 
 if TYPE_CHECKING:
-    import mlforge.store as store_
+    import mlforge.stores as stores
 
 # Global state for auto-logging
 _autolog_enabled = False
@@ -132,7 +132,7 @@ def disable_autolog():
 
 def log_features_to_mlflow(
     features: list[str],
-    store: store_.Store,
+    store: stores.Store,
     run_id: str | None = None,
 ) -> None:
     """
