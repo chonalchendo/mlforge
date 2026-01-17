@@ -174,7 +174,7 @@ class PySparkEngine(base.Engine):
         # Compute metrics and join results
         results: list[SparkDataFrame] = []
         for metric in feature.metrics:
-            metric.validate(columns)
+            metric.validate_column(columns)
             result = self._compiler.compile(metric, ctx)
             results.append(result)
 

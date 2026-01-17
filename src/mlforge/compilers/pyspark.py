@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Callable
 
 from loguru import logger
 
+import mlforge.aggregates as aggregates
 import mlforge.durations as durations
 import mlforge.metrics as metrics
 
@@ -80,11 +81,11 @@ class PySparkCompiler:
         )
         return method(metric, ctx)
 
-    def compile_rolling(
-        self, metric: metrics.Rolling, ctx: PySparkComputeContext
+    def compile_aggregate(
+        self, metric: aggregates.Aggregate, ctx: PySparkComputeContext
     ) -> "SparkDataFrame":
         """
-        Compile backward-looking rolling window aggregations using PySpark.
+        Compile backward-looking rolling window aggregations for an Aggregate.
 
         Uses a date spine approach for point-in-time correctness:
         1. Generate all time buckets in the data range per entity
@@ -94,23 +95,25 @@ class PySparkCompiler:
         This ensures features at time T only include data available at time T.
 
         Args:
-            metric: Rolling window specification
+            metric: Aggregate specification
             ctx: Execution context
 
         Returns:
             Spark DataFrame with all window aggregations joined on entity keys and timestamp
         """
+        # Set interval on the metric for column naming
+        metric._interval = ctx.interval
 
-        windows = metric.converted_windows
+        windows = metric.windows
         logger.debug(
-            f"PySpark Rolling aggregations (backward-looking): over {windows} "
+            f"PySpark Aggregate {metric.function}({metric.field}) over {windows} "
             f"(interval={ctx.interval})"
         )
 
         # Compute aggregations for each window
         window_results: list["SparkDataFrame"] = []
         for window in windows:
-            result = self._compute_window_aggregations(
+            result = self._compute_window_aggregation(
                 source_df=ctx.dataframe,
                 metric=metric,
                 window=window,
@@ -120,15 +123,15 @@ class PySparkCompiler:
 
         return self._join_on_keys(window_results, ctx.keys, ctx.timestamp)
 
-    def _compute_window_aggregations(
+    def _compute_window_aggregation(
         self,
         source_df: "SparkDataFrame",
-        metric: metrics.Rolling,
+        metric: aggregates.Aggregate,
         window: str,
         ctx: PySparkComputeContext,
     ) -> "SparkDataFrame":
         """
-        Compute backward-looking aggregations using date spine approach.
+        Compute backward-looking aggregation using date spine approach.
 
         Uses a date spine approach for point-in-time correctness:
         1. Generate all time buckets in the data range per entity
@@ -139,7 +142,7 @@ class PySparkCompiler:
 
         Args:
             source_df: Source data with events
-            metric: Rolling metric specification
+            metric: Aggregate specification
             window: Window size (e.g., "7d")
             ctx: Execution context
 
@@ -185,20 +188,22 @@ class PySparkCompiler:
             & (F.col(ts_col) <= (F.col("__bucket__") + interval_expr))
         )
 
-        # Step 5: Build aggregation expressions
-        agg_exprs = []
-        for col, agg_types in metric.aggregations.items():
-            for agg_type in agg_types:
-                output_name = (
-                    f"{ctx.tag}__{col}__{agg_type}__{ctx.interval}__{window}"
-                )
-                expr = self._get_agg_expr(col, agg_type).alias(output_name)
-                agg_exprs.append(expr)
+        # Step 5: Build aggregation expression
+        col = metric.field
+        agg_type = metric.function
+
+        # Get output column name using the metric's naming logic
+        output_columns = metric.output_columns(ctx.interval)
+        # Find the output name for this specific window
+        window_index = metric.windows.index(window)
+        output_name = output_columns[window_index]
+
+        agg_expr = self._get_agg_expr(col, agg_type).alias(output_name)
 
         # Step 6: Aggregate
         result = (
             filtered.groupBy(*ctx.keys, "__bucket__")
-            .agg(*agg_exprs)
+            .agg(agg_expr)
             .withColumnRenamed("__bucket__", ts_col)
             .orderBy(*ctx.keys, ts_col)
         )

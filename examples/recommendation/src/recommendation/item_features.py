@@ -11,13 +11,22 @@ item_events = mlf.Source("data/item_events.parquet")
 
 timestamp = mlf.Timestamp(column="event_time", format="%Y-%m-%d %H:%M:%S")
 
-popularity_metrics = mlf.Rolling(
-    windows=["1d", "7d", "30d"],
-    aggregations={
-        "view_count": ["sum"],
-        "purchase_count": ["sum"],
-    },
-)
+popularity_metrics = [
+    mlf.Aggregate(
+        field="view_count",
+        function="sum",
+        windows=["1d", "7d", "30d"],
+        name="views",
+        description="Total item views",
+    ),
+    mlf.Aggregate(
+        field="purchase_count",
+        function="sum",
+        windows=["1d", "7d", "30d"],
+        name="purchases",
+        description="Total item purchases",
+    ),
+]
 
 
 @mlf.feature(
@@ -25,7 +34,7 @@ popularity_metrics = mlf.Rolling(
     entities=[item],
     timestamp=timestamp,
     interval=timedelta(days=1),
-    metrics=[popularity_metrics],
+    metrics=popularity_metrics,
     tags=["item", "popularity"],
 )
 def item_popularity(df: pl.DataFrame) -> pl.DataFrame:

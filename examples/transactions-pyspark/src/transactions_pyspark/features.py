@@ -43,10 +43,11 @@ user = mlf.Entity(
 
 ### Metrics
 
-spend_metrics = mlf.Rolling(
-    windows=[timedelta(days=7), "30d", "90d"],
-    aggregations={"amt": ["count", "mean", "sum"]},
-)
+spend_metrics = [
+    mlf.Aggregate(field="amt", function="count", windows=["7d", "30d", "90d"], name="txn_count"),
+    mlf.Aggregate(field="amt", function="mean", windows=["7d", "30d", "90d"], name="avg_spend"),
+    mlf.Aggregate(field="amt", function="sum", windows=["7d", "30d", "90d"], name="total_spend"),
+]
 
 
 ### MERCHANT FEATURES (PySpark)
@@ -59,7 +60,7 @@ spend_metrics = mlf.Rolling(
     description="Total spend by merchant ID (PySpark)",
     timestamp="transaction_date",
     interval=timedelta(days=1),
-    metrics=[spend_metrics],
+    metrics=spend_metrics,
     engine="pyspark",
 )
 def merchant_spend_pyspark(df: SparkDataFrame) -> SparkDataFrame:
@@ -84,7 +85,7 @@ def merchant_spend_pyspark(df: SparkDataFrame) -> SparkDataFrame:
     description="Total spend by account ID (PySpark)",
     timestamp="transaction_date",
     interval="7d",
-    metrics=[spend_metrics],
+    metrics=spend_metrics,
     engine="pyspark",
 )
 def account_spend_pyspark(df: SparkDataFrame) -> SparkDataFrame:
@@ -109,7 +110,7 @@ def account_spend_pyspark(df: SparkDataFrame) -> SparkDataFrame:
     description="Total spend by user ID (PySpark)",
     timestamp="transaction_date",
     interval=timedelta(days=30),
-    metrics=[spend_metrics],
+    metrics=spend_metrics,
     engine="pyspark",
 )
 def user_spend_pyspark(df: SparkDataFrame) -> SparkDataFrame:

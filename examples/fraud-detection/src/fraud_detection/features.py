@@ -14,15 +14,16 @@ timestamp = mlf.Timestamp(
     format="%Y-%m-%d %H:%M:%S",
 )
 
-spend_metrics = mlf.Rolling(
-    windows=["1d", "7d", "30d"],
-    aggregations={"amt": ["sum", "mean", "count", "std"]},
-)
+spend_metrics = [
+    mlf.Aggregate(field="amt", function="sum", windows=["1d", "7d", "30d"], name="total_spend"),
+    mlf.Aggregate(field="amt", function="mean", windows=["1d", "7d", "30d"], name="avg_spend"),
+    mlf.Aggregate(field="amt", function="count", windows=["1d", "7d", "30d"], name="txn_count"),
+    mlf.Aggregate(field="amt", function="std", windows=["1d", "7d", "30d"], name="spend_std"),
+]
 
-velocity_metrics = mlf.Rolling(
-    windows=["1d", "7d"],
-    aggregations={"amt": ["count"]},
-)
+velocity_metrics = [
+    mlf.Aggregate(field="amt", function="count", windows=["1d", "7d"], name="velocity"),
+]
 
 
 @mlf.feature(
@@ -30,7 +31,7 @@ velocity_metrics = mlf.Rolling(
     entities=[user],
     timestamp=timestamp,
     interval=timedelta(days=1),
-    metrics=[spend_metrics],
+    metrics=spend_metrics,
     validators={"amt": [mlf.greater_than_or_equal(value=0)]},
     tags=["user", "spending"],
 )
@@ -43,7 +44,7 @@ def user_spend(df: pl.DataFrame) -> pl.DataFrame:
     entities=[merchant],
     timestamp=timestamp,
     interval=timedelta(days=1),
-    metrics=[spend_metrics],
+    metrics=spend_metrics,
     tags=["merchant", "spending"],
 )
 def merchant_spend(df: pl.DataFrame) -> pl.DataFrame:
@@ -55,7 +56,7 @@ def merchant_spend(df: pl.DataFrame) -> pl.DataFrame:
     entities=[card],
     timestamp=timestamp,
     interval=timedelta(days=1),
-    metrics=[velocity_metrics],
+    metrics=velocity_metrics,
     tags=["card", "velocity"],
 )
 def card_velocity(df: pl.DataFrame) -> pl.DataFrame:

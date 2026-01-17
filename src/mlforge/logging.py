@@ -296,22 +296,40 @@ def print_feature_metadata(
         Panel("\n".join(info_lines), title=f"Feature: {feature_name}")
     )
 
-    # Display columns table if available
+    # Display base columns table if available
     if metadata.columns:
-        table = table_.Table(title="Columns")
+        table = table_.Table(title="Base Columns")
+        table.add_column("Name", style="cyan")
+        table.add_column("Type", style="dim")
+
+        for col in metadata.columns:
+            table.add_row(
+                col.name,
+                col.dtype or "-",
+            )
+
+        console.print(table)
+
+    # Display feature columns (metrics) table if available
+    if metadata.features:
+        table = table_.Table(title="Metrics")
         table.add_column("Name", style="cyan")
         table.add_column("Type", style="dim")
         table.add_column("Input", style="green")
         table.add_column("Aggregation")
         table.add_column("Window")
+        table.add_column("Description", style="italic")
+        table.add_column("Unit", style="magenta")
 
-        for col in metadata.columns:
+        for col in metadata.features:
             table.add_row(
                 col.name,
                 col.dtype or "-",
                 col.input or "-",
                 col.agg or "-",
                 col.window or "-",
+                col.description or "-",
+                col.unit or "-",
             )
 
         console.print(table)

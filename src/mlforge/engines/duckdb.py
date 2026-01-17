@@ -155,7 +155,7 @@ class DuckDBEngine(Engine):
         # Compute metrics and join results
         results: list["duckdb.DuckDBPyRelation"] = []
         for metric in feature.metrics:
-            metric.validate(columns)
+            metric.validate_column(columns)
             result = self._compiler.compile(metric, ctx)
             results.append(result)
 
@@ -226,6 +226,8 @@ class DuckDBEngine(Engine):
                     f"Unsupported source format: {type(fmt).__name__}"
                 )
 
+    _join_counter: int = 0
+
     def _join_relations(
         self,
         left: "duckdb.DuckDBPyRelation",
@@ -245,13 +247,18 @@ class DuckDBEngine(Engine):
         Returns:
             Joined relation
         """
+        # Use unique view names to avoid recursion when joining multiple metrics
+        self._join_counter += 1
+        left_view = f"__left_{self._join_counter}__"
+        right_view = f"__right_{self._join_counter}__"
+
         # Register both relations as temporary views
-        self._conn.register("__left__", left)
-        self._conn.register("__right__", right)
+        self._conn.register(left_view, left)
+        self._conn.register(right_view, right)
 
         # Build join condition
         join_condition = " AND ".join(
-            [f'__left__."{col}" = __right__."{col}"' for col in join_cols]
+            [f'{left_view}."{col}" = {right_view}."{col}"' for col in join_cols]
         )
 
         # Get columns from each relation, excluding join columns from right
@@ -262,21 +269,21 @@ class DuckDBEngine(Engine):
         select_parts = []
         for col in join_cols:
             select_parts.append(
-                f'COALESCE(__left__."{col}", __right__."{col}") AS "{col}"'
+                f'COALESCE({left_view}."{col}", {right_view}."{col}") AS "{col}"'
             )
         for col in left_cols:
             if col not in join_cols:
-                select_parts.append(f'__left__."{col}"')
+                select_parts.append(f'{left_view}."{col}"')
         for col in right_cols:
-            select_parts.append(f'__right__."{col}"')
+            select_parts.append(f'{right_view}."{col}"')
 
         select_clause = ", ".join(select_parts)
 
         # SQL is constructed from trusted feature definition values, not user input
         sql = f"""
         SELECT {select_clause}
-        FROM __left__
-        FULL OUTER JOIN __right__ ON {join_condition}
+        FROM {left_view}
+        FULL OUTER JOIN {right_view} ON {join_condition}
         """  # nosec B608
 
         return self._conn.sql(sql)

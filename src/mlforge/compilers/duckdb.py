@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Callable
 
 from loguru import logger
 
+import mlforge.aggregates as aggregates
 import mlforge.durations as durations
 import mlforge.engines as engines
 import mlforge.metrics as metrics
@@ -92,8 +93,8 @@ class DuckDBCompiler:
         )
         return method(metric, ctx)
 
-    def compile_rolling(
-        self, metric: metrics.Rolling, ctx: DuckDBComputeContext
+    def compile_aggregate(
+        self, metric: aggregates.Aggregate, ctx: DuckDBComputeContext
     ) -> "duckdb.DuckDBPyRelation":
         """
         Compile backward-looking rolling window aggregations using DuckDB SQL.
@@ -107,20 +108,23 @@ class DuckDBCompiler:
         preventing data leakage.
 
         Args:
-            metric: Rolling window specification
+            metric: Aggregate specification
             ctx: Execution context
 
         Returns:
             DuckDB relation with all window aggregations
         """
-        windows = metric.converted_windows
+        # Set interval on the metric for column naming
+        metric._interval = ctx.interval
+
+        windows = metric.windows
         logger.debug(
-            f"DuckDB Rolling aggregations (backward-looking) over {windows} "
+            f"DuckDB Aggregate {metric.function}({metric.field}) over {windows} "
             f"(interval={ctx.interval})"
         )
 
         # Build the SQL query
-        sql = self._build_rolling_sql(metric, ctx)
+        sql = self._build_aggregate_sql(metric, ctx)
         logger.debug(f"Generated SQL: {sql}")
 
         # Use the connection from context, or create a new one
@@ -140,8 +144,8 @@ class DuckDBCompiler:
         result = conn.sql(sql)
         return result
 
-    def _build_rolling_sql(
-        self, metric: metrics.Rolling, ctx: DuckDBComputeContext
+    def _build_aggregate_sql(
+        self, metric: aggregates.Aggregate, ctx: DuckDBComputeContext
     ) -> str:
         """
         Build SQL query for backward-looking rolling window aggregations.
@@ -152,13 +156,13 @@ class DuckDBCompiler:
         3. Joins results for multiple windows
 
         Args:
-            metric: Rolling window specification
+            metric: Aggregate specification
             ctx: Execution context
 
         Returns:
             SQL query string
         """
-        windows = metric.converted_windows
+        windows = metric.windows
 
         # If single window, use simpler query
         if len(windows) == 1:
@@ -168,7 +172,10 @@ class DuckDBCompiler:
         return self._build_multi_window_sql(metric, ctx, windows)
 
     def _build_single_window_sql(
-        self, metric: metrics.Rolling, ctx: DuckDBComputeContext, window: str
+        self,
+        metric: aggregates.Aggregate,
+        ctx: DuckDBComputeContext,
+        window: str,
     ) -> str:
         """Build SQL for a single window aggregation with backward-looking semantics."""
         # Column references
@@ -183,17 +190,16 @@ class DuckDBCompiler:
         interval_sql = interval_parsed.to_duckdb_interval()
         window_interval = window_parsed.to_duckdb_interval()
 
-        # Build aggregation expressions
-        agg_parts = []
-        for col, agg_types in metric.aggregations.items():
-            for agg_type in agg_types:
-                sql_agg = self.AGG_MAP[agg_type]
-                output_col = (
-                    f"{ctx.tag}__{col}__{agg_type}__{ctx.interval}__{window}"
-                )
-                agg_parts.append(f'{sql_agg}(d."{col}") AS "{output_col}"')
+        # Build aggregation expression
+        col = metric.field
+        agg_type = metric.function
+        sql_agg = self.AGG_MAP[agg_type]
 
-        agg_clause = ",\n        ".join(agg_parts)
+        # Get output column name
+        output_columns = metric.output_columns(ctx.interval)
+        output_col = output_columns[0]  # Single window
+
+        agg_clause = f'{sql_agg}(d."{col}") AS "{output_col}"'
 
         # Build join conditions for multiple entity keys
         join_conditions = " AND ".join(f'd."{k}" = b."{k}"' for k in ctx.keys)
@@ -238,7 +244,7 @@ ORDER BY {partition_cols_b}, b.time_bucket
 
     def _build_multi_window_sql(
         self,
-        metric: metrics.Rolling,
+        metric: aggregates.Aggregate,
         ctx: DuckDBComputeContext,
         windows: list[str],
     ) -> str:
@@ -254,6 +260,12 @@ ORDER BY {partition_cols_b}, b.time_bucket
 
         # Build join conditions for multiple entity keys
         join_conditions = " AND ".join(f'd."{k}" = b."{k}"' for k in ctx.keys)
+
+        # Get output column names for all windows
+        output_columns = metric.output_columns(ctx.interval)
+        col = metric.field
+        agg_type = metric.function
+        sql_agg = self.AGG_MAP[agg_type]
 
         # Start with CTEs for date range and buckets
         cte_parts = [
@@ -285,15 +297,8 @@ ORDER BY {partition_cols_b}, b.time_bucket
             cte_name = f"w{i}"
             window_cte_names.append(cte_name)
 
-            # Build aggregation expressions for this window
-            agg_parts = []
-            for col, agg_types in metric.aggregations.items():
-                for agg_type in agg_types:
-                    sql_agg = self.AGG_MAP[agg_type]
-                    output_col = f"{ctx.tag}__{col}__{agg_type}__{ctx.interval}__{window}"
-                    agg_parts.append(f'{sql_agg}(d."{col}") AS "{output_col}"')
-
-            agg_clause = ", ".join(agg_parts)
+            # Get output column name for this window
+            output_col = output_columns[i]
 
             # Backward-looking window: (bucket - window, bucket + interval]
             cte_parts.append(
@@ -301,7 +306,7 @@ ORDER BY {partition_cols_b}, b.time_bucket
     SELECT
         {partition_cols_b},
         b.time_bucket,
-        {agg_clause}
+        {sql_agg}(d."{col}") AS "{output_col}"
     FROM buckets b
     LEFT JOIN __feature_data__ d ON
         {join_conditions}
@@ -315,11 +320,8 @@ ORDER BY {partition_cols_b}, b.time_bucket
         select_parts = [f'w0."{k}"' for k in ctx.keys]
         select_parts.append(f'w0.time_bucket AS "{ctx.timestamp}"')
 
-        for i, window in enumerate(windows):
-            for col, agg_types in metric.aggregations.items():
-                for agg_type in agg_types:
-                    output_col = f"{ctx.tag}__{col}__{agg_type}__{ctx.interval}__{window}"
-                    select_parts.append(f'w{i}."{output_col}"')
+        for i, output_col in enumerate(output_columns):
+            select_parts.append(f'w{i}."{output_col}"')
 
         select_clause = ",\n    ".join(select_parts)
 

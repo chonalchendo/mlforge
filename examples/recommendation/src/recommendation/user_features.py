@@ -11,22 +11,35 @@ user_events = mlf.Source("data/user_events.parquet")
 
 timestamp = mlf.Timestamp(column="event_time", format="%Y-%m-%d %H:%M:%S")
 
-engagement_metrics = mlf.Rolling(
-    windows=["1d", "7d", "30d"],
-    aggregations={
-        "view_count": ["sum"],
-        "click_count": ["sum"],
-        "purchase_count": ["sum"],
-    },
-)
-
 
 @mlf.feature(
     source=user_events,
     entities=[user],
     timestamp=timestamp,
     interval=timedelta(days=1),
-    metrics=[engagement_metrics],
+    metrics=[
+        mlf.Aggregate(
+            field="view_count",
+            function="sum",
+            windows=["1d", "7d", "30d"],
+            name="views",
+            description="Total page views by user",
+        ),
+        mlf.Aggregate(
+            field="click_count",
+            function="sum",
+            windows=["1d", "7d", "30d"],
+            name="clicks",
+            description="Total clicks by user",
+        ),
+        mlf.Aggregate(
+            field="purchase_count",
+            function="sum",
+            windows=["1d", "7d", "30d"],
+            name="purchases",
+            description="Total purchases by user",
+        ),
+    ],
     tags=["user", "engagement"],
 )
 def user_engagement(df: pl.DataFrame) -> pl.DataFrame:

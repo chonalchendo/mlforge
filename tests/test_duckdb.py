@@ -11,7 +11,7 @@ import polars as pl
 import pytest
 
 import mlforge.errors as errors
-from mlforge import Definitions, LocalStore, Rolling, Source, feature
+from mlforge import Aggregate, Definitions, LocalStore, Source, feature
 from mlforge.compilers import DuckDBCompiler, DuckDBComputeContext
 from mlforge.engines import DuckDBEngine
 from mlforge.results import DuckDBResult
@@ -149,8 +149,8 @@ class TestDuckDBResult:
 class TestDuckDBCompiler:
     """Tests for DuckDBCompiler class."""
 
-    def test_build_rolling_sql_generates_valid_sql(self):
-        """Compiler should generate valid SQL for rolling aggregations."""
+    def test_build_aggregate_sql_generates_valid_sql(self):
+        """Compiler should generate valid SQL for aggregate metrics."""
         import duckdb
 
         compiler = DuckDBCompiler()
@@ -174,23 +174,21 @@ class TestDuckDBCompiler:
             tag="test",
         )
 
-        metric = Rolling(
-            windows=["7d"],
-            aggregations={"amount": ["sum", "mean"]},
+        metric = Aggregate(
+            field="amount", function="sum", windows=["7d"], name="total_spend"
         )
 
-        sql = compiler._build_rolling_sql(metric, ctx)
+        sql = compiler._build_aggregate_sql(metric, ctx)
 
         # Verify SQL contains expected elements for GROUP BY approach
         assert "SELECT" in sql
         assert "user_id" in sql
         assert "event_time" in sql
         assert "SUM" in sql
-        assert "AVG" in sql
         assert "GROUP BY" in sql
         assert "DATE_TRUNC" in sql  # Time bucket truncation
 
-    def test_compile_rolling_produces_result(self):
+    def test_compile_aggregate_produces_result(self):
         """Compiler should produce a DuckDB relation with metrics."""
         import duckdb
 
@@ -219,9 +217,8 @@ class TestDuckDBCompiler:
             connection=conn,  # Pass the connection
         )
 
-        metric = Rolling(
-            windows=["7d"],
-            aggregations={"amount": ["sum"]},
+        metric = Aggregate(
+            field="amount", function="sum", windows=["7d"], name="total_spend"
         )
 
         result = compiler.compile(metric, ctx)
@@ -230,9 +227,9 @@ class TestDuckDBCompiler:
         result_df = result.pl()
         assert "user_id" in result_df.columns
         assert "event_time" in result_df.columns
-        assert "test__amount__sum__1d__7d" in result_df.columns
+        assert "total_spend_1d_7d" in result_df.columns
 
-    def test_compile_rolling_multiple_windows(self):
+    def test_compile_aggregate_multiple_windows(self):
         """Compiler should handle multiple window sizes correctly."""
         import duckdb
 
@@ -263,9 +260,11 @@ class TestDuckDBCompiler:
         )
 
         # Multiple windows triggers _build_multi_window_sql
-        metric = Rolling(
+        metric = Aggregate(
+            field="amount",
+            function="sum",
             windows=["7d", "14d"],
-            aggregations={"amount": ["sum"]},
+            name="total_spend",
         )
 
         result = compiler.compile(metric, ctx)
@@ -274,8 +273,8 @@ class TestDuckDBCompiler:
         result_df = result.pl()
         assert "user_id" in result_df.columns
         assert "event_time" in result_df.columns
-        assert "test__amount__sum__1d__7d" in result_df.columns
-        assert "test__amount__sum__1d__14d" in result_df.columns
+        assert "total_spend_1d_7d" in result_df.columns
+        assert "total_spend_1d_14d" in result_df.columns
 
 
 # =============================================================================
@@ -349,7 +348,7 @@ class TestDuckDBEngine:
     def test_engine_execute_feature_with_metrics(
         self, sample_transactions_parquet: Path, tmp_path: Path
     ):
-        """Engine should execute a feature with rolling metrics."""
+        """Engine should execute a feature with aggregate metrics."""
 
         @feature(
             keys=["user_id"],
@@ -358,10 +357,18 @@ class TestDuckDBEngine:
             interval="1d",
             engine="duckdb",
             metrics=[
-                Rolling(
+                Aggregate(
+                    field="amount",
+                    function="sum",
                     windows=["7d"],
-                    aggregations={"amount": ["sum", "mean"]},
-                )
+                    name="total_spend",
+                ),
+                Aggregate(
+                    field="amount",
+                    function="mean",
+                    windows=["7d"],
+                    name="avg_spend",
+                ),
             ],
         )
         def user_spend(df: pl.DataFrame) -> pl.DataFrame:
@@ -382,8 +389,8 @@ class TestDuckDBEngine:
         df = store.read("user_spend")
         assert "user_id" in df.columns
         assert "event_time" in df.columns
-        assert "user_spend__amount__sum__1d__7d" in df.columns
-        assert "user_spend__amount__mean__1d__7d" in df.columns
+        assert "total_spend_1d_7d" in df.columns
+        assert "avg_spend_1d_7d" in df.columns
 
 
 # =============================================================================
@@ -554,7 +561,11 @@ class TestDuckDBIntegration:
             timestamp="nonexistent_timestamp",
             interval="1d",
             engine="duckdb",
-            metrics=[Rolling(windows=["7d"], aggregations={"amount": ["sum"]})],
+            metrics=[
+                Aggregate(
+                    field="amount", function="sum", windows=["7d"], name="total"
+                )
+            ],
         )
         def missing_timestamp_feature(df: pl.DataFrame) -> pl.DataFrame:
             return df.select("user_id", "amount")
@@ -580,7 +591,11 @@ class TestDuckDBIntegration:
             timestamp="event_time",
             # interval is missing
             engine="duckdb",
-            metrics=[Rolling(windows=["7d"], aggregations={"amount": ["sum"]})],
+            metrics=[
+                Aggregate(
+                    field="amount", function="sum", windows=["7d"], name="total"
+                )
+            ],
         )
         def missing_interval_feature(df: pl.DataFrame) -> pl.DataFrame:
             return df.select("user_id", "event_time", "amount")
@@ -627,7 +642,7 @@ class TestDuckDBIntegration:
     def test_duckdb_multiple_metrics(
         self, sample_transactions_parquet: Path, tmp_path: Path
     ):
-        """DuckDB engine should handle multiple Rolling metrics correctly."""
+        """DuckDB engine should handle multiple Aggregate metrics correctly."""
 
         @feature(
             keys=["user_id"],
@@ -636,8 +651,18 @@ class TestDuckDBIntegration:
             interval="1d",
             engine="duckdb",
             metrics=[
-                Rolling(windows=["7d"], aggregations={"amount": ["sum"]}),
-                Rolling(windows=["14d"], aggregations={"amount": ["mean"]}),
+                Aggregate(
+                    field="amount",
+                    function="sum",
+                    windows=["7d"],
+                    name="total_spend",
+                ),
+                Aggregate(
+                    field="amount",
+                    function="mean",
+                    windows=["14d"],
+                    name="avg_spend",
+                ),
             ],
         )
         def multi_metric_feature(df: pl.DataFrame) -> pl.DataFrame:
@@ -654,5 +679,5 @@ class TestDuckDBIntegration:
         assert "multi_metric_feature" in results.paths
 
         df = store.read("multi_metric_feature")
-        assert "multi_metric_feature__amount__sum__1d__7d" in df.columns
-        assert "multi_metric_feature__amount__mean__1d__14d" in df.columns
+        assert "total_spend_1d_7d" in df.columns
+        assert "avg_spend_1d_14d" in df.columns

@@ -393,26 +393,33 @@ class TestPySparkCompiler:
         path = tmp_path / "rolling_test.parquet"
         df.write_parquet(path)
 
+        from mlforge import Aggregate
         from mlforge.core import feature
         from mlforge.engines import PySparkEngine
-        from mlforge.metrics import Rolling
 
         @feature(
             keys=["user_id"],
             source=str(path),
             timestamp="event_time",
             interval="1d",
-            metrics=[Rolling(windows=["3d"], aggregations={"amount": ["sum"]})],
+            metrics=[
+                Aggregate(
+                    field="amount",
+                    function="sum",
+                    windows=["3d"],
+                    name="total_spend",
+                )
+            ],
         )
-        def user_rolling(df: SparkDataFrame) -> SparkDataFrame:
+        def user_agg(df: SparkDataFrame) -> SparkDataFrame:
             return df.select("user_id", "amount", "event_time")
 
         engine = PySparkEngine(spark=spark_session)
-        result = engine.execute(user_rolling)
+        result = engine.execute(user_agg)
         polars_df = result.to_polars()
 
-        # Should have rolling sum column
-        sum_col = "user_rolling__amount__sum__1d__3d"
+        # Should have aggregate sum column
+        sum_col = "total_spend_1d_3d"
         assert sum_col in polars_df.columns
 
         # Row count should match input
@@ -436,9 +443,9 @@ class TestPySparkCompiler:
         path = tmp_path / "multi_agg.parquet"
         df.write_parquet(path)
 
+        from mlforge import Aggregate
         from mlforge.core import feature
         from mlforge.engines import PySparkEngine
-        from mlforge.metrics import Rolling
 
         @feature(
             keys=["user_id"],
@@ -446,10 +453,24 @@ class TestPySparkCompiler:
             timestamp="event_time",
             interval="1d",
             metrics=[
-                Rolling(
+                Aggregate(
+                    field="amount",
+                    function="sum",
                     windows=["3d"],
-                    aggregations={"amount": ["sum", "mean", "count"]},
-                )
+                    name="total_spend",
+                ),
+                Aggregate(
+                    field="amount",
+                    function="mean",
+                    windows=["3d"],
+                    name="avg_spend",
+                ),
+                Aggregate(
+                    field="amount",
+                    function="count",
+                    windows=["3d"],
+                    name="txn_count",
+                ),
             ],
         )
         def user_multi_agg(df: SparkDataFrame) -> SparkDataFrame:
@@ -460,6 +481,6 @@ class TestPySparkCompiler:
         polars_df = result.to_polars()
 
         # Should have all aggregation columns
-        assert "user_multi_agg__amount__sum__1d__3d" in polars_df.columns
-        assert "user_multi_agg__amount__mean__1d__3d" in polars_df.columns
-        assert "user_multi_agg__amount__count__1d__3d" in polars_df.columns
+        assert "total_spend_1d_3d" in polars_df.columns
+        assert "avg_spend_1d_3d" in polars_df.columns
+        assert "txn_count_1d_3d" in polars_df.columns

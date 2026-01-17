@@ -5,7 +5,7 @@ Demonstrates:
 - Source: Data source abstraction
 - Entity: Surrogate key generation from multiple columns
 - Timestamp: Explicit format and alias configuration
-- Rolling: Rolling window aggregations
+- Aggregate: Rolling window aggregations
 - Validators: Data quality checks
 """
 
@@ -38,10 +38,10 @@ timestamp = mlf.Timestamp(
 
 ### Metrics
 
-spend_metrics = mlf.Rolling(
-    windows=[timedelta(days=7), "30d"],
-    aggregations={"amt": ["count", "sum"]},
-)
+spend_metrics = [
+    mlf.Aggregate(field="amt", function="count", windows=["7d", "30d"], name="txn_count"),
+    mlf.Aggregate(field="amt", function="sum", windows=["7d", "30d"], name="total_spend"),
+]
 
 
 @mlf.feature(
@@ -51,7 +51,7 @@ spend_metrics = mlf.Rolling(
     description="User spending aggregations for real-time serving",
     timestamp=timestamp,
     interval=timedelta(days=1),
-    metrics=[spend_metrics],
+    metrics=spend_metrics,
     validators={"amt": [mlf.greater_than_or_equal(value=0)]},
 )
 def user_spend(df: pl.DataFrame) -> pl.DataFrame:

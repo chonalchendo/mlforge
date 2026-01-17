@@ -6,7 +6,7 @@ from pathlib import Path
 
 import polars as pl
 
-from mlforge import Definitions, LocalStore, feature
+from mlforge import Aggregate, Definitions, LocalStore, feature
 from mlforge.manifest import (
     ColumnMetadata,
     FeatureMetadata,
@@ -15,7 +15,6 @@ from mlforge.manifest import (
     read_metadata_file,
     write_metadata_file,
 )
-from mlforge.metrics import Rolling
 
 
 def test_column_metadata_to_dict_excludes_none_values():
@@ -357,56 +356,53 @@ def test_derive_column_metadata_for_simple_columns():
     assert any(c.name == "value" and c.dtype == "float64" for c in base_columns)
 
 
-def test_derive_column_metadata_for_rolling_columns():
-    # Given a feature with Rolling metrics
+def test_derive_column_metadata_for_aggregate_columns():
+    # Given a feature with Aggregate metrics
     @feature(
         keys=["user_id"],
         source="data.parquet",
         timestamp="event_time",
         interval="1d",
         metrics=[
-            Rolling(
-                windows=["7d", "30d"], aggregations={"amt": ["sum", "count"]}
-            )
+            Aggregate(
+                field="amt",
+                function="sum",
+                windows=["7d", "30d"],
+                name="total_amt",
+                unit="USD",
+            ),
         ],
     )
-    def rolling_feature(df):
+    def agg_feature(df):
         return df
 
-    # Schema with pattern: {tag}__{column}__{agg}__{interval}__{window}
+    # Schema with pattern: {name}_{interval}_{window}
     schema = {
         "user_id": "Utf8",
         "event_time": "Datetime",
-        "rolling_feature__amt__sum__1d__7d": "Float64",
-        "rolling_feature__amt__count__1d__7d": "Int64",
-        "rolling_feature__amt__sum__1d__30d": "Float64",
-        "rolling_feature__amt__count__1d__30d": "Int64",
+        "total_amt_1d_7d": "Float64",
+        "total_amt_1d_30d": "Float64",
     }
 
     # When deriving column metadata
-    base_columns, feature_columns = derive_column_metadata(
-        rolling_feature, schema
-    )
+    base_columns, feature_columns = derive_column_metadata(agg_feature, schema)
 
     # Then base columns should contain keys and timestamp
     assert len(base_columns) == 2
     assert any(c.name == "user_id" for c in base_columns)
     assert any(c.name == "event_time" for c in base_columns)
 
-    # And feature columns should contain rolling metrics
-    assert len(feature_columns) == 4
+    # And feature columns should contain aggregate metrics
+    assert len(feature_columns) == 2
     sum_7d = next(
-        (
-            c
-            for c in feature_columns
-            if c.name == "rolling_feature__amt__sum__1d__7d"
-        ),
+        (c for c in feature_columns if c.name == "total_amt_1d_7d"),
         None,
     )
     assert sum_7d is not None
     assert sum_7d.input == "amt"
     assert sum_7d.agg == "sum"
     assert sum_7d.window == "7d"
+    assert sum_7d.unit == "USD"
 
 
 def test_derive_column_metadata_with_validators():
@@ -460,7 +456,7 @@ def test_derive_column_metadata_with_base_schema():
         "timestamp": "Datetime",
     }
 
-    # Final schema after Rolling metrics added
+    # Final schema after legacy Rolling metrics added
     schema = {
         "user_id": "Utf8",
         "amount": "Float64",
@@ -476,13 +472,13 @@ def test_derive_column_metadata_with_base_schema():
 
     # Then it should correctly separate base columns from feature columns
     assert len(base_columns) == 3  # user_id, amount, timestamp
-    assert len(feature_columns) == 2  # Two rolling aggregations
+    assert len(feature_columns) == 2  # Two aggregations
 
     # Verify base columns contain original columns
     base_names = {c.name for c in base_columns}
     assert base_names == {"user_id", "amount", "timestamp"}
 
-    # Verify feature columns are parsed correctly
+    # Verify feature columns are parsed correctly (legacy Rolling pattern)
     feature_names = {c.name for c in feature_columns}
     assert feature_names == {
         "users__amount__sum__1d__7d",
@@ -496,7 +492,7 @@ def test_derive_column_metadata_legacy_without_base_schema():
     def test_feature(df):
         return df
 
-    # Schema includes both base and rolling columns (no separation)
+    # Schema includes both base and legacy rolling columns (no separation)
     schema = {
         "user_id": "Utf8",
         "amount": "Float64",
@@ -508,13 +504,13 @@ def test_derive_column_metadata_legacy_without_base_schema():
 
     # Then it should use regex to categorize columns
     assert len(base_columns) == 2  # user_id, amount (non-rolling)
-    assert len(feature_columns) == 1  # Rolling column
+    assert len(feature_columns) == 1  # Legacy Rolling column
 
     # Verify base columns
     base_names = {c.name for c in base_columns}
     assert base_names == {"user_id", "amount"}
 
-    # Verify feature column parsed via regex
+    # Verify feature column parsed via regex (legacy Rolling pattern)
     assert feature_columns[0].name == "users__amount__sum__1d__7d"
     assert feature_columns[0].input == "amount"
     assert feature_columns[0].agg == "sum"

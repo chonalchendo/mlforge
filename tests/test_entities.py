@@ -394,7 +394,7 @@ def test_feature_with_entity_and_metrics():
             source_path
         )
 
-        from mlforge import Rolling
+        from mlforge import Aggregate
 
         user = Entity(name="user", join_key="user_id")
 
@@ -403,21 +403,28 @@ def test_feature_with_entity_and_metrics():
             entities=[user],
             timestamp="ts",
             interval="1d",
-            metrics=[Rolling(windows=["1d"], aggregations={"amount": ["sum"]})],
+            metrics=[
+                Aggregate(
+                    field="amount",
+                    function="sum",
+                    windows=["1d"],
+                    name="total_spend",
+                )
+            ],
         )
-        def user_spend_rolling(df):
+        def user_spend_agg(df):
             return df.select("user_id", "amount", "ts")
 
         store = LocalStore(tmpdir)
         defs = Definitions(
             name="test",
-            features=[user_spend_rolling],
+            features=[user_spend_agg],
             offline_store=store,
         )
 
         defs.build(preview=False)
 
-        result = store.read("user_spend_rolling")
+        result = store.read("user_spend_agg")
         assert "user_id" in result.columns
-        # Rolling metric column naming: {tag}_{col}_{agg}_{interval}
-        assert any("amount" in col and "sum" in col for col in result.columns)
+        # Aggregate metric column naming: {name}_{interval}_{window}
+        assert "total_spend_1d_1d" in result.columns

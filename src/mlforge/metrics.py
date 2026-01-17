@@ -1,10 +1,15 @@
-from dataclasses import dataclass
+"""
+Metric type definitions and utilities.
+
+This module defines the MetricKind type alias and provides utilities
+for working with metrics like duration conversion.
+"""
+
 from datetime import timedelta
-from typing import Any, Literal
+from typing import TYPE_CHECKING
 
-AggregationType = Literal["count", "mean", "sum", "min", "max", "std", "median"]
-
-type Aggregations = dict[str, list[AggregationType]]
+if TYPE_CHECKING:
+    from mlforge.aggregates import Aggregate
 
 
 def timedelta_to_polars_duration(td: timedelta) -> str:
@@ -34,92 +39,17 @@ def timedelta_to_polars_duration(td: timedelta) -> str:
         return f"{total_seconds}s"
 
 
-@dataclass
-class Rolling:
-    """
-    Rolling window aggregation metric.
+# Type alias for all supported metric kinds
+# Using a type alias pattern that works with runtime imports
+if TYPE_CHECKING:
+    from mlforge.aggregates import Aggregate
 
-    Computes aggregations over multiple time windows. Commonly used
-    for features like "sum of transactions in last 7 days" or
-    "average spend in last 30 days".
+    MetricKind = Aggregate
+else:
+    # At runtime, lazily import when accessed
+    def __getattr__(name: str):
+        if name == "MetricKind":
+            from mlforge.aggregates import Aggregate
 
-    Attributes:
-        windows: Time windows to compute over (e.g., ["7d", "30d"] or [timedelta(days=7)])
-        aggregations: Mapping of columns to aggregation types
-        closed: Which boundary of window to include. Defaults to "left".
-
-    Example:
-        Rolling(
-            windows=["7d", "30d"],
-            aggregations={"amount": ["sum", "mean"]},
-            closed="left"
-        )
-
-        # Or with timedelta:
-        Rolling(
-            windows=[timedelta(days=7), timedelta(days=30)],
-            aggregations={"amount": ["sum", "mean"]},
-            closed="left"
-        )
-    """
-
-    windows: list[str | timedelta]
-    aggregations: Aggregations
-    closed: Literal["left", "right", "both", "none"] = "left"
-
-    @property
-    def converted_windows(self) -> list[str]:
-        """Convert any timedelta windows to Polars duration strings."""
-        return [
-            timedelta_to_polars_duration(w) if isinstance(w, timedelta) else w
-            for w in self.windows
-        ]
-
-    def output_columns(self) -> list[str]:
-        """
-        Get expected output column names.
-
-        Returns:
-            List of column names this metric will produce
-        """
-        columns: list[str] = []
-        for col, aggs in self.aggregations.items():
-            for agg in aggs:
-                for window in self.windows:
-                    columns.append(f"{col}__{agg}__{window}")
-        return columns
-
-    def validate(self, available_columns: list[str]) -> None:
-        """
-        Validate that referenced columns exist in dataframe.
-
-        Args:
-            available_columns: Column names present in the dataframe
-
-        Raises:
-            ValueError: If any aggregation column is not found
-        """
-        for col in self.aggregations.keys():
-            if col not in available_columns:
-                raise ValueError(
-                    f"Rolling spec references column '{col}' but it's not in the dataframe. Available: {available_columns}"
-                )
-
-    def to_dict(self) -> dict[str, Any]:
-        """
-        Serialize metrics configuration for hashing.
-
-        Used by version.compute_config_hash() to detect configuration changes.
-
-        Returns:
-            Dictionary representation of metric configuration
-        """
-        return {
-            "type": "Rolling",
-            "windows": self.converted_windows,
-            "aggregations": {k: list(v) for k, v in self.aggregations.items()},
-            "closed": self.closed,
-        }
-
-
-MetricKind = Rolling
+            return Aggregate
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
