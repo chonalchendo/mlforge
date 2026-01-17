@@ -8,8 +8,8 @@ from fastapi.testclient import TestClient
 
 import mlforge
 from mlforge.core import Definitions, Feature
-from mlforge.stores import OnlineStore
 from mlforge.serve import create_app
+from mlforge.stores import OnlineStore
 
 
 class MockOnlineStore(OnlineStore):

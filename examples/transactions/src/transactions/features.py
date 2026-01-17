@@ -42,7 +42,7 @@ spend_metrics = mlf.Rolling(
 @mlf.feature(
     source=source,
     entities=[merchant],
-    tags=["merchants"],
+    tags=["merchants", "daily"],
     description="Total spend by merchant ID",
     timestamp="transaction_date",
     interval=timedelta(days=1),
@@ -66,7 +66,7 @@ def merchant_spend_1d_interval(df: pl.DataFrame) -> pl.DataFrame:
 @mlf.feature(
     source=source,
     entities=[account],
-    tags=["accounts"],
+    tags=["accounts", "weekly"],
     description="Total spend by account ID",
     timestamp="transaction_date",
     interval="7d",
@@ -89,7 +89,7 @@ def account_spend_7d_interval(df: pl.DataFrame) -> pl.DataFrame:
 @mlf.feature(
     source=source,
     entities=[user],
-    tags=["users"],
+    tags=["users", "monthly"],
     description="Total spend by user ID",
     timestamp="transaction_date",
     interval=timedelta(days=30),

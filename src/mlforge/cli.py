@@ -212,6 +212,13 @@ def build(
         str | None,
         cyclopts.Parameter(name="--tags", help="Comma-separated feature tags"),
     ] = None,
+    schedule: Annotated[
+        str | None,
+        cyclopts.Parameter(
+            name="--schedule",
+            help="Comma-separated schedule tags (e.g., daily, hourly, weekly)",
+        ),
+    ] = None,
     version: Annotated[
         str | None,
         cyclopts.Parameter(
@@ -299,6 +306,7 @@ def build(
         target: Path to definitions file. Defaults to "definitions.py".
         features: Comma-separated list of feature names. Defaults to None (all).
         tags: Comma-separated list of feature tags. Defaults to None.
+        schedule: Comma-separated list of schedule tags (e.g., daily, hourly). Defaults to None.
         version: Explicit version override. If not specified, auto-detects.
         force: Overwrite existing features. Defaults to False.
         preview: Show feature data preview after building. Defaults to False.
@@ -313,9 +321,11 @@ def build(
     Raises:
         SystemExit: If loading definitions or materialization fails
     """
-    if tags and features:
+    # Check mutual exclusivity of selection parameters
+    selection_params = sum([bool(features), bool(tags), bool(schedule)])
+    if selection_params > 1:
         raise ValueError(
-            "Tags and features cannot be specified at the same time. Choose one or the other."
+            "Only one of --features, --tags, or --schedule can be specified."
         )
 
     try:
@@ -324,12 +334,16 @@ def build(
             [f.strip() for f in features.split(",")] if features else None
         )
         tag_names = [t.strip() for t in tags.split(",")] if tags else None
+        schedule_names = (
+            [s.strip() for s in schedule.split(",")] if schedule else None
+        )
 
         start_time = time.perf_counter()
 
         result = defs.build(
             feature_names=feature_names,
             tag_names=tag_names,
+            schedule_names=schedule_names,
             feature_version=version,
             force=force,
             preview=preview,
@@ -387,6 +401,13 @@ def validate(
         str | None,
         cyclopts.Parameter(name="--tags", help="Comma-separated feature tags"),
     ] = None,
+    schedule: Annotated[
+        str | None,
+        cyclopts.Parameter(
+            name="--schedule",
+            help="Comma-separated schedule tags (e.g., daily, hourly, weekly)",
+        ),
+    ] = None,
     profile: Annotated[
         str | None,
         cyclopts.Parameter(
@@ -405,14 +426,17 @@ def validate(
         target: Path to definitions file. Defaults to "definitions.py".
         features: Comma-separated list of feature names. Defaults to None (all).
         tags: Comma-separated list of feature tags. Defaults to None.
+        schedule: Comma-separated list of schedule tags (e.g., daily, hourly). Defaults to None.
         profile: Profile name from mlforge.yaml. Defaults to None (uses env var or config default).
 
     Raises:
         SystemExit: If loading definitions fails or any validation fails
     """
-    if tags and features:
+    # Check mutual exclusivity of selection parameters
+    selection_params = sum([bool(features), bool(tags), bool(schedule)])
+    if selection_params > 1:
         raise ValueError(
-            "Tags and features cannot be specified at the same time. Choose one or the other."
+            "Only one of --features, --tags, or --schedule can be specified."
         )
 
     try:
@@ -421,10 +445,14 @@ def validate(
             [f.strip() for f in features.split(",")] if features else None
         )
         tag_names = [t.strip() for t in tags.split(",")] if tags else None
+        schedule_names = (
+            [s.strip() for s in schedule.split(",")] if schedule else None
+        )
 
         results = defs.validate(
             feature_names=feature_names,
             tag_names=tag_names,
+            schedule_names=schedule_names,
         )
 
         if not results:
@@ -463,6 +491,13 @@ def features(
             name="--tags", help="Comma-separated list of feature tags."
         ),
     ] = None,
+    schedule: Annotated[
+        str | None,
+        cyclopts.Parameter(
+            name="--schedule",
+            help="Comma-separated schedule tags (e.g., daily, hourly, weekly)",
+        ),
+    ] = None,
     profile: Annotated[
         str | None,
         cyclopts.Parameter(
@@ -482,19 +517,22 @@ def features(
     except (errors.DefinitionsLoadError, errors.ProfileError) as e:
         log.print_error(str(e))
         raise SystemExit(1)
-    feature_dict = defs.features
 
-    if tags:
-        tag_set = {t.strip() for t in tags.split(",")}
-        feature_dict = {
-            name: feature
-            for name, feature in feature_dict.items()
-            if feature.tags and tag_set.intersection(feature.tags)
-        }
+    # Filter by tags or schedule (both use the same tag-based filtering)
+    filter_tags = tags or schedule
+    if filter_tags:
+        tag_set = {t.strip() for t in filter_tags.split(",")}
+        features_list = defs.list_features(tags=list(tag_set))
+        feature_dict = {f.name: f for f in features_list}
 
         if not feature_dict:
-            log.print_warning(f"No features found with tags: {tags}")
+            filter_type = "tags" if tags else "schedule"
+            log.print_warning(
+                f"No features found with {filter_type}: {filter_tags}"
+            )
             return
+    else:
+        feature_dict = defs.features
 
     log.print_features_table(feature_dict)
 

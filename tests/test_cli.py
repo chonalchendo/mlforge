@@ -369,7 +369,7 @@ def test_build_command_raises_on_tags_and_features_both_specified():
     # Given both tags and features specified
     # When/Then calling build should raise ValueError
     with pytest.raises(
-        ValueError, match="Tags and features cannot be specified"
+        ValueError, match="Only one of --features, --tags, or --schedule"
     ):
         build(
             target=None,
@@ -379,6 +379,101 @@ def test_build_command_raises_on_tags_and_features_both_specified():
             preview=False,
             preview_rows=5,
         )
+
+
+def test_build_command_with_schedule(temp_dir, sample_parquet_file):
+    # Given a definitions file with schedule-tagged features
+    definitions_file = temp_dir / "definitions.py"
+    store_path = temp_dir / "store"
+    definitions_file.write_text(
+        f"""
+from mlforge import Definitions, LocalStore, feature
+import polars as pl
+
+@feature(keys=["id"], source="{sample_parquet_file}", tags=["users", "daily"])
+def daily_feature(df):
+    return df.select(["id"])
+
+@feature(keys=["id"], source="{sample_parquet_file}", tags=["users", "hourly"])
+def hourly_feature(df):
+    return df.select(["id"])
+
+defs = Definitions(
+    name="test-project",
+    features=[daily_feature, hourly_feature],
+    offline_store=LocalStore("{store_path}")
+)
+"""
+    )
+
+    # When building with --schedule daily
+    with patch("mlforge.logging.print_build_summary") as mock_summary:
+        build(
+            target=str(definitions_file),
+            features=None,
+            tags=None,
+            schedule="daily",
+            force=False,
+            preview=False,
+            preview_rows=5,
+        )
+
+    # Then it should build only daily-tagged features
+    mock_summary.assert_called_once()
+
+
+def test_build_command_raises_on_schedule_and_features_both_specified():
+    # Given both schedule and features specified
+    # When/Then calling build should raise ValueError
+    with pytest.raises(
+        ValueError, match="Only one of --features, --tags, or --schedule"
+    ):
+        build(
+            target=None,
+            features="feature1",
+            schedule="daily",
+            force=False,
+            preview=False,
+            preview_rows=5,
+        )
+
+
+def test_list_features_command_filters_by_schedule(
+    temp_dir, sample_parquet_file
+):
+    # Given a definitions file with schedule-tagged features
+    definitions_file = temp_dir / "definitions.py"
+    store_path = temp_dir / "store"
+    definitions_file.write_text(
+        f"""
+from mlforge import Definitions, LocalStore, feature
+import polars as pl
+
+@feature(keys=["id"], source="{sample_parquet_file}", tags=["daily"])
+def daily_feature(df):
+    return df.select(["id"])
+
+@feature(keys=["id"], source="{sample_parquet_file}", tags=["hourly"])
+def hourly_feature(df):
+    return df.select(["id"])
+
+defs = Definitions(
+    name="test-project",
+    features=[daily_feature, hourly_feature],
+    offline_store=LocalStore("{store_path}")
+)
+"""
+    )
+
+    # When listing with --schedule daily
+    with patch("mlforge.logging.print_features_table") as mock_print:
+        features(target=str(definitions_file), schedule="daily")
+
+    # Then it should display only daily features
+    mock_print.assert_called_once()
+    features_dict = mock_print.call_args[0][0]
+    assert "daily_feature" in features_dict
+    assert "hourly_feature" not in features_dict
 
 
 def test_list_features_command_filters_by_tags(temp_dir, sample_parquet_file):
