@@ -202,7 +202,9 @@ def filter_by_timestamp(
     # Check if the DataFrame timestamp column has timezone info
     # If not, we need to convert our datetime filters to naive
     ts_dtype = df.schema[timestamp_col]
-    ts_has_tz = hasattr(ts_dtype, "time_zone") and ts_dtype.time_zone is not None
+    ts_has_tz = (
+        hasattr(ts_dtype, "time_zone") and ts_dtype.time_zone is not None
+    )
 
     def to_filter_dt(dt: datetime) -> datetime:
         """Convert datetime to match DataFrame's timezone awareness."""
