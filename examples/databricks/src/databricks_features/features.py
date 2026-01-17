@@ -13,9 +13,9 @@ and synced to Online Tables for real-time serving.
 
 from datetime import timedelta
 
+import mlforge as mlf
 import polars as pl
 
-import mlforge as mlf
 from databricks_features.entities import customer, customer_merchant, merchant
 
 # Data source - parquet file for local dev, can be Delta table path for Databricks
@@ -29,32 +29,78 @@ timestamp = mlf.Timestamp(
 
 # Rolling metrics for spending patterns
 # Windows capture short-term (7d), medium-term (30d), and long-term (90d) behavior
-spend_metrics = mlf.Rolling(
-    windows=["7d", "30d", timedelta(days=90)],
-    aggregations={
-        "amount": ["sum", "mean", "count", "std", "min", "max"],
-    },
-)
+spend_metrics = [
+    mlf.Aggregate(
+        field="amount",
+        function="sum",
+        windows=["7d", "30d", "90d"],
+        name="total_spend",
+        description="Total amount spent",
+        unit="USD",
+    ),
+    mlf.Aggregate(
+        field="amount",
+        function="mean",
+        windows=["7d", "30d", "90d"],
+        name="avg_spend",
+        description="Average transaction amount",
+        unit="USD",
+    ),
+    mlf.Aggregate(
+        field="amount",
+        function="count",
+        windows=["7d", "30d", "90d"],
+        name="txn_count",
+        description="Number of transactions",
+    ),
+    mlf.Aggregate(
+        field="amount",
+        function="std",
+        windows=["7d", "30d", "90d"],
+        name="spend_std",
+        description="Standard deviation of spending",
+        unit="USD",
+    ),
+    mlf.Aggregate(
+        field="amount",
+        function="min",
+        windows=["7d", "30d", "90d"],
+        name="min_spend",
+        description="Minimum transaction amount",
+        unit="USD",
+    ),
+    mlf.Aggregate(
+        field="amount",
+        function="max",
+        windows=["7d", "30d", "90d"],
+        name="max_spend",
+        description="Maximum transaction amount",
+        unit="USD",
+    ),
+]
 
 # Velocity metrics for fraud detection signals
 # High transaction counts in short windows may indicate fraud
-velocity_metrics = mlf.Rolling(
-    windows=["1d", "7d"],
-    aggregations={
-        "amount": ["count"],
-    },
-)
+velocity_metrics = [
+    mlf.Aggregate(
+        field="amount",
+        function="count",
+        windows=["1d", "7d"],
+        name="velocity",
+        description="Transaction count for fraud detection",
+    ),
+]
 
 # Merchant diversity metrics - track count of transactions at different merchants
-# Note: n_unique not supported in DuckDB compiler, use count instead
-merchant_diversity_metrics = mlf.Rolling(
-    windows=["7d", "30d"],
-    aggregations={
-        "amount": [
-            "count"
-        ],  # Number of transactions (proxy for merchant diversity)
-    },
-)
+merchant_diversity_metrics = [
+    mlf.Aggregate(
+        field="amount",
+        function="count",
+        windows=["7d", "30d"],
+        name="merchant_txns",
+        description="Number of transactions (proxy for merchant diversity)",
+    ),
+]
 
 
 @mlf.feature(
@@ -62,7 +108,7 @@ merchant_diversity_metrics = mlf.Rolling(
     entities=[customer],
     timestamp=timestamp,
     interval=timedelta(days=1),
-    metrics=[spend_metrics],
+    metrics=spend_metrics,
     validators={
         "amount": [
             mlf.greater_than_or_equal(value=0),
@@ -87,7 +133,7 @@ def customer_spend(df: pl.DataFrame) -> pl.DataFrame:
     entities=[merchant],
     timestamp=timestamp,
     interval=timedelta(days=1),
-    metrics=[spend_metrics],
+    metrics=spend_metrics,
     validators={
         "amount": [mlf.greater_than_or_equal(value=0)],
     },
@@ -108,7 +154,7 @@ def merchant_spend(df: pl.DataFrame) -> pl.DataFrame:
     entities=[customer],
     timestamp=timestamp,
     interval=timedelta(days=1),
-    metrics=[velocity_metrics],
+    metrics=velocity_metrics,
     tags=["customer", "velocity", "fraud"],
     description="Transaction velocity for fraud detection",
 )
@@ -127,11 +173,28 @@ def customer_velocity(df: pl.DataFrame) -> pl.DataFrame:
     timestamp=timestamp,
     interval=timedelta(days=1),
     metrics=[
-        mlf.Rolling(
+        mlf.Aggregate(
+            field="amount",
+            function="sum",
             windows=["30d", "90d"],
-            aggregations={
-                "amount": ["sum", "count", "mean"],
-            },
+            name="affinity_spend",
+            description="Total spend at this merchant",
+            unit="USD",
+        ),
+        mlf.Aggregate(
+            field="amount",
+            function="count",
+            windows=["30d", "90d"],
+            name="affinity_visits",
+            description="Number of visits to this merchant",
+        ),
+        mlf.Aggregate(
+            field="amount",
+            function="mean",
+            windows=["30d", "90d"],
+            name="affinity_avg",
+            description="Average spend at this merchant",
+            unit="USD",
         ),
     ],
     tags=["customer", "merchant", "cross-entity"],
