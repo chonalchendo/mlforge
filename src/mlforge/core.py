@@ -434,6 +434,7 @@ class Definitions:
         self,
         feature_names: list[str] | None = None,
         tag_names: list[str] | None = None,
+        schedule_names: list[str] | None = None,
         feature_version: str | None = None,
         force: bool = False,
         preview: bool = True,
@@ -457,6 +458,9 @@ class Definitions:
         Args:
             feature_names: Specific features to materialize. Defaults to None (all).
             tag_names: Specific features to materialize by tag. Defaults to None (all).
+            schedule_names: Schedule tags to filter by (e.g., ["daily", "hourly"]).
+                Features are selected if any of their tags match these schedule names.
+                Defaults to None (all).
             feature_version: Explicit version override (e.g., "2.0.0"). If None, auto-detects.
             force: Overwrite existing features. Defaults to False.
             preview: Display preview of materialized data. Defaults to True.
@@ -502,7 +506,7 @@ class Definitions:
         """
         if online:
             online_results = self._build_online(
-                feature_names, tag_names, preview, preview_rows
+                feature_names, tag_names, schedule_names, preview, preview_rows
             )
             return BuildResult(
                 paths={k: str(v) for k, v in online_results.items()},
@@ -512,7 +516,7 @@ class Definitions:
             )
 
         selected_features = self._resolve_features_to_build(
-            feature_names, tag_names
+            feature_names, tag_names, schedule_names
         )
         results: dict[str, Path | str] = {}
         failed_features: list[str] = []
@@ -744,6 +748,7 @@ class Definitions:
         self,
         feature_names: list[str] | None,
         tag_names: list[str] | None,
+        schedule_names: list[str] | None,
         preview: bool,
         preview_rows: int,
     ) -> dict[str, int]:
@@ -757,6 +762,7 @@ class Definitions:
         Args:
             feature_names: Specific features to materialize
             tag_names: Specific features to materialize by tag
+            schedule_names: Schedule tags to filter by
             preview: Display preview of data being written
             preview_rows: Number of preview rows to show
 
@@ -773,7 +779,7 @@ class Definitions:
             )
 
         selected_features = self._resolve_features_to_build(
-            feature_names, tag_names
+            feature_names, tag_names, schedule_names
         )
         results: dict[str, int] = {}
 
@@ -1011,6 +1017,7 @@ class Definitions:
         self,
         feature_names: list[str] | None = None,
         tag_names: list[str] | None = None,
+        schedule_names: list[str] | None = None,
     ) -> list[validation_.FeatureValidationResult]:
         """
         Run validation checks on features without building.
@@ -1021,6 +1028,7 @@ class Definitions:
         Args:
             feature_names: Specific features to validate. Defaults to None (all).
             tag_names: Specific features to validate by tag. Defaults to None (all).
+            schedule_names: Schedule tags to filter by. Defaults to None (all).
 
         Returns:
             List of FeatureValidationResult objects, one per validated feature.
@@ -1036,7 +1044,7 @@ class Definitions:
                     print(f"{result.feature_name} failed validation")
         """
         selected_features = self._resolve_features_to_build(
-            feature_names, tag_names
+            feature_names, tag_names, schedule_names
         )
         results: list[validation_.FeatureValidationResult] = []
 
@@ -1239,6 +1247,7 @@ class Definitions:
         self,
         feature_names: list[str] | None,
         tag_names: list[str] | None,
+        schedule_names: list[str] | None = None,
     ) -> list[Feature]:
         """
         Resolve which features to build based on parameters.
@@ -1246,17 +1255,24 @@ class Definitions:
         Args:
             feature_names: Specific feature names to build, or None for all
             tag_names: Feature tags to filter by, or None
+            schedule_names: Schedule tags to filter by (e.g., ["daily", "hourly"]).
+                Features are selected if any of their tags match these schedule names.
 
         Returns:
             List of Feature objects to materialize
 
         Raises:
-            ValueError: If both feature_names and tag_names are specified,
+            ValueError: If multiple selection parameters are specified,
                        or if any feature/tag name is invalid
         """
-        if feature_names and tag_names:
+        # Check mutual exclusivity
+        selection_count = sum(
+            [bool(feature_names), bool(tag_names), bool(schedule_names)]
+        )
+        if selection_count > 1:
             raise ValueError(
-                "Cannot specify both --features and --tags. Choose one or the other."
+                "Cannot specify multiple selection criteria. "
+                "Choose one of: --features, --tags, or --schedule."
             )
 
         if feature_names:
@@ -1265,6 +1281,11 @@ class Definitions:
         if tag_names:
             self._validate_tags(tag_names)
             return self.list_features(tags=tag_names)
+
+        if schedule_names:
+            # Schedule tags (daily, hourly, weekly) are stored in the feature's tags list,
+            # so we reuse the existing tag filtering mechanism
+            return self.list_features(tags=schedule_names)
 
         return self.list_features()
 

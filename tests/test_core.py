@@ -446,6 +446,115 @@ def test_materialize_filters_by_tag_names():
         assert not store.exists("transaction_feature")
 
 
+def test_build_filters_by_schedule_names():
+    # Given features with schedule tags
+    with tempfile.TemporaryDirectory() as tmpdir:
+        source_path = Path(tmpdir) / "data.parquet"
+        pl.DataFrame({"id": [1, 2]}).write_parquet(source_path)
+
+        @feature(keys=["id"], source=str(source_path), tags=["users", "daily"])
+        def daily_feature(df):
+            return df.with_columns(pl.lit("daily").alias("schedule"))
+
+        @feature(keys=["id"], source=str(source_path), tags=["users", "hourly"])
+        def hourly_feature(df):
+            return df.with_columns(pl.lit("hourly").alias("schedule"))
+
+        @feature(keys=["id"], source=str(source_path), tags=["users", "weekly"])
+        def weekly_feature(df):
+            return df.with_columns(pl.lit("weekly").alias("schedule"))
+
+        store = LocalStore(tmpdir)
+        defs = Definitions(
+            name="test",
+            features=[daily_feature, hourly_feature, weekly_feature],
+            offline_store=store,
+        )
+
+        # When building with --schedule daily
+        results = defs.build(schedule_names=["daily"], preview=False)
+
+        # Then only daily-tagged features are built
+        assert "daily_feature" in results.paths
+        assert "hourly_feature" not in results.paths
+        assert "weekly_feature" not in results.paths
+        assert store.exists("daily_feature")
+        assert not store.exists("hourly_feature")
+        assert not store.exists("weekly_feature")
+
+
+def test_build_filters_by_multiple_schedule_names():
+    # Given features with schedule tags
+    with tempfile.TemporaryDirectory() as tmpdir:
+        source_path = Path(tmpdir) / "data.parquet"
+        pl.DataFrame({"id": [1, 2]}).write_parquet(source_path)
+
+        @feature(keys=["id"], source=str(source_path), tags=["daily"])
+        def daily_feature(df):
+            return df.with_columns(pl.lit("daily").alias("schedule"))
+
+        @feature(keys=["id"], source=str(source_path), tags=["hourly"])
+        def hourly_feature(df):
+            return df.with_columns(pl.lit("hourly").alias("schedule"))
+
+        @feature(keys=["id"], source=str(source_path), tags=["weekly"])
+        def weekly_feature(df):
+            return df.with_columns(pl.lit("weekly").alias("schedule"))
+
+        store = LocalStore(tmpdir)
+        defs = Definitions(
+            name="test",
+            features=[daily_feature, hourly_feature, weekly_feature],
+            offline_store=store,
+        )
+
+        # When building with --schedule daily,hourly
+        results = defs.build(schedule_names=["daily", "hourly"], preview=False)
+
+        # Then daily and hourly features are built, but not weekly
+        assert "daily_feature" in results.paths
+        assert "hourly_feature" in results.paths
+        assert "weekly_feature" not in results.paths
+
+
+def test_build_raises_on_multiple_selection_criteria():
+    # Given a definitions instance
+    with tempfile.TemporaryDirectory() as tmpdir:
+        source_path = Path(tmpdir) / "data.parquet"
+        pl.DataFrame({"id": [1]}).write_parquet(source_path)
+
+        @feature(keys=["id"], source=str(source_path), tags=["daily"])
+        def some_feature(df):
+            return df
+
+        store = LocalStore(tmpdir)
+        defs = Definitions(
+            name="test",
+            features=[some_feature],
+            offline_store=store,
+        )
+
+        # When/Then specifying both --features and --schedule should raise
+        with pytest.raises(
+            ValueError, match="Cannot specify multiple selection"
+        ):
+            defs.build(
+                feature_names=["some_feature"],
+                schedule_names=["daily"],
+                preview=False,
+            )
+
+        # When/Then specifying both --tags and --schedule should raise
+        with pytest.raises(
+            ValueError, match="Cannot specify multiple selection"
+        ):
+            defs.build(
+                tag_names=["daily"],
+                schedule_names=["daily"],
+                preview=False,
+            )
+
+
 def test_materialize_raises_on_none_return():
     # Given a feature that returns None
     with tempfile.TemporaryDirectory() as tmpdir:
