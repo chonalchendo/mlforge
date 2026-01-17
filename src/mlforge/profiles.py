@@ -96,9 +96,30 @@ class GCSStoreConfig(BaseModel, frozen=True):
         )
 
 
+class UnityCatalogStoreConfig(BaseModel, frozen=True):
+    """Configuration for Databricks Unity Catalog store."""
+
+    KIND: T.Literal["unity-catalog"] = "unity-catalog"
+    catalog: str
+    schema_: str = Field(default="features", alias="schema")
+    volume: str | None = None
+
+    model_config = {"populate_by_name": True}
+
+    def create(self) -> store_.UnityCatalogStore:
+        """Create store instance from this config."""
+        import mlforge.store as store_
+
+        return store_.UnityCatalogStore(
+            catalog=self.catalog,
+            schema=self.schema_,
+            volume=self.volume,
+        )
+
+
 # Discriminated union for offline stores
 OfflineStoreConfig = T.Annotated[
-    LocalStoreConfig | S3StoreConfig | GCSStoreConfig,
+    LocalStoreConfig | S3StoreConfig | GCSStoreConfig | UnityCatalogStoreConfig,
     Field(discriminator="KIND"),
 ]
 

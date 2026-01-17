@@ -340,7 +340,7 @@ def test_s3_store_initialization_success(mocker):
     # Given a mock S3FileSystem that confirms bucket exists
     mock_s3 = MagicMock()
     mock_s3.exists.return_value = True
-    mocker.patch("mlforge.store.s3fs.S3FileSystem", return_value=mock_s3)
+    mocker.patch("mlforge.stores.s3.s3fs.S3FileSystem", return_value=mock_s3)
 
     # When creating S3Store
     store = S3Store(bucket="test-bucket", prefix="features")
@@ -355,7 +355,7 @@ def test_s3_store_initialization_strips_prefix_slashes(mocker):
     # Given a mock S3FileSystem
     mock_s3 = MagicMock()
     mock_s3.exists.return_value = True
-    mocker.patch("mlforge.store.s3fs.S3FileSystem", return_value=mock_s3)
+    mocker.patch("mlforge.stores.s3.s3fs.S3FileSystem", return_value=mock_s3)
 
     # When creating S3Store with slashes in prefix
     store = S3Store(bucket="test-bucket", prefix="/features/")
@@ -368,7 +368,7 @@ def test_s3_store_initialization_raises_on_missing_bucket(mocker):
     # Given a mock S3FileSystem that reports bucket doesn't exist
     mock_s3 = MagicMock()
     mock_s3.exists.return_value = False
-    mocker.patch("mlforge.store.s3fs.S3FileSystem", return_value=mock_s3)
+    mocker.patch("mlforge.stores.s3.s3fs.S3FileSystem", return_value=mock_s3)
 
     # When/Then creating S3Store should raise ValueError
     with pytest.raises(
@@ -382,7 +382,7 @@ def test_s3_store_initialization_with_empty_prefix(mocker):
     # Given a mock S3FileSystem
     mock_s3 = MagicMock()
     mock_s3.exists.return_value = True
-    mocker.patch("mlforge.store.s3fs.S3FileSystem", return_value=mock_s3)
+    mocker.patch("mlforge.stores.s3.s3fs.S3FileSystem", return_value=mock_s3)
 
     # When creating S3Store with empty prefix
     store = S3Store(bucket="test-bucket", prefix="")
@@ -395,7 +395,7 @@ def test_s3_store_path_for_returns_versioned_s3_uri(mocker):
     # Given an S3Store with a feature
     mock_s3 = MagicMock()
     mock_s3.exists.return_value = True
-    mocker.patch("mlforge.store.s3fs.S3FileSystem", return_value=mock_s3)
+    mocker.patch("mlforge.stores.s3.s3fs.S3FileSystem", return_value=mock_s3)
     store = S3Store(bucket="my-bucket", prefix="prod/features")
 
     # Mock the latest pointer read
@@ -415,7 +415,7 @@ def test_s3_store_path_for_with_empty_prefix(mocker):
     # Given an S3Store with empty prefix
     mock_s3 = MagicMock()
     mock_s3.exists.return_value = True
-    mocker.patch("mlforge.store.s3fs.S3FileSystem", return_value=mock_s3)
+    mocker.patch("mlforge.stores.s3.s3fs.S3FileSystem", return_value=mock_s3)
     store = S3Store(bucket="my-bucket", prefix="")
 
     # When getting path for specific version
@@ -429,7 +429,7 @@ def test_s3_store_write_calls_polars_write_parquet(mocker, sample_dataframe):
     # Given an S3Store and mock write_parquet
     mock_s3 = MagicMock()
     mock_s3.exists.return_value = True
-    mocker.patch("mlforge.store.s3fs.S3FileSystem", return_value=mock_s3)
+    mocker.patch("mlforge.stores.s3.s3fs.S3FileSystem", return_value=mock_s3)
     mock_write = mocker.patch.object(pl.DataFrame, "write_parquet")
     store = S3Store(bucket="test-bucket", prefix="features")
 
@@ -453,7 +453,7 @@ def test_s3_store_list_versions(mocker):
         "test-bucket/features/feature/2.0.0",
         "test-bucket/features/feature/_latest.json",
     ]
-    mocker.patch("mlforge.store.s3fs.S3FileSystem", return_value=mock_s3)
+    mocker.patch("mlforge.stores.s3.s3fs.S3FileSystem", return_value=mock_s3)
     store = S3Store(bucket="test-bucket", prefix="features")
 
     # When listing versions
@@ -467,7 +467,7 @@ def test_s3_store_stores_region_attribute(mocker):
     # Given a mock S3FileSystem
     mock_s3 = MagicMock()
     mock_s3.exists.return_value = True
-    mocker.patch("mlforge.store.s3fs.S3FileSystem", return_value=mock_s3)
+    mocker.patch("mlforge.stores.s3.s3fs.S3FileSystem", return_value=mock_s3)
 
     # When creating S3Store with region
     store = S3Store(bucket="test-bucket", region="us-west-2")
@@ -480,7 +480,7 @@ def test_s3_store_region_defaults_to_none(mocker):
     # Given a mock S3FileSystem
     mock_s3 = MagicMock()
     mock_s3.exists.return_value = True
-    mocker.patch("mlforge.store.s3fs.S3FileSystem", return_value=mock_s3)
+    mocker.patch("mlforge.stores.s3.s3fs.S3FileSystem", return_value=mock_s3)
 
     # When creating S3Store without region
     store = S3Store(bucket="test-bucket")
