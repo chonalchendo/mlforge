@@ -1,21 +1,46 @@
 # Store API
 
-The store module defines interfaces and implementations for offline feature storage.
+The stores module provides interfaces and implementations for offline feature storage.
 
-## Abstract Base Classes
+## Abstract Base Class
 
-::: mlforge.store.Store
+::: mlforge.stores.base.Store
+
+---
 
 ## Implementations
 
-### Local Storage
+### LocalStore
 
-::: mlforge.store.LocalStore
+Local filesystem storage using Parquet files.
 
-### Cloud Storage
+::: mlforge.stores.local.LocalStore
 
-::: mlforge.store.S3Store
+### S3Store
+
+Amazon S3 cloud storage.
+
+::: mlforge.stores.s3.S3Store
+
+### GCSStore
+
+Google Cloud Storage.
+
+::: mlforge.stores.gcs.GCSStore
+
+### UnityCatalogStore
+
+Databricks Unity Catalog storage using Delta Lake.
+
+::: mlforge.stores.databricks_unity_catalog.UnityCatalogStore
+
+---
 
 ## Type Aliases
 
-::: mlforge.store.OfflineStoreKind
+```python
+from mlforge.stores import OfflineStoreKind
+
+# Type alias for all offline store implementations
+type OfflineStoreKind = LocalStore | S3Store | GCSStore | UnityCatalogStore
+```

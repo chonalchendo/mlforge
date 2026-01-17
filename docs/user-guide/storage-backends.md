@@ -2,6 +2,17 @@
 
 mlforge supports multiple storage backends for persisting built features. Configure backends via `mlforge.yaml` profiles or directly in your Definitions.
 
+## Overview
+
+| Backend | Use Case | Setup |
+|---------|----------|-------|
+| **LocalStore** | Development, single-machine | None |
+| **S3Store** | AWS production | AWS credentials |
+| **GCSStore** | GCP production | GCP credentials |
+| **UnityCatalogStore** | Databricks production | Databricks workspace |
+
+---
+
 ## Configuration via Profiles
 
 The recommended way to configure storage is via `mlforge.yaml`:
@@ -87,15 +98,6 @@ feature_store/
     │   └── .meta.json
     └── _latest.json
 ```
-
-**Key files:**
-
-| File | Purpose |
-|------|---------|
-| `data.parquet` | Materialized feature data |
-| `.meta.json` | Version metadata (schema, config, hashes) |
-| `_latest.json` | Pointer to latest version |
-| `.gitignore` | Excludes `*/data.parquet` for Git |
 
 ### Git Integration
 
@@ -198,30 +200,12 @@ Minimal policy for feature store access:
 }
 ```
 
-??? info "Read-Only Policy"
-    For production retrieval:
-    ```json
-    {
-      "Version": "2012-10-17",
-      "Statement": [
-        {
-          "Effect": "Allow",
-          "Action": ["s3:GetObject", "s3:ListBucket"],
-          "Resource": [
-            "arn:aws:s3:::my-features",
-            "arn:aws:s3:::my-features/*"
-          ]
-        }
-      ]
-    }
-    ```
-
 ### When to Use
 
-- Production deployments
+- Production deployments on AWS
 - Team collaboration (shared storage)
 - Large datasets
-- Multi-environment workflows (dev/staging/prod prefixes)
+- Multi-environment workflows
 
 ---
 
@@ -265,8 +249,6 @@ pip install mlforge-sdk[gcs]
 
 ### Authentication
 
-GCSStore uses standard Google Cloud credential resolution:
-
 === "Application Default Credentials"
     ```bash
     gcloud auth application-default login
@@ -280,21 +262,137 @@ GCSStore uses standard Google Cloud credential resolution:
 === "Workload Identity"
     When running on GCP (GKE, Cloud Run), use Workload Identity - no credentials needed.
 
-### IAM Roles
-
-Grant the `Storage Object Admin` role for full access, or `Storage Object Viewer` for read-only:
-
-```bash
-gcloud storage buckets add-iam-policy-binding gs://my-features \
-  --member="serviceAccount:my-sa@project.iam.gserviceaccount.com" \
-  --role="roles/storage.objectAdmin"
-```
-
 ### When to Use
 
 - GCP-based deployments
 - Integration with BigQuery, Vertex AI
 - Teams already using GCP
+
+---
+
+## UnityCatalogStore
+
+Databricks Unity Catalog storage backend using Delta Lake tables.
+
+### Prerequisites
+
+- Databricks workspace with Unity Catalog enabled
+- Active SparkSession (run in Databricks notebook or job)
+- `engine="pyspark"` in Definitions
+
+### Installation
+
+```bash
+pip install mlforge-sdk[databricks]
+```
+
+### Python Configuration
+
+```python
+import mlforge as mlf
+from mlforge.stores import UnityCatalogStore
+
+defs = mlf.Definitions(
+    name="my-project",
+    features=[user_spend],
+    offline_store=UnityCatalogStore(
+        catalog="main",
+        schema="features",
+    ),
+    engine="pyspark",
+)
+```
+
+### Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `catalog` | str | required | Unity Catalog catalog name |
+| `schema` | str | "features" | Schema (database) name |
+| `volume` | str | None | Optional volume for artifacts |
+
+### Storage Structure
+
+Features are stored as Delta tables with version tracking:
+
+```
+Unity Catalog:
+├── {catalog}
+│   └── {schema}
+│       ├── user_spend (Delta table)
+│       │   └── versions via Delta time travel
+│       ├── merchant_risk (Delta table)
+│       └── _mlforge_metadata (Delta table)
+│           └── Tracks version mapping: mlforge semver → Delta version
+```
+
+### Versioning
+
+UnityCatalogStore maps mlforge semantic versions to Delta table versions:
+
+| mlforge Version | Delta Version | Description |
+|-----------------|---------------|-------------|
+| 1.0.0 | 0 | Initial build |
+| 1.0.1 | 1 | Data change |
+| 1.1.0 | 2 | Schema change |
+
+Read specific versions using Delta time travel:
+
+```python
+# Read latest
+df = store.read("user_spend")
+
+# Read specific version
+df = store.read("user_spend", feature_version="1.0.0")
+```
+
+### Metadata Table
+
+The `_mlforge_metadata` table tracks:
+
+- Feature name and version
+- Delta table version mapping
+- Schema and content hashes
+- Row counts and timestamps
+- Entity and source information
+
+### When to Use
+
+- Databricks-native deployments
+- Unity Catalog for governance and lineage
+- Delta Lake for ACID transactions
+- Integration with Databricks ML workflows
+
+### Example: Full Databricks Setup
+
+```python
+import mlforge as mlf
+from mlforge.stores import UnityCatalogStore, DatabricksOnlineStore
+
+# Offline store: Delta tables in Unity Catalog
+offline_store = UnityCatalogStore(
+    catalog="main",
+    schema="features",
+)
+
+# Online store: Databricks Online Tables (auto-syncs from Delta)
+online_store = DatabricksOnlineStore(
+    catalog="main",
+    schema="features_online",
+    sync_mode="triggered",
+)
+
+defs = mlf.Definitions(
+    name="fraud-detection",
+    features=[user_spend, merchant_risk],
+    offline_store=offline_store,
+    online_store=online_store,
+    engine="pyspark",
+)
+
+# Build features
+defs.build(online=True)
+```
 
 ---
 
@@ -339,22 +437,16 @@ mlforge build --profile staging
 PROD_BUCKET=prod-features AWS_REGION=us-west-2 mlforge build --profile production
 ```
 
-Validate profile connectivity:
-
-```bash
-mlforge profile --validate
-mlforge profile --profile production --validate
-```
-
 ---
 
 ## Performance Considerations
 
 | Backend | Pros | Cons |
 |---------|------|------|
-| **LocalStore** | Fast (no network), simple setup, works offline | Limited by disk, not distributed |
-| **S3Store** | Unlimited storage, high durability, accessible anywhere | Network latency, transfer costs |
+| **LocalStore** | Fast (no network), simple setup | Limited by disk, not distributed |
+| **S3Store** | Unlimited storage, high durability | Network latency, transfer costs |
 | **GCSStore** | GCP integration, unlimited storage | Network latency, GCP-only |
+| **UnityCatalogStore** | Governance, Delta features | Databricks-only, requires Spark |
 
 ### Optimization Tips
 
@@ -366,7 +458,7 @@ mlforge profile --profile production --validate
 
 ## Next Steps
 
-- [Online Stores](online-stores.md) - Configure Redis for real-time serving
+- [Online Stores](online-stores.md) - Configure Redis, DynamoDB, or Databricks Online Tables
 - [Building Features](building-features.md) - Build features to storage
 - [Retrieving Features](retrieving-features.md) - Read features from storage
 - [Store API Reference](../api/store.md) - Detailed API documentation

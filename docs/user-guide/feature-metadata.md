@@ -166,7 +166,7 @@ Here's an example of how metadata is structured for a feature with validators an
 
 ```python
 from mlforge import feature
-from mlforge.metrics import Rolling
+from mlforge.metrics import Aggregate
 from mlforge.validators import not_null, greater_than_or_equal
 
 @feature(
@@ -175,10 +175,12 @@ from mlforge.validators import not_null, greater_than_or_equal
     timestamp="transaction_date",
     interval="1d",
     metrics=[
-        Rolling(
-            windows=["7d", "30d"],
-            aggregations={"amt": ["sum", "count", "mean"]}
-        )
+        Aggregate(field="amt", function="sum", windows=["7d", "30d"],
+                  name="total_spend", description="Total amount spent"),
+        Aggregate(field="amt", function="count", windows=["7d", "30d"],
+                  name="txn_count", description="Number of transactions"),
+        Aggregate(field="amt", function="mean", windows=["7d", "30d"],
+                  name="avg_spend", description="Average transaction amount"),
     ],
     validators={
         "amt": [not_null(), greater_than_or_equal(0)]
@@ -232,21 +234,21 @@ After building, the `.meta.json` file will contain:
   ],
   "features": [
     {
-      "name": "merchant_spend__amt__sum__1d__7d",
+      "name": "total_spend_1d_7d",
       "dtype": "Float64",
       "input": "amt",
       "agg": "sum",
       "window": "7d"
     },
     {
-      "name": "merchant_spend__amt__count__1d__7d",
+      "name": "txn_count_1d_7d",
       "dtype": "UInt32",
       "input": "amt",
       "agg": "count",
       "window": "7d"
     },
     {
-      "name": "merchant_spend__amt__mean__1d__7d",
+      "name": "avg_spend_1d_7d",
       "dtype": "Float64",
       "input": "amt",
       "agg": "mean",

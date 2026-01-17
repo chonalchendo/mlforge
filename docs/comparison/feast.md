@@ -25,10 +25,12 @@ import polars as pl
     timestamp="transaction_date",
     interval="1d",
     metrics=[
-        mlf.Rolling(
-            windows=["7d", "30d"],
-            aggregations={"amount": ["sum", "mean", "count"]}
-        )
+        mlf.Aggregate(field="amount", function="sum", windows=["7d", "30d"],
+                      name="total_spend", description="Total amount spent"),
+        mlf.Aggregate(field="amount", function="mean", windows=["7d", "30d"],
+                      name="avg_spend", description="Average transaction amount"),
+        mlf.Aggregate(field="amount", function="count", windows=["7d", "30d"],
+                      name="txn_count", description="Number of transactions"),
     ],
     validators={"amount": [mlf.not_null(), mlf.greater_than(0)]},
     description="User spending patterns"
@@ -37,7 +39,7 @@ def user_spend(df: pl.DataFrame) -> pl.DataFrame:
     return df.select(["user_id", "transaction_date", "amount"])
 ```
 
-**Lines of code: 15**
+**Lines of code: 19**
 
 ### Feast: Multiple Classes Required
 
@@ -87,7 +89,7 @@ user_spend_fv = FeatureView(
 | Aspect | mlforge | Feast |
 |--------|---------|-------|
 | **Feature definition** | Single `@feature` decorator | Entity + FeatureView + FileSource classes |
-| **Aggregations** | Built-in `Rolling` metrics | Pre-compute externally |
+| **Aggregations** | Built-in `Aggregate` metrics | Pre-compute externally |
 | **Validation** | Built-in validators | Requires Great Expectations integration |
 | **Type inference** | Automatic from Polars | Manual schema definition |
 
@@ -470,7 +472,10 @@ user_spend_fv = FeatureView(
     keys=["user_id"],
     source="data/transactions.parquet",
     timestamp="transaction_date",
-    metrics=[mlf.Rolling(windows=["7d"], aggregations={"amount": ["sum"]})]
+    metrics=[
+        mlf.Aggregate(field="amount", function="sum", windows=["7d"],
+                      name="total_spend", description="Total amount spent")
+    ]
 )
 def user_spend(df):
     return df.select(["user_id", "transaction_date", "amount"])

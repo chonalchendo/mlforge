@@ -9,8 +9,9 @@ mlforge provides a lightweight, Python-first approach to feature engineering and
 - **Simple API** - Define features with a decorator, build with one command
 - **Point-in-time correctness** - Automatic temporal joins prevent data leakage
 - **Feature versioning** - Automatic semantic versioning with content-hash tracking
-- **Multiple compute engines** - Choose Polars or DuckDB based on your needs
-- **Online & offline stores** - Redis for real-time serving, Parquet for batch
+- **Multiple compute engines** - Choose Polars, DuckDB, or PySpark based on your needs
+- **Flexible storage** - Local, S3, GCS, or Databricks Unity Catalog
+- **Online serving** - Redis, DynamoDB, or Databricks Online Tables for real-time inference
 - **Type-safe** - Built on Polars with unified type system across engines
 - **CLI included** - Build, list, sync, and manage features from the command line
 
@@ -80,13 +81,20 @@ features_df = get_online_features(
 )
 ```
 
+## Storage Options
+
+| Type | Options | Use Case |
+|------|---------|----------|
+| **Offline** | LocalStore, S3Store, GCSStore, UnityCatalogStore | Batch training data |
+| **Online** | RedisStore, DynamoDBStore, DatabricksOnlineStore | Real-time inference |
+
 ## Why mlforge?
 
 **Built for simplicity** - No infrastructure to manage, no complex configuration. Just Python functions and Parquet files.
 
 **Point-in-time correctness by default** - Temporal features are automatically joined using asof joins, preventing data leakage in your training sets.
 
-**Local development** - Perfect for prototyping, small projects, or teams that don't need distributed infrastructure.
+**Flexible deployment** - Start local, scale to cloud. Works with AWS, GCP, or Databricks.
 
 ## Installation
 
@@ -100,9 +108,29 @@ features_df = get_online_features(
     uv add mlforge-sdk
     ```
 
+### Optional Dependencies
+
+```bash
+# Cloud storage
+pip install mlforge-sdk[s3]       # Amazon S3
+pip install mlforge-sdk[gcs]      # Google Cloud Storage
+
+# Online stores
+pip install mlforge-sdk[redis]    # Redis
+pip install mlforge-sdk[dynamodb] # AWS DynamoDB
+
+# Databricks
+pip install mlforge-sdk[databricks]  # Unity Catalog + Online Tables
+
+# Compute engines
+pip install mlforge-sdk[duckdb]   # DuckDB engine
+```
+
 ## Next Steps
 
 - [Quickstart Guide](getting-started/quickstart.md) - Build your first feature in 5 minutes
 - [Defining Features](user-guide/defining-features.md) - Learn the `@feature` decorator
+- [Storage Backends](user-guide/storage-backends.md) - Configure offline storage
+- [Online Stores](user-guide/online-stores.md) - Set up real-time serving
 - [CLI Reference](cli.md) - Command-line tools for building features
 - [API Reference](api/core.md) - Complete API documentation

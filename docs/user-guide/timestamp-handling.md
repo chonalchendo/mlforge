@@ -238,18 +238,22 @@ timestamp = mlf.Timestamp(
     format="%Y-%m-%d %H:%M:%S",
 )
 
-# Define rolling metrics
-spend_metrics = mlf.Rolling(
-    windows=["1d", "7d", "30d"],
-    aggregations={"amt": ["sum", "mean", "count"]},
-)
+# Define aggregate metrics
+spend_metrics = [
+    mlf.Aggregate(field="amt", function="sum", windows=["1d", "7d", "30d"],
+                  name="total_spend", description="Total amount spent"),
+    mlf.Aggregate(field="amt", function="mean", windows=["1d", "7d", "30d"],
+                  name="avg_spend", description="Average transaction amount"),
+    mlf.Aggregate(field="amt", function="count", windows=["1d", "7d", "30d"],
+                  name="txn_count", description="Number of transactions"),
+]
 
 @mlf.feature(
     source=transactions,
     entities=[user],
     timestamp=timestamp,
     interval=timedelta(days=1),
-    metrics=[spend_metrics],
+    metrics=spend_metrics,
     tags=["user", "spending"],
 )
 def user_spend(df: pl.DataFrame) -> pl.DataFrame:
@@ -260,7 +264,7 @@ def user_spend(df: pl.DataFrame) -> pl.DataFrame:
     entities=[merchant],
     timestamp=timestamp,
     interval=timedelta(days=1),
-    metrics=[spend_metrics],
+    metrics=spend_metrics,
     tags=["merchant", "spending"],
 )
 def merchant_spend(df: pl.DataFrame) -> pl.DataFrame:

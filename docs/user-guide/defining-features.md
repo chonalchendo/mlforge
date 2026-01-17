@@ -171,7 +171,7 @@ Supported string formats: `"Ns"` (seconds), `"Nm"` (minutes), `"Nh"` (hours), `"
 
 #### metrics
 
-List of metric specifications for computing features. Currently supports `mlf.Rolling` for time-windowed aggregations.
+List of metric specifications for computing features. Use `mlf.Aggregate` for time-windowed aggregations.
 
 ```python
 import mlforge as mlf
@@ -183,10 +183,12 @@ from datetime import timedelta
     timestamp="transaction_time",
     interval="1d",
     metrics=[
-        mlf.Rolling(
-            windows=["7d", "30d"],  # Can use strings
-            aggregations={"amount": ["sum", "mean", "count"]}
-        )
+        mlf.Aggregate(field="amount", function="sum", windows=["7d", "30d"],
+                      name="total_spend", description="Total amount spent"),
+        mlf.Aggregate(field="amount", function="mean", windows=["7d", "30d"],
+                      name="avg_spend", description="Average transaction amount"),
+        mlf.Aggregate(field="amount", function="count", windows=["7d", "30d"],
+                      name="txn_count", description="Number of transactions"),
     ]
 )
 def user_transaction_metrics(df): ...
@@ -198,16 +200,30 @@ def user_transaction_metrics(df): ...
     timestamp="transaction_time",
     interval=timedelta(days=1),
     metrics=[
-        mlf.Rolling(
-            windows=[timedelta(days=7), timedelta(days=30)],  # timedelta objects
-            aggregations={"amount": ["sum", "mean", "count"]}
-        )
+        mlf.Aggregate(field="amount", function="sum",
+                      windows=[timedelta(days=7), timedelta(days=30)],
+                      name="total_spend", description="Total amount spent"),
+        mlf.Aggregate(field="amount", function="mean",
+                      windows=[timedelta(days=7), timedelta(days=30)],
+                      name="avg_spend", description="Average transaction amount"),
+        mlf.Aggregate(field="amount", function="count",
+                      windows=[timedelta(days=7), timedelta(days=30)],
+                      name="txn_count", description="Number of transactions"),
     ]
 )
 def user_transaction_metrics(df): ...
 ```
 
-The `mlf.Rolling` metric computes aggregations over sliding time windows. Output column names follow the pattern: `{tag}__{column}__{aggregation}__{window}__{interval}`.
+The `mlf.Aggregate` metric computes aggregations over sliding time windows. Each `Aggregate` specifies a single aggregation function with explicit parameters:
+
+- `field`: Source column to aggregate
+- `function`: Aggregation function (`sum`, `count`, `mean`, `min`, `max`, `std`, `median`)
+- `windows`: List of time windows (e.g., `["7d", "30d"]`)
+- `name`: Base name for output columns
+- `description`: Human-readable description
+- `unit`: Optional unit of measurement (e.g., `"USD"`)
+
+Output column names follow the pattern: `{name}_{interval}_{window}` (e.g., `total_spend_1d_7d`).
 
 ## Feature Functions
 
