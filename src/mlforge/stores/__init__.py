@@ -14,6 +14,7 @@ Offline Stores:
 Online Stores:
     RedisStore: Redis for real-time serving
     DynamoDBStore: AWS DynamoDB for serverless serving
+    DatabricksOnlineStore: Databricks Online Tables for managed serving
 
 Example:
     from mlforge.stores import LocalStore, RedisStore
@@ -23,6 +24,7 @@ Example:
 """
 
 from mlforge.stores.base import OnlineStore, Store
+from mlforge.stores.databricks_online_tables import DatabricksOnlineStore
 from mlforge.stores.dynamodb import DynamoDBStore
 from mlforge.stores.gcs import GCSStore
 from mlforge.stores.local import LocalStore
@@ -46,6 +48,7 @@ __all__ = [
     # Online stores
     "RedisStore",
     "DynamoDBStore",
+    "DatabricksOnlineStore",
     # Type aliases
     "OfflineStoreKind",
     "OnlineStoreKind",

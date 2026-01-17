@@ -6,13 +6,14 @@ New code should import directly from mlforge.stores.
 
 Example:
     # Preferred (new code)
-    from mlforge.stores import RedisStore, DynamoDBStore
+    from mlforge.stores import RedisStore, DynamoDBStore, DatabricksOnlineStore
 
     # Also works (backward compatibility)
-    from mlforge.online import RedisStore, DynamoDBStore
+    from mlforge.online import RedisStore, DatabricksOnlineStore
 """
 
 from mlforge.stores import (
+    DatabricksOnlineStore,
     DynamoDBStore,
     OnlineStore,
     OnlineStoreKind,
@@ -24,6 +25,7 @@ __all__ = [
     "OnlineStore",
     "RedisStore",
     "DynamoDBStore",
+    "DatabricksOnlineStore",
     "OnlineStoreKind",
     "_compute_entity_hash",
 ]

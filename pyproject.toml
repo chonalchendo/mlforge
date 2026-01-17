@@ -118,7 +118,7 @@ major_version_zero = true
 bump_map = { "feat" = "MINOR", "fix" = "PATCH", "refactor" = "PATCH", "perf" = "PATCH" }
 bump_pattern = "^(feat|fix|refactor|perf)(\\(.+\\))?(!)?:"
 
-# Ignore unresolved-import for files using PySpark (optional dependency)
+# Ignore unresolved-import for files using PySpark/Databricks SDK (optional dependencies)
 [[tool.ty.overrides]]
 include = [
     "**/pyspark.py",
@@ -126,6 +126,9 @@ include = [
     "**/types.py",
     "**/unity_catalog.py",
     "**/test_unity_catalog*.py",
+    "**/databricks_unity_catalog.py",
+    "**/databricks_online_tables.py",
+    "**/test_databricks*.py",
 ]
 
 [tool.ty.overrides.rules]

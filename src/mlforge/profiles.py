@@ -177,9 +177,34 @@ class DynamoDBStoreConfig(BaseModel, frozen=True):
         )
 
 
+class DatabricksOnlineStoreConfig(BaseModel, frozen=True):
+    """Configuration for Databricks Online Tables store."""
+
+    KIND: T.Literal["databricks-online-tables"] = "databricks-online-tables"
+    catalog: str
+    schema_: str = Field(default="features_online", alias="schema")
+    sync_mode: T.Literal["snapshot", "triggered", "continuous"] = "triggered"
+    auto_create: bool = True
+    warehouse_id: str | None = None
+
+    model_config = {"populate_by_name": True}
+
+    def create(self) -> online_.DatabricksOnlineStore:
+        """Create store instance from this config."""
+        import mlforge.online as online_
+
+        return online_.DatabricksOnlineStore(
+            catalog=self.catalog,
+            schema=self.schema_,
+            sync_mode=self.sync_mode,
+            auto_create=self.auto_create,
+            warehouse_id=self.warehouse_id,
+        )
+
+
 # Discriminated union for online stores
 OnlineStoreConfig = T.Annotated[
-    RedisStoreConfig | DynamoDBStoreConfig,
+    RedisStoreConfig | DynamoDBStoreConfig | DatabricksOnlineStoreConfig,
     Field(discriminator="KIND"),
 ]
 

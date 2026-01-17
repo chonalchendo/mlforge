@@ -49,6 +49,8 @@ Public API:
 
     Online Stores:
         RedisStore: Redis for real-time serving
+        DynamoDBStore: AWS DynamoDB for serverless serving
+        DatabricksOnlineStore: Databricks Online Tables for Databricks-native serving
         OnlineStore: Abstract base class
 
     Source Configuration:
@@ -78,7 +80,12 @@ from mlforge.entities import Entity
 from mlforge.integrations import mlflow
 from mlforge.integrations.mlflow import log_features_to_mlflow
 from mlforge.metrics import Rolling
-from mlforge.online import DynamoDBStore, OnlineStore, RedisStore
+from mlforge.online import (
+    DatabricksOnlineStore,
+    DynamoDBStore,
+    OnlineStore,
+    RedisStore,
+)
 from mlforge.retrieval import FeatureSpec
 from mlforge.sources import CSVFormat, DeltaFormat, ParquetFormat, Source
 from mlforge.store import GCSStore, LocalStore, S3Store, UnityCatalogStore
@@ -111,6 +118,7 @@ __all__ = [
     "OnlineStore",
     "RedisStore",
     "DynamoDBStore",
+    "DatabricksOnlineStore",
     "Timestamp",
     "surrogate_key",
     "Rolling",
