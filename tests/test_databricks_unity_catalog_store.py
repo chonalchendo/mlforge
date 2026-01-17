@@ -9,12 +9,11 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from mlforge.stores.unity_catalog import (
+from mlforge.stores.databricks_unity_catalog import (
     UnityCatalogStore,
     _escape_string,
     _validate_identifier,
 )
-
 
 # =============================================================================
 # Helper Function Tests
@@ -85,7 +84,7 @@ class TestUnityCatalogStoreInit:
         """Should raise ImportError when pyspark not installed."""
         with patch.dict("sys.modules", {"pyspark": None, "pyspark.sql": None}):
             with patch(
-                "mlforge.stores.unity_catalog.UnityCatalogStore._get_spark_session"
+                "mlforge.stores.databricks_unity_catalog.UnityCatalogStore._get_spark_session"
             ) as mock_get:
                 mock_get.side_effect = ImportError(
                     "pyspark is required for UnityCatalogStore"
@@ -96,7 +95,7 @@ class TestUnityCatalogStoreInit:
     def test_raises_without_active_session(self):
         """Should raise RuntimeError when no SparkSession."""
         with patch(
-            "mlforge.stores.unity_catalog.UnityCatalogStore._get_spark_session"
+            "mlforge.stores.databricks_unity_catalog.UnityCatalogStore._get_spark_session"
         ) as mock_get:
             mock_get.side_effect = RuntimeError("No active SparkSession")
             with pytest.raises(RuntimeError, match="SparkSession"):
@@ -107,7 +106,7 @@ class TestUnityCatalogStoreInit:
         with pytest.raises(ValueError, match="Invalid catalog"):
             # Need to bypass the spark session check
             with patch(
-                "mlforge.stores.unity_catalog.UnityCatalogStore._get_spark_session"
+                "mlforge.stores.databricks_unity_catalog.UnityCatalogStore._get_spark_session"
             ):
                 UnityCatalogStore(catalog="invalid-name")
 
@@ -115,7 +114,7 @@ class TestUnityCatalogStoreInit:
         """Should reject invalid schema names."""
         with pytest.raises(ValueError, match="Invalid schema"):
             with patch(
-                "mlforge.stores.unity_catalog.UnityCatalogStore._get_spark_session"
+                "mlforge.stores.databricks_unity_catalog.UnityCatalogStore._get_spark_session"
             ):
                 UnityCatalogStore(catalog="main", schema="invalid.schema")
 
@@ -138,7 +137,7 @@ def mock_spark():
 def unity_store(mock_spark):
     """Create a UnityCatalogStore with mocked SparkSession."""
     with patch(
-        "mlforge.stores.unity_catalog.UnityCatalogStore._get_spark_session",
+        "mlforge.stores.databricks_unity_catalog.UnityCatalogStore._get_spark_session",
         return_value=mock_spark,
     ):
         store = UnityCatalogStore(catalog="main", schema="features")

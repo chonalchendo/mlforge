@@ -25,12 +25,12 @@ Example:
 
 from mlforge.stores.base import OnlineStore, Store
 from mlforge.stores.databricks_online_tables import DatabricksOnlineStore
+from mlforge.stores.databricks_unity_catalog import UnityCatalogStore
 from mlforge.stores.dynamodb import DynamoDBStore
 from mlforge.stores.gcs import GCSStore
 from mlforge.stores.local import LocalStore
 from mlforge.stores.redis import RedisStore
 from mlforge.stores.s3 import S3Store
-from mlforge.stores.unity_catalog import UnityCatalogStore
 
 # Type aliases for store implementations
 type OfflineStoreKind = LocalStore | S3Store | GCSStore | UnityCatalogStore
