@@ -9,7 +9,7 @@ This example demonstrates the full mlforge workflow with Databricks:
 ## Features
 
 - **`pickup_zone_stats`**: Trip statistics aggregated by pickup zip code
-- **`dropoff_zone_stats`**: Trip statistics aggregated by dropoff zip code  
+- **`dropoff_zone_stats`**: Trip statistics aggregated by dropoff zip code
 - **`route_stats`**: Statistics for pickup-dropoff route pairs
 
 All features use the `samples.nyctaxi.trips` sample dataset available in Databricks.

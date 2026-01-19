@@ -70,7 +70,7 @@ print("\n[3/3] Verifying tables in Unity Catalog...")
 
 try:
     from pyspark.sql import SparkSession
-    
+
     spark = SparkSession.getActiveSession()
     if spark:
         catalog = os.environ.get('DATABRICKS_SANDBOX_CATALOG')

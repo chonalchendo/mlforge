@@ -130,7 +130,7 @@ try:
     def pickup_stats():
         """Count trips per pickup zip code."""
         return """
-            SELECT 
+            SELECT
                 pickup_zip,
                 COUNT(*) as trip_count,
                 AVG(trip_distance) as avg_distance

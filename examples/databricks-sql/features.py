@@ -14,7 +14,7 @@ trips = Source(table="samples.nyctaxi.trips")
 def pickup_zone_stats():
     """Aggregate statistics per pickup zone."""
     return """
-        SELECT 
+        SELECT
             pickup_zip,
             COUNT(*) as trip_count,
             AVG(trip_distance) as avg_distance,
@@ -30,7 +30,7 @@ def pickup_zone_stats():
 def dropoff_zone_stats():
     """Aggregate statistics per dropoff zone."""
     return """
-        SELECT 
+        SELECT
             dropoff_zip,
             COUNT(*) as trip_count,
             AVG(trip_distance) as avg_distance,
@@ -45,7 +45,7 @@ def dropoff_zone_stats():
 def route_stats():
     """Statistics for pickup-dropoff route pairs."""
     return """
-        SELECT 
+        SELECT
             pickup_zip,
             dropoff_zip,
             COUNT(*) as trip_count,
@@ -53,7 +53,7 @@ def route_stats():
             AVG(fare_amount) as avg_fare,
             PERCENTILE_APPROX(fare_amount, 0.5) as median_fare
         FROM {source}
-        WHERE pickup_zip IS NOT NULL 
+        WHERE pickup_zip IS NOT NULL
           AND dropoff_zip IS NOT NULL
         GROUP BY pickup_zip, dropoff_zip
         HAVING COUNT(*) >= 10

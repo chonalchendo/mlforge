@@ -12,7 +12,7 @@ Prerequisites:
 Usage:
     1. Set your sandbox catalog in .env:
        DATABRICKS_SANDBOX_CATALOG=dev_yourname
-    
+
     2. Run: python verify_databricks_write.py
 """
 
@@ -114,13 +114,13 @@ try:
         .saveAsTable(f"{sandbox_catalog}.features.test_pickup_stats")
     )
     print("   Write successful!")
-    
+
     # Verify by reading back
     verify_df = spark.read.table(f"{sandbox_catalog}.features.test_pickup_stats")
     print(f"   Verified: {verify_df.count():,} rows in table")
     print("\n   Sample data:")
     verify_df.limit(5).show()
-    
+
 except Exception as e:
     print(f"   Write failed: {e}")
     print("\n   Common issues:")

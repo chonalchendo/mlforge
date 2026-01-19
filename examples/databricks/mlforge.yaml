@@ -22,7 +22,7 @@ profiles:
 
   databricks:
     offline_store:
-      KIND: databricks-unity-catalog
+      KIND: unity-catalog
       catalog: main
       schema: ml_features
     online_store:
@@ -34,7 +34,7 @@ profiles:
   # Continuous sync for near real-time feature updates
   databricks_realtime:
     offline_store:
-      KIND: databricks-unity-catalog
+      KIND: unity-catalog
       catalog: main
       schema: ml_features
     online_store:
@@ -42,3 +42,15 @@ profiles:
       catalog: main
       schema: ml_features_online
       sync_mode: continuous
+
+  # Testing profile - isolated schema for integration tests
+  test:
+    offline_store:
+      KIND: unity-catalog
+      catalog: main
+      schema: mlforge_test
+    online_store:
+      KIND: databricks-online-tables
+      catalog: main
+      schema: mlforge_test_online
+      sync_mode: triggered

@@ -69,14 +69,14 @@ print(f"\n[2/4] Building {len(feature_list)} features...")
 results = {}
 for i, feat in enumerate(feature_list, 1):
     print(f"\n   [{i}/{len(feature_list)}] Building {feat.name}...")
-    
+
     try:
         result = engine.execute(feat)
         results[feat.name] = result
-        
+
         print(f"       Rows: {result.row_count()}")
         print(f"       Columns: {list(result.schema().keys())}")
-        
+
     except Exception as e:
         print(f"       ERROR: {e}")
         continue
