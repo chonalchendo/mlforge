@@ -128,11 +128,28 @@ class PySparkEngine(base.Engine):
 
         # Run validators on processed dataframe (before metrics)
         if feature.validators:
-            # Convert to Polars for validation (validators expect Polars DataFrames)
-            polars_df = pl.from_pandas(processed_df.toPandas())
-            validation.run_validators_or_raise(
-                feature.name, polars_df, feature.validators
+            from mlforge import utils
+
+            is_remote = utils.is_databricks_connect_session(
+                processed_df.sparkSession
             )
+
+            if is_remote:
+                # For remote execution, skip validators to avoid downloading data
+                # TODO: Implement PySpark-native validators that run on Databricks
+                from loguru import logger
+
+                logger.warning(
+                    f"Validators for '{feature.name}' skipped in remote execution mode. "
+                    f"Validators require downloading data locally which defeats remote compute. "
+                    f"Consider removing validators or running locally for validation."
+                )
+            else:
+                # Local PySpark: safe to download for validation
+                polars_df = pl.from_pandas(processed_df.toPandas())
+                validation.run_validators_or_raise(
+                    feature.name, polars_df, feature.validators
+                )
 
         if not feature.metrics:
             return results_.PySparkResult(processed_df, base_schema=base_schema)
@@ -229,7 +246,7 @@ class PySparkEngine(base.Engine):
         Load source data as Spark DataFrame.
 
         Args:
-            source: Source object specifying path and format
+            source: Source object specifying path/table and format
 
         Returns:
             Spark DataFrame containing source data
@@ -237,6 +254,16 @@ class PySparkEngine(base.Engine):
         Raises:
             ValueError: If file format is not supported
         """
+        # Handle Unity Catalog tables
+        if source.is_unity_catalog:
+            if (
+                source.table is None
+            ):  # Should never happen - is_unity_catalog guarantees
+                raise ValueError("Unity Catalog source must have table name")
+            return self._spark.read.table(source.table)
+
+        if source.path is None:  # Should never happen for file-based sources
+            raise ValueError("File-based source must have path")
         path = source.path
         fmt = source.format
 

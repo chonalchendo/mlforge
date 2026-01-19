@@ -193,6 +193,12 @@ class DuckDBEngine(Engine):
         path = source.path
         fmt = source.format
 
+        if path is None:
+            raise ValueError(
+                f"DuckDB engine requires file-based source, "
+                f"got Unity Catalog table: {source.table}"
+            )
+
         match fmt:
             case sources.ParquetFormat():
                 # DuckDB read_parquet doesn't support row_groups directly

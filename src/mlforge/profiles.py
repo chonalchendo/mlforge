@@ -96,7 +96,25 @@ class GCSStoreConfig(BaseModel, frozen=True):
 
 
 class UnityCatalogStoreConfig(BaseModel, frozen=True):
-    """Configuration for Databricks Unity Catalog store."""
+    """
+    Configuration for Databricks Unity Catalog store.
+
+    When used with Databricks Connect (running locally), the Databricks
+    config from the root mlforge.yaml will be used to create the SparkSession.
+
+    Example mlforge.yaml:
+        databricks:
+          host: ${oc.env:DATABRICKS_HOST}
+          token: ${oc.env:DATABRICKS_TOKEN}
+          serverless: true
+
+        profiles:
+          dev:
+            offline_store:
+              KIND: unity-catalog
+              catalog: dev_sandbox
+              schema: features
+    """
 
     KIND: T.Literal["unity-catalog"] = "unity-catalog"
     catalog: str
@@ -105,9 +123,27 @@ class UnityCatalogStoreConfig(BaseModel, frozen=True):
 
     model_config = {"populate_by_name": True}
 
-    def create(self) -> stores.UnityCatalogStore:
-        """Create store instance from this config."""
+    def create(
+        self,
+        databricks_config: DatabricksComputeConfig | None = None,
+    ) -> stores.UnityCatalogStore:
+        """
+        Create store instance from this config.
+
+        Args:
+            databricks_config: Optional Databricks config for creating
+                SparkSession via Databricks Connect. If None, assumes
+                we're running inside Databricks with an active session.
+
+        Returns:
+            UnityCatalogStore instance
+        """
         import mlforge.stores as stores
+
+        # If databricks_config provided, create session via Databricks Connect
+        if databricks_config is not None:
+            # Create the SparkSession - this makes it the active session
+            databricks_config.create_spark_session()
 
         return stores.UnityCatalogStore(
             catalog=self.catalog,
@@ -209,6 +245,100 @@ OnlineStoreConfig = T.Annotated[
 
 
 # =============================================================================
+# Databricks Connection Config
+# =============================================================================
+
+
+class DatabricksComputeConfig(BaseModel, frozen=True):
+    """
+    Databricks compute configuration for Databricks Connect.
+
+    Specifies how to connect to Databricks for PySpark execution.
+    Supports serverless compute (recommended) or specific clusters.
+
+    Example mlforge.yaml:
+        databricks:
+          host: ${oc.env:DATABRICKS_HOST}
+          token: ${oc.env:DATABRICKS_TOKEN}
+          serverless: true
+    """
+
+    host: str = Field(
+        description="Databricks workspace hostname (without https://)"
+    )
+    token: str = Field(description="Personal access token")
+
+    # Compute options (one of these should be set)
+    serverless: bool = Field(
+        default=True,
+        description="Use serverless compute (recommended for dev)",
+    )
+    cluster_id: str | None = Field(
+        default=None,
+        description="Specific cluster ID (alternative to serverless)",
+    )
+
+    # SQL Connector settings (for DatabricksSQLEngine)
+    http_path: str | None = Field(
+        default=None,
+        description="SQL Warehouse HTTP path (for SQL queries)",
+    )
+
+    def create_spark_session(self) -> "SparkSession":
+        """
+        Create a SparkSession via Databricks Connect.
+
+        Returns:
+            SparkSession connected to Databricks
+
+        Raises:
+            ImportError: If databricks-connect is not installed
+            ValueError: If neither serverless nor cluster_id is configured
+        """
+        try:
+            from databricks.connect import DatabricksSession
+        except ImportError as e:
+            raise ImportError(
+                "databricks-connect is required for Databricks Connect.\n\n"
+                "Install with:\n"
+                "    pip install mlforge[databricks-connect]"
+            ) from e
+
+        # Ensure host doesn't have https:// prefix
+        host = self.host.replace("https://", "").replace("http://", "")
+
+        builder = DatabricksSession.builder.remote(
+            host=f"https://{host}",
+            token=self.token,
+        )
+
+        if self.serverless:
+            builder = builder.serverless(True)
+        elif self.cluster_id:
+            builder = builder.clusterId(self.cluster_id)
+        else:
+            raise ValueError(
+                "Databricks compute requires either serverless=true or cluster_id.\n\n"
+                "Configure in mlforge.yaml:\n"
+                "    databricks:\n"
+                "      serverless: true  # Recommended\n"
+                "      # OR\n"
+                "      cluster_id: 0123-456789-abcdef"
+            )
+
+        return builder.getOrCreate()
+
+
+# Backward compatibility alias
+DatabricksConnectionConfig = DatabricksComputeConfig
+
+
+# Type hint for SparkSession (only used in type hints)
+if T.TYPE_CHECKING:
+    from pyspark.sql import SparkSession
+
+
+# =============================================================================
 # Profile and Root Config
 # =============================================================================
 
@@ -218,6 +348,8 @@ class ProfileConfig(BaseModel, frozen=True):
 
     offline_store: OfflineStoreConfig
     online_store: OnlineStoreConfig | None = None
+    # Profile-level databricks config (overrides root-level)
+    databricks: DatabricksComputeConfig | None = None
 
 
 class MlforgeConfig(BaseModel, frozen=True):
@@ -225,6 +357,7 @@ class MlforgeConfig(BaseModel, frozen=True):
 
     default_profile: str = "dev"
     profiles: dict[str, ProfileConfig]
+    databricks: DatabricksConnectionConfig | None = None
 
 
 # =============================================================================

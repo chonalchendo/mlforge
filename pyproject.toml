@@ -20,6 +20,7 @@ dependencies = [
     "fastapi>=0.115.0",
     "uvicorn>=0.34.0",
     "prometheus-client>=0.21.0",
+    "python-dotenv>=1.0.0",
 ]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -39,6 +40,12 @@ databricks = [
     "pyspark>=3.5.0",
     "databricks-sdk>=0.20.0",
     "delta-spark>=3.0.0",
+]
+databricks-connect = [
+    "databricks-connect>=15.0.0",
+]
+databricks-sql = [
+    "databricks-sql-connector>=3.0.0",
 ]
 all = ["duckdb>=1.4.3", "redis>=7.1.0", "gcsfs>=2025.12.0", "mlflow>=2.0.0", "pyspark>=3.5.0"]
 gcs = [
@@ -125,13 +132,18 @@ include = [
     "**/pyspark.py",
     "**/test_pyspark.py",
     "**/types.py",
+    "**/profiles.py",
     "**/databricks_unity_catalog.py",
     "**/databricks_online_tables.py",
+    "**/engines/databricks_sql.py",
     "**/test_databricks*.py",
+    "**/core.py",
 ]
 
 [tool.ty.overrides.rules]
 unresolved-import = "ignore"
+unresolved-attribute = "ignore"
+invalid-argument-type = "ignore"
 
 [tool.ruff]
 fix = true

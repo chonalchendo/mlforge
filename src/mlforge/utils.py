@@ -62,3 +62,21 @@ def apply_entity_keys(
                 surrogate_key(*entity.from_columns).alias(entity.join_key)
             )
     return df
+
+
+def is_databricks_connect_session(spark_session) -> bool:
+    """
+    Check if SparkSession is Databricks Connect (remote execution).
+
+    Databricks Connect uses pyspark.sql.connect.session.SparkSession
+    which is different from local pyspark.sql.session.SparkSession.
+    When using Databricks Connect, Spark operations execute on remote
+    Databricks compute, not locally.
+
+    Args:
+        spark_session: A PySpark SparkSession object
+
+    Returns:
+        True if the session is a Databricks Connect session (remote execution)
+    """
+    return "connect" in type(spark_session).__module__

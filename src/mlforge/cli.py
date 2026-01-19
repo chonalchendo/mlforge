@@ -3,12 +3,20 @@ from pathlib import Path
 from typing import Annotated
 
 import cyclopts
+from dotenv import find_dotenv, load_dotenv
 
 import mlforge.errors as errors
 import mlforge.loader as loader
 import mlforge.logging as log
 import mlforge.profiles as profiles_
 import mlforge.stores as stores
+
+# Load .env file from current working directory on CLI startup.
+# This allows users to define environment variables (e.g., DATABRICKS_HOST)
+# in a .env file rather than exporting them in the shell.
+# Existing environment variables are NOT overwritten.
+# Note: usecwd=True is required to search from CWD, not from this file's location.
+load_dotenv(find_dotenv(usecwd=True))
 
 app = cyclopts.App(name="mlforge", help="A simple feature store SDK")
 

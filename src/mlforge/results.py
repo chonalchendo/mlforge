@@ -344,6 +344,39 @@ class PySparkResult(EngineResult):
         """Convert to Polars DataFrame for inspection."""
         return self._to_polars_cached()
 
+    def to_spark(self):
+        """Get the underlying Spark DataFrame.
+
+        Returns:
+            pyspark.sql.DataFrame: The wrapped Spark DataFrame
+        """
+        return self._spark_df
+
+    def to_polars_preview(self, max_rows: int = 10) -> pl.DataFrame:
+        """Get a limited preview as Polars DataFrame.
+
+        Only downloads `max_rows` from Databricks, avoiding full data transfer.
+        Use this for previews instead of to_polars() which downloads everything.
+
+        Args:
+            max_rows: Maximum number of rows to download (default 10)
+
+        Returns:
+            Polars DataFrame with at most max_rows rows
+        """
+        limited_df = self._spark_df.limit(max_rows)
+        return pl.from_pandas(limited_df.toPandas())
+
+    def is_remote(self) -> bool:
+        """Check if this result is backed by remote compute (Databricks Connect).
+
+        Returns:
+            True if the Spark session is a Databricks Connect session
+        """
+        from mlforge import utils
+
+        return utils.is_databricks_connect_session(self._spark_df.sparkSession)
+
     @override
     def row_count(self) -> int:
         """Get number of rows in result."""
@@ -398,4 +431,88 @@ class PySparkResult(EngineResult):
         return "pyspark"
 
 
-ResultKind = PolarsResult | DuckDBResult | PySparkResult
+class DatabricksSQLResult(EngineResult):
+    """
+    Result wrapper for Databricks SQL Connector queries.
+
+    Wraps raw SQL results and provides conversion to Polars DataFrame
+    and parquet output.
+
+    Attributes:
+        _columns: Column names from query
+        _rows: Result rows as list of tuples
+        _sql: Original SQL query (for debugging)
+    """
+
+    def __init__(
+        self,
+        columns: list[str],
+        rows: list[tuple],
+        sql: str,
+    ) -> None:
+        """
+        Initialize SQL result.
+
+        Args:
+            columns: Column names from query
+            rows: Result rows as list of tuples
+            sql: Original SQL query (for debugging)
+        """
+        self._columns = columns
+        self._rows = rows
+        self._sql = sql
+        self._df_cache: pl.DataFrame | None = None
+
+    def _to_polars_cached(self) -> pl.DataFrame:
+        """Convert to Polars DataFrame with caching."""
+        if self._df_cache is None:
+            # Convert rows to dict format for Polars
+            data: dict[str, list] = {col: [] for col in self._columns}
+            for row in self._rows:
+                for col, val in zip(self._columns, row):
+                    data[col].append(val)
+
+            self._df_cache = pl.DataFrame(data)
+        return self._df_cache
+
+    @override
+    def write_parquet(self, path: Path | str) -> None:
+        """Write result to parquet file."""
+        self._to_polars_cached().write_parquet(path)
+
+    @override
+    def to_polars(self) -> pl.DataFrame:
+        """Convert to Polars DataFrame for inspection."""
+        return self._to_polars_cached()
+
+    @override
+    def row_count(self) -> int:
+        """Get number of rows."""
+        return len(self._rows)
+
+    @override
+    def schema(self) -> dict[str, str]:
+        """Get result schema from Polars DataFrame."""
+        df = self._to_polars_cached()
+        return {name: str(dtype) for name, dtype in df.schema.items()}
+
+    @override
+    def schema_canonical(self) -> dict[str, types_.DataType]:
+        """Get result schema with canonical types."""
+        return {
+            name: types_.from_polars(dtype)
+            for name, dtype in self._to_polars_cached().schema.items()
+        }
+
+    @override
+    def base_schema(self) -> dict[str, str] | None:
+        """Get base schema (same as schema for SQL results)."""
+        return self.schema()
+
+    @override
+    def _schema_source(self) -> str:
+        """Get schema source identifier."""
+        return "polars"  # We convert to Polars for schema
+
+
+ResultKind = PolarsResult | DuckDBResult | PySparkResult | DatabricksSQLResult

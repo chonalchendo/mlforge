@@ -106,8 +106,12 @@ class Feature:
     engine: str | None
 
     @property
-    def source_path(self) -> str:
-        """Get the source path, whether source is a string or Source object."""
+    def source_path(self) -> str | None:
+        """Get the source path, whether source is a string or Source object.
+
+        Returns:
+            Source path, or None for Unity Catalog table sources.
+        """
         if isinstance(self.source, sources.Source):
             return self.source.path
         return self.source
@@ -117,7 +121,7 @@ class Feature:
         """Get source as a Source object, converting string if needed."""
         if isinstance(self.source, sources.Source):
             return self.source
-        return sources.Source(self.source)
+        return sources.Source(path=self.source)
 
     @property
     def timestamp_column(self) -> str | None:
@@ -350,6 +354,9 @@ class Definitions:
         self.features: dict[str, Feature] = {}
         self.default_engine = default_engine
         self._engines: dict[str, engines.EngineKind] = {}
+        self._databricks_config: profiles_.DatabricksConnectionConfig | None = (
+            None
+        )
 
         # Indexes for O(1) lookups
         self._entities: dict[str, entities_.Entity] = {}
@@ -366,8 +373,27 @@ class Definitions:
             resolved_offline = offline_store
         else:
             # Try to load from profile
+            mlforge_config = profiles_.load_config()
             profile_config = profiles_.load_profile(profile)
-            resolved_offline = profile_config.offline_store.create()
+
+            # Resolve databricks config (profile-level overrides root-level)
+            databricks_config = profile_config.databricks or (
+                mlforge_config.databricks if mlforge_config else None
+            )
+
+            # Store databricks config for potential engine use
+            self._databricks_config = databricks_config
+
+            # Create offline store, passing databricks config if UC store
+            if isinstance(
+                profile_config.offline_store, profiles_.UnityCatalogStoreConfig
+            ):
+                resolved_offline = profile_config.offline_store.create(
+                    databricks_config=databricks_config
+                )
+            else:
+                resolved_offline = profile_config.offline_store.create()
+
             # Only load online store from profile if not explicitly provided
             if online_store is None and profile_config.online_store is not None:
                 resolved_online = profile_config.online_store.create()
@@ -603,71 +629,95 @@ class Definitions:
                 failed_features.append(feature.name)
                 continue
 
-            result_df = result.to_polars()
+            # Check if this is a remote PySpark execution (Databricks Connect)
+            # Remote execution keeps data on Databricks - avoid downloading
+            is_remote_pyspark = (
+                isinstance(result, results_.PySparkResult)
+                and result.is_remote()
+            )
 
-            # Apply incremental filtering if applicable
-            if (
-                is_incremental
-                and feature.timestamp_column
-                and (start_dt or end_dt)
-            ):
-                lookback = incremental.calculate_lookback_days(feature.interval)
-                original_count = len(result_df)
-                result_df = incremental.filter_by_timestamp(
-                    df=result_df,
-                    timestamp_col=feature.timestamp_column,
-                    start=start_dt,
-                    end=end_dt,
-                    lookback_days=lookback,
-                )
-                logger.debug(
-                    f"Filtered {feature.name}: {original_count} -> {len(result_df)} rows"
-                )
-
-                # Merge with existing data if available
-                if previous_meta and self.offline_store.exists(
-                    feature.name, previous_meta.version
-                ):
-                    existing_df = self.offline_store.read(
-                        feature.name, previous_meta.version
+            if is_remote_pyspark:
+                # Remote execution path: data stays on Databricks
+                # Incremental builds not yet supported for remote execution
+                if is_incremental:
+                    logger.warning(
+                        f"Incremental builds not supported for remote PySpark execution. "
+                        f"Building {feature.name} as full refresh."
                     )
-                    result_df = incremental.merge_incremental(
-                        existing=existing_df,
-                        new_data=result_df,
-                        keys=feature.keys,
+                    is_incremental = False
+
+                # Skip local validation for remote execution
+                # Validators run on Databricks during engine.execute() if configured
+                result_df = None  # Not used in remote path
+            else:
+                # Local execution path: download and process locally
+                result_df = result.to_polars()
+
+                # Apply incremental filtering if applicable
+                if (
+                    is_incremental
+                    and feature.timestamp_column
+                    and (start_dt or end_dt)
+                ):
+                    lookback = incremental.calculate_lookback_days(
+                        feature.interval
+                    )
+                    original_count = len(result_df)
+                    result_df = incremental.filter_by_timestamp(
+                        df=result_df,
                         timestamp_col=feature.timestamp_column,
+                        start=start_dt,
+                        end=end_dt,
+                        lookback_days=lookback,
                     )
                     logger.debug(
-                        f"Merged {feature.name}: {len(existing_df)} existing + "
-                        f"new -> {len(result_df)} total rows"
+                        f"Filtered {feature.name}: {original_count} -> {len(result_df)} rows"
                     )
 
-                # Build incremental metadata
-                now_ts = (
-                    datetime.now(timezone.utc)
-                    .isoformat()
-                    .replace("+00:00", "Z")
-                )
-                processed_until = (
-                    end_dt.isoformat().replace("+00:00", "Z")
-                    if end_dt
-                    else now_ts
-                )
-                incremental_meta = manifest.IncrementalMetadata(
-                    last_build_at=now_ts,
-                    processed_until=processed_until,
-                    timestamp_column=feature.timestamp_column,
-                    lookback_days=lookback,
-                )
+                    # Merge with existing data if available
+                    if previous_meta and self.offline_store.exists(
+                        feature.name, previous_meta.version
+                    ):
+                        existing_df = self.offline_store.read(
+                            feature.name, previous_meta.version
+                        )
+                        result_df = incremental.merge_incremental(
+                            existing=existing_df,
+                            new_data=result_df,
+                            keys=feature.keys,
+                            timestamp_col=feature.timestamp_column,
+                        )
+                        logger.debug(
+                            f"Merged {feature.name}: {len(existing_df)} existing + "
+                            f"new -> {len(result_df)} total rows"
+                        )
 
-            self._validate_result(feature.name, result_df)
+                    # Build incremental metadata
+                    now_ts = (
+                        datetime.now(timezone.utc)
+                        .isoformat()
+                        .replace("+00:00", "Z")
+                    )
+                    processed_until = (
+                        end_dt.isoformat().replace("+00:00", "Z")
+                        if end_dt
+                        else now_ts
+                    )
+                    incremental_meta = manifest.IncrementalMetadata(
+                        last_build_at=now_ts,
+                        processed_until=processed_until,
+                        timestamp_column=feature.timestamp_column,
+                        lookback_days=lookback,
+                    )
 
-            # For incremental builds, wrap the merged DataFrame in a result
-            # to maintain consistent interface with store.write()
-            if is_incremental:
-                result = results_.PolarsResult(
-                    result_df, base_schema=result.base_schema()
-                )
+                self._validate_result(feature.name, result_df)
+
+                # For incremental builds, wrap the merged DataFrame in a result
+                # to maintain consistent interface with store.write()
+                if is_incremental:
+                    result = results_.PolarsResult(
+                        result_df, base_schema=result.base_schema()
+                    )
 
             write_metadata = self.offline_store.write(
                 feature.name,
@@ -692,10 +742,17 @@ class Definitions:
                 interval=feature.interval,
                 metrics_config=self._serialize_metrics_config(feature.metrics),
             )
-            content_hash = version.compute_content_hash(
-                Path(write_metadata["path"])
+            # Content hash: use from write metadata if provided (Unity Catalog),
+            # otherwise compute from file path (file-based stores)
+            content_hash = write_metadata.get("content_hash") or (
+                version.compute_content_hash(Path(write_metadata["path"]))
             )
-            source_hash = version.compute_source_hash(feature.source_path)
+            # Source hash is only computed for file-based sources
+            source_hash = (
+                version.compute_source_hash(feature.source_path)
+                if feature.source_path
+                else ""
+            )
 
             # Build and write feature metadata
             now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
@@ -724,9 +781,14 @@ class Definitions:
             log.print_built(feature.name, target_version, str(result_path))
 
             if preview:
+                # For remote PySpark, only download preview_rows (not full dataset)
+                if is_remote_pyspark:
+                    preview_df = result.to_polars_preview(max_rows=preview_rows)
+                else:
+                    preview_df = result_df
                 log.print_feature_preview(
                     f"{feature.name} v{target_version}",
-                    result_df,
+                    preview_df,
                     max_rows=preview_rows,
                 )
 
@@ -871,38 +933,63 @@ class Definitions:
             )
 
         # Load and process to get current schema (before metrics)
-        # Always use Polars for schema analysis (version detection is engine-agnostic)
-        from mlforge.engines import PolarsEngine
+        # For Unity Catalog sources, use PySpark; otherwise use Polars
+        if feature.source_obj.is_unity_catalog:
+            # Unity Catalog - use PySpark engine for schema detection
+            from mlforge.engines import PySparkEngine
 
-        polars_engine = PolarsEngine()
-        source_df = polars_engine._load_source(feature.source_obj)
+            pyspark_engine = PySparkEngine()
+            source_df = pyspark_engine._load_source(feature.source_obj)
+            processed_df = feature(source_df)
 
-        # Ensure we have a Polars DataFrame
-        if not isinstance(source_df, pl.DataFrame):
-            raise TypeError("Expected Polars DataFrame from source")
+            # Convert Spark schema to canonical types
+            # processed_df.schema is a StructType containing StructField objects
+            schema_fields = list(processed_df.schema)
+            current_schema_columns = [
+                manifest.ColumnMetadata(
+                    name=field.name,
+                    dtype=types_.from_pyspark(
+                        field.dataType
+                    ).to_canonical_string(),
+                )
+                for field in schema_fields
+            ]
+        else:
+            # File-based source - use Polars for schema analysis
+            from mlforge.engines import PolarsEngine
 
-        # Apply entity key generation if needed (using Polars for consistency)
-        if feature.entities:
-            source_df = utils.apply_entity_keys(source_df, feature.entities)
+            polars_engine = PolarsEngine()
+            source_df = polars_engine._load_source(feature.source_obj)
 
-        preview_df = feature(source_df)
+            # Ensure we have a Polars DataFrame
+            if not isinstance(source_df, pl.DataFrame):
+                raise TypeError("Expected Polars DataFrame from source")
 
-        if isinstance(preview_df, pl.LazyFrame):
-            preview_df = preview_df.collect()
+            # Apply entity key generation if needed (using Polars for consistency)
+            if feature.entities:
+                source_df = utils.apply_entity_keys(source_df, feature.entities)
 
-        current_columns = list(preview_df.columns)
+            preview_df = feature(source_df)
+
+            if isinstance(preview_df, pl.LazyFrame):
+                preview_df = preview_df.collect()
+
+            current_columns = list(preview_df.columns)
+
+            # Compute current hashes using canonical types for cross-engine consistency
+            current_schema_columns = [
+                manifest.ColumnMetadata(
+                    name=c,
+                    dtype=types_.from_polars(
+                        preview_df.schema[c]
+                    ).to_canonical_string(),
+                )
+                for c in current_columns
+            ]
+
+        current_columns = [c.name for c in current_schema_columns]
         previous_columns = [c.name for c in previous_meta.columns]
 
-        # Compute current hashes using canonical types for cross-engine consistency
-        current_schema_columns = [
-            manifest.ColumnMetadata(
-                name=c,
-                dtype=types_.from_polars(
-                    preview_df.schema[c]
-                ).to_canonical_string(),
-            )
-            for c in current_columns
-        ]
         current_schema_hash = version.compute_schema_hash(
             current_schema_columns
         )
@@ -1160,8 +1247,8 @@ class Definitions:
             # Metadata exists but data doesn't - needs sync
             needs_sync.append(feature.name)
 
-            # Check source hash
-            if metadata.source_hash:
+            # Check source hash (only for file-based sources)
+            if metadata.source_hash and feature.source_path:
                 try:
                     current_source_hash = version.compute_source_hash(
                         feature.source_path
@@ -1574,13 +1661,20 @@ class Definitions:
 
         now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
+        # Source identifier - use path for files, table for UC
+        source_identifier = (
+            feature.source_path
+            if feature.source_path
+            else feature.source_obj.table or ""
+        )
+
         return manifest.FeatureMetadata(
             name=feature.name,
             version=target_version,
             path=write_metadata["path"],
             entity=feature.keys[0],
             keys=feature.keys,
-            source=feature.source_path,
+            source=source_identifier,
             row_count=write_metadata["row_count"],
             created_at=created_at or now,
             updated_at=updated_at or now,

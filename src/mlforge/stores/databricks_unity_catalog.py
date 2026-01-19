@@ -7,8 +7,6 @@ governance, lineage, and access control.
 
 import json
 import re
-import tempfile
-from pathlib import Path
 from typing import Any, override
 
 import polars as pl
@@ -279,13 +277,22 @@ class UnityCatalogStore(Store):
         """
         table_name = self._table_name_for(feature_name)
 
-        # Write to temporary parquet file, then load into Delta
-        with tempfile.TemporaryDirectory() as tmpdir:
-            temp_path = Path(tmpdir) / "data.parquet"
-            result.write_parquet(temp_path)
-
-            # Read into Spark and write as Delta table
-            spark_df = self._spark.read.parquet(str(temp_path))
+        # For PySparkResult, write directly to Delta table
+        # (avoids temp file issues with Databricks Connect)
+        if isinstance(result, results.PySparkResult):
+            spark_df = result.to_spark()
+            (
+                spark_df.write.format("delta")
+                .mode("overwrite")
+                .option("overwriteSchema", "true")
+                .saveAsTable(table_name)
+            )
+        else:
+            # For Polars/DuckDB results, convert via Arrow
+            # Note: This path requires a cluster with access to local temp files
+            # (not compatible with Databricks Connect serverless)
+            arrow_table = result.to_polars().to_arrow()
+            spark_df = self._spark.createDataFrame(arrow_table.to_pandas())
             (
                 spark_df.write.format("delta")
                 .mode("overwrite")
@@ -296,11 +303,19 @@ class UnityCatalogStore(Store):
         # Get Delta version after write
         delta_version = self._get_current_delta_version(table_name)
 
+        # Compute content hash from schema + row count + delta version
+        # This provides a reproducible hash without reading the actual data
+        import hashlib
+
+        content_str = f"{result.schema()}{result.row_count()}{delta_version}"
+        content_hash = hashlib.sha256(content_str.encode()).hexdigest()[:12]
+
         return {
             "path": table_name,
             "row_count": result.row_count(),
             "schema": result.schema(),
             "delta_version": delta_version,
+            "content_hash": content_hash,
         }
 
     @override

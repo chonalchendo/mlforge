@@ -173,6 +173,12 @@ class PolarsEngine(base.Engine):
         path = source.path
         fmt = source.format
 
+        if path is None:
+            raise ValueError(
+                f"Polars engine requires file-based source, "
+                f"got Unity Catalog table: {source.table}"
+            )
+
         match fmt:
             case sources.ParquetFormat():
                 kwargs = {}

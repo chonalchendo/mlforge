@@ -1,0 +1,30 @@
+# mlforge configuration for Databricks
+#
+# This configuration enables local development with Databricks Connect,
+# where feature code runs locally but execution happens on Databricks.
+
+# Root-level Databricks connection (shared by all profiles)
+databricks:
+  host: ${oc.env:DATABRICKS_HOST}
+  token: ${oc.env:DATABRICKS_TOKEN}
+  serverless: true  # Use serverless compute (recommended for dev)
+  # For SQL queries (DatabricksSQLEngine):
+  http_path: ${oc.env:DATABRICKS_HTTP_PATH,null}
+
+default_profile: dev
+
+profiles:
+  # Development profile - writes to personal sandbox
+  dev:
+    offline_store:
+      KIND: unity-catalog
+      catalog: ${oc.env:DATABRICKS_SANDBOX_CATALOG}  # e.g., "sbx" or "dev_yourname"
+      schema: features
+
+  # Production profile - writes to production catalog
+  # (typically run via Databricks Workflow, not locally)
+  prod:
+    offline_store:
+      KIND: unity-catalog
+      catalog: prod
+      schema: features

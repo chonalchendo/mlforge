@@ -41,7 +41,7 @@ from mlforge.sources.formats import (
 )
 
 # Valid location types
-Location = Literal["local", "s3", "gcs"]
+Location = Literal["local", "s3", "gcs", "unity-catalog"]
 
 
 def _infer_location(path: str) -> Location:
@@ -125,11 +125,15 @@ class Source:
     The Source class simplifies data source configuration by:
     - Inferring storage location from path prefix (s3://, gs://, local)
     - Auto-detecting format from file extension (.parquet, .csv)
+    - Supporting Unity Catalog tables via the `table` parameter
     - Providing typed format options for IDE autocomplete
 
     Attributes:
-        path: File or directory path (local, s3://, or gs://)
-        name: Optional name (auto-derived from path stem if not provided)
+        path: File or directory path (local, s3://, or gs://). Mutually
+            exclusive with `table`.
+        table: Unity Catalog table name (catalog.schema.table). Mutually
+            exclusive with `path`.
+        name: Optional name (auto-derived from path/table if not provided)
         format: Optional format configuration (auto-detected if not provided)
 
     Example:
@@ -147,31 +151,49 @@ class Source:
             path="data/events.csv",
             format=CSVFormat(delimiter="|"),
         )
+
+        # Unity Catalog table
+        source = Source(table="main.analytics.fct_orders")
+        assert source.location == "unity-catalog"
+        assert source.name == "fct_orders"
     """
 
-    path: str
+    path: str | None = field(default=None)
+    table: str | None = field(default=None)
     name: str = field(default="")
     format: Format | None = field(default=None)
 
     def __post_init__(self) -> None:
-        """Auto-detect name and format if not provided."""
+        """Validate and auto-detect name and format."""
+        # Validate mutual exclusivity of path and table
+        if self.path is None and self.table is None:
+            raise ValueError("Source requires either 'path' or 'table'")
+        if self.path is not None and self.table is not None:
+            raise ValueError("Source cannot have both 'path' and 'table'")
+
         # Use object.__setattr__ because dataclass is frozen
         if not self.name:
-            object.__setattr__(self, "name", _infer_name(self.path))
+            if self.table is not None:
+                # Extract table name from catalog.schema.table
+                object.__setattr__(self, "name", self.table.split(".")[-1])
+            else:
+                object.__setattr__(self, "name", _infer_name(self.path))  # type: ignore[arg-type]
 
-        # Auto-detect format only if not explicitly provided
-        if self.format is None:
+        # Auto-detect format only for path-based sources
+        if self.format is None and self.path is not None:
             object.__setattr__(self, "format", _detect_format(self.path))
 
     @property
     def location(self) -> Location:
         """
-        Storage location inferred from path.
+        Storage location inferred from path or table.
 
         Returns:
-            "local", "s3", or "gcs"
+            "local", "s3", "gcs", or "unity-catalog"
         """
-        return _infer_location(self.path)
+        if self.table is not None:
+            return "unity-catalog"
+        return _infer_location(self.path)  # type: ignore[arg-type]
 
     @property
     def is_local(self) -> bool:
@@ -187,6 +209,11 @@ class Source:
     def is_gcs(self) -> bool:
         """Check if source is Google Cloud Storage."""
         return self.location == "gcs"
+
+    @property
+    def is_unity_catalog(self) -> bool:
+        """Check if source is Unity Catalog table."""
+        return self.table is not None
 
     @property
     def is_parquet(self) -> bool:
